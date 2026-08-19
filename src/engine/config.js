@@ -16,6 +16,11 @@ export const CONFIG = {
   levelSpeedPerLevel: 0.015,
   levelSpeedMax: 1.4,
 
+  // the bank: points earned in a dive are banked, and spent on skins
+  bank: {
+    diveCost: 10,   // charged per dive; a player who cannot afford it dives free
+  },
+
   // leaderboard limits. The game client and the Worker both import these, so a
   // cap only has to be changed in one place to hold on both sides.
   leaderboard: {

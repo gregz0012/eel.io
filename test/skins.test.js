@@ -1,25 +1,25 @@
 import { describe, it, expect } from "vitest";
 import {
-  SKINS, DEFAULT_SKIN_ID, skinById, isSkinUnlocked, unlockedSkins,
-  wearableSkin, nextUnlock, skinsUnlockedBy, skinFromHue,
+  SKINS, DEFAULT_SKIN_ID, skinById, isOwned, ownedSkins, canAfford,
+  buySkin, wearableSkin, nextSkinToBuy, skinFromHue,
 } from "../src/engine/skins.js";
 
-const free = SKINS.filter(s => s.unlockAt === 0);
-const earned = SKINS.filter(s => s.unlockAt > 0);
+const free = SKINS.filter(s => s.price === 0);
+const paid = SKINS.filter(s => s.price > 0);
 
 describe("the catalogue", () => {
-  it("starts everyone with five colours", () => {
+  it("gives everyone five colours to start with", () => {
     expect(free).toHaveLength(5);
   });
 
-  it("offers the six earnable skins", () => {
-    expect(earned.map(s => s.id))
+  it("sells the six earnable skins", () => {
+    expect(paid.map(s => s.id))
       .toEqual(["copper", "iron", "gold", "emerald", "diamond", "platinum"]);
   });
 
   it("prices them in the order they are listed", () => {
-    const costs = earned.map(s => s.unlockAt);
-    expect([...costs].sort((a, b) => a - b)).toEqual(costs);
+    const prices = paid.map(s => s.price);
+    expect([...prices].sort((a, b) => a - b)).toEqual(prices);
   });
 
   it("has no duplicate ids", () => {
@@ -36,58 +36,130 @@ describe("the catalogue", () => {
   });
 });
 
-describe("unlocking", () => {
-  it("a new player has the five standard colours and nothing else", () => {
-    expect(unlockedSkins(0).map(s => s.id)).toEqual(free.map(s => s.id));
+describe("ownership", () => {
+  it("a new player owns the five free colours and nothing else", () => {
+    expect(ownedSkins([]).map(s => s.id)).toEqual(free.map(s => s.id));
   });
 
-  it("unlocks a skin once lifetime points reach its cost", () => {
-    const copper = skinById("copper");
-    expect(isSkinUnlocked(copper, copper.unlockAt - 1)).toBe(false);
-    expect(isSkinUnlocked(copper, copper.unlockAt)).toBe(true);
+  it("owns a skin that was bought", () => {
+    expect(isOwned("gold", ["gold"])).toBe(true);
   });
 
-  it("keeps everything unlocked as the total grows", () => {
-    expect(unlockedSkins(1e9)).toHaveLength(SKINS.length);
+  it("does not own one that was not", () => {
+    expect(isOwned("gold", [])).toBe(false);
   });
 
-  it("reports what to work towards next", () => {
-    const { skin, pointsToGo } = nextUnlock(0);
-    expect(skin.id).toBe("copper");
-    expect(pointsToGo).toBe(skin.unlockAt);
+  it("does not own a skin that does not exist", () => {
+    expect(isOwned("unicorn", ["unicorn"])).toBe(false);
   });
 
-  it("has nothing left to work towards once everything is earned", () => {
-    expect(nextUnlock(1e9)).toBeNull();
+  it("survives a missing owned list", () => {
+    expect(isOwned("volt", undefined)).toBe(true);
+    expect(isOwned("gold", undefined)).toBe(false);
+  });
+});
+
+describe("buySkin", () => {
+  const wallet = (banked, owned = []) => ({ banked, owned });
+
+  it("deducts the price and hands over the skin", () => {
+    const r = buySkin(wallet(5000), "gold");
+    expect(r.bought).toBe(true);
+    expect(r.banked).toBe(5000 - skinById("gold").price);
+    expect(r.owned).toContain("gold");
   });
 
-  it("names the skins a run just earned", () => {
-    const copper = skinById("copper"), iron = skinById("iron");
-    expect(skinsUnlockedBy(copper.unlockAt - 1, iron.unlockAt).map(s => s.id))
-      .toEqual(["copper", "iron"]);
+  it("buys at exactly the price", () => {
+    const price = skinById("copper").price;
+    const r = buySkin(wallet(price), "copper");
+    expect(r.bought).toBe(true);
+    expect(r.banked).toBe(0);
   });
 
-  it("earns nothing twice", () => {
-    expect(skinsUnlockedBy(50000, 60000)).toEqual([]);
+  it("refuses when the bank is a point short, and takes nothing", () => {
+    const price = skinById("copper").price;
+    const r = buySkin(wallet(price - 1), "copper");
+    expect(r.bought).toBe(false);
+    expect(r.banked).toBe(price - 1);
+    expect(r.owned).toEqual([]);
+    expect(r.reason).toContain("1 more");
   });
 
-  it("treats a missing lifetime total as zero", () => {
-    expect(unlockedSkins(undefined).map(s => s.id)).toEqual(free.map(s => s.id));
-    expect(skinsUnlockedBy(undefined, 600).map(s => s.id)).toEqual(["copper"]);
+  it("refuses to charge twice for a skin already owned", () => {
+    const r = buySkin(wallet(9999, ["copper"]), "copper");
+    expect(r.bought).toBe(false);
+    expect(r.banked).toBe(9999);
+  });
+
+  it("refuses to charge for a free skin", () => {
+    const r = buySkin(wallet(9999), "volt");
+    expect(r.bought).toBe(false);
+    expect(r.banked).toBe(9999);
+  });
+
+  it("refuses a skin that does not exist", () => {
+    const r = buySkin(wallet(9999), "unicorn");
+    expect(r.bought).toBe(false);
+    expect(r.banked).toBe(9999);
+  });
+
+  it("does not mutate the wallet it was given", () => {
+    const w = wallet(5000, ["copper"]);
+    buySkin(w, "gold");
+    expect(w).toEqual({ banked: 5000, owned: ["copper"] });
+  });
+
+  it("cannot spend a balance into the negative across many buys", () => {
+    let w = wallet(5000);
+    for (const id of ["copper", "iron", "gold", "emerald", "diamond", "platinum"]) {
+      w = buySkin(w, id);
+    }
+    expect(w.banked).toBeGreaterThanOrEqual(0);
+    expect(w.owned).toEqual(["copper", "iron"]);   // only what 5000 covers
   });
 });
 
 describe("wearableSkin", () => {
-  it("wears the skin the player chose when they have earned it", () => {
-    expect(wearableSkin("gold", 99999).id).toBe("gold");
+  it("wears an owned skin", () => {
+    expect(wearableSkin("gold", ["gold"]).id).toBe("gold");
   });
 
-  it("falls back to the default when they have not", () => {
-    expect(wearableSkin("platinum", 0).id).toBe(DEFAULT_SKIN_ID);
+  it("falls back to the default for one that was never bought", () => {
+    expect(wearableSkin("platinum", []).id).toBe(DEFAULT_SKIN_ID);
   });
 
   it("falls back for a skin that does not exist", () => {
-    expect(wearableSkin("unicorn", 1e9).id).toBe(DEFAULT_SKIN_ID);
+    expect(wearableSkin("unicorn", ["unicorn"]).id).toBe(DEFAULT_SKIN_ID);
+  });
+});
+
+describe("nextSkinToBuy", () => {
+  it("points at the cheapest skin not yet owned", () => {
+    expect(nextSkinToBuy(0, []).skin.id).toBe("copper");
+  });
+
+  it("skips what is already owned", () => {
+    expect(nextSkinToBuy(0, ["copper"]).skin.id).toBe("iron");
+  });
+
+  it("says how much more is needed", () => {
+    const copper = skinById("copper");
+    expect(nextSkinToBuy(copper.price - 100, []).pointsToGo).toBe(100);
+  });
+
+  it("needs nothing more once affordable", () => {
+    expect(nextSkinToBuy(1e9, []).pointsToGo).toBe(0);
+  });
+
+  it("has nothing left to suggest once everything is owned", () => {
+    expect(nextSkinToBuy(1e9, paid.map(s => s.id))).toBeNull();
+  });
+});
+
+describe("canAfford", () => {
+  it("compares the balance against the price", () => {
+    expect(canAfford(skinById("gold"), skinById("gold").price)).toBe(true);
+    expect(canAfford(skinById("gold"), 0)).toBe(false);
   });
 });
 

@@ -58,7 +58,8 @@ eel.io/
 │   │   ├── identity.js   # anonymous player tag: id -> "AmberLantern-4721" (pure)
 │   │   ├── leaderboard.js# submission validation, ranking, board sorting (pure)
 │   │   ├── session.js    # which screen we are on: home/playing/paused/over (pure)
-│   │   ├── skins.js      # the skin catalogue and what unlocks them (pure)
+│   │   ├── bank.js       # banking a dive's score, and the dive fare (pure)
+│   │   ├── skins.js      # the skin catalogue and buying them (pure)
 │   │   ├── collision.js  # geometry: head-vs-body, tail-bite index, self-cross detection
 │   │   ├── entities.js   # factories: makeEel, makeFish, makePredator, makeBoss, ...
 │   │   ├── spawn.js      # spawn rules (takes rng + config, returns entities)
@@ -79,6 +80,7 @@ eel.io/
 │   ├── identity.test.js
 │   ├── leaderboard.test.js
 │   ├── session.test.js
+│   ├── bank.test.js
 │   ├── skins.test.js
 │   ├── worker.test.js    # the Worker's decisions, against a stubbed D1
 │   └── build.test.js     # the build output stays in sync and actually executes
@@ -86,7 +88,8 @@ eel.io/
 └── package.json          # dev-only deps (vitest, cucumber); ZERO runtime deps
 ```
 
-`config.js`, `scoring.js`, `identity.js`, `leaderboard.js`, `session.js` and `skins.js` exist so far. The rest is the destination, not a description of today — see §9.
+`config.js`, `scoring.js`, `identity.js`, `leaderboard.js`, `session.js`, `bank.js`
+and `skins.js` exist so far. The rest is the destination, not a description of today — see §9.
 
 ### Why a build step
 
@@ -222,18 +225,32 @@ drifts on behind the overlay) but only `phase === "playing"` calls `update`.
 Paused time is subtracted from the run duration, so a pause cannot flatter the
 leaderboard's points-per-second check.
 
-**Skins unlock on lifetime points** — the running total of everything ever
-scored, which only goes up. Nothing is spent and nothing is lost, the same
-promise the level rules make: a skin, once earned, is earned. (A spend-and-
-deduct model was the alternative; it was rejected because a seven-year-old
-should not be able to bankrupt themselves buying gold.)
+**The bank is spent, not accumulated.** A dive's score is banked when it ends
+(`bank.js`), skins are bought out of the balance (`skins.js`), and diving costs
+points too. Two separate ideas that must not be conflated: the *balance* goes up
+and down, but *ownership* only ever goes up. A skin once bought is never lost,
+however empty the bank gets.
 
-`wearableSkin(id, lifetimePoints)` is the only way the shell should pick a skin.
-It falls back to the default for a skin that does not exist or has not been
-earned, which is what stops a stored-value edit putting a player in platinum.
-The catalogue in `skins.js` holds the colours *and* the costs together — it is
+**Being broke must never end the game.** `payForDive` charges what the player
+can afford and reports `free: true` when that was less than the fare. A child
+who has a bad run and drains to nothing can still press the button. A hard gate
+would be a dead end they cannot get out of, and no amount of correct accounting
+is worth that. If you ever make the fare a hard requirement, you need a way back
+in — a daily allowance, a free dive, something.
+
+`wearableSkin(id, owned)` is the only way the shell should pick a skin. It falls
+back to the default for a skin that does not exist or was never bought, which is
+what stops a stored-value edit putting a player in platinum. `buySkin` returns
+the wallet unchanged when a purchase cannot happen, so a refused buy can never
+half-apply.
+
+The catalogue in `skins.js` holds the colours *and* the prices together — it is
 the tunable surface for skins, and splitting it across `config.js` would only
-make a balance change touch two files.
+make a balance change touch two files. The dive fare is a global tunable, so
+that one does live in `config.js`.
+
+Buying asks for confirmation in the shell. A mis-tap should not spend a child's
+savings.
 
 ---
 
@@ -354,7 +371,7 @@ Extraction order — each step only depends on earlier ones:
 
 `vector` → **`scoring` ✅ done** → `collision` → `entities` → `spawn` → `world.step`
 
-`identity`, `leaderboard`, `session` and `skins` sit outside that chain: they were
+`identity`, `leaderboard`, `session`, `bank` and `skins` sit outside that chain: they were
 new behaviour rather than extracted monolith, so they went straight in as pure
 modules.
 
@@ -387,5 +404,5 @@ Honest list of what this architecture does not yet cover:
 - **`/forget` trusts whoever holds the id.** The id is a random UUID that only that browser and the server ever see, so this is a capability, not a password. Good enough here; not a pattern to copy somewhere it matters.
 - **No CI.** `npm run check` runs only when someone remembers. A GitHub Actions workflow running it on push would be a cheap win.
 - **No lint or formatter.** Fine for now; the codebase is small and consistent.
-- **Skins and lifetime points are local-only.** Clearing site data loses them, and they do not follow a player to another device. Syncing them would need an account, which §1 rules out — so this is a trade we accept, not a bug to fix.
+- **The bank and owned skins are local-only.** Clearing site data loses them, and they do not follow a player to another device. Nothing validates a balance either — an edited store is an edited store. Syncing them would need an account, which §1 rules out — so this is a trade we accept, not a bug to fix.
 - **`src/index.html` is still a monolith** — everything except the extracted engine modules. That is expected; see §9.

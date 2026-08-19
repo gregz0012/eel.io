@@ -196,7 +196,10 @@
   .skin .cost{font-size:9px;letter-spacing:.06em;color:var(--muted);font-variant-numeric:tabular-nums;}
   .skin.locked .name{color:var(--muted);}
   #skinNote{font-size:12px;color:var(--muted);margin-top:10px;letter-spacing:.03em;}
-  #skinNote b{color:var(--volt);}
+  #skinNote b{color:var(--volt);font-weight:700;}
+  #skinNote .hint{font-size:11px;color:var(--muted);margin-top:3px;}
+  .buyrow{display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap;margin-top:8px;}
+  .buyrow span{color:var(--ink);font-size:13px;}
 
   /* pause */
   #pauseBtn{
@@ -353,7 +356,7 @@
   let fish = [], eels = [], predators = [], stars = [], babies = [], feasts = [], energy = [], particles = [], bubbles = [];
   let player, camera, running = false, score = 0, level = 1, best = 0, lastRunMs = 0;
   let phase = "home";                  // home | playing | paused | over — see engine/session.js
-  let lifetime = 0, skinId = "volt";   // lifetime points never fall; they unlock skins
+  let banked = 0, owned = [], skinId = "volt";   // the bank: earned, spent on skins
   let predTarget = Engine.CONFIG.predatorsBase, bossAlert = 0;
   let zap = 0;             // 0..1 charge
   const ZAP_COST = 1;      // full meter to fire
@@ -374,7 +377,7 @@
       radius: 7 + len * 0.05,
       body: [],                        // trail points
       isPlayer: !!isPlayer,
-      hue: isPlayer ? Engine.wearableSkin(skinId, lifetime).hue : rand(150, 260),
+      hue: isPlayer ? Engine.wearableSkin(skinId, owned).hue : rand(150, 260),
       thinkT: 0, wanderA: rand(0, TAU),
       dead: false
     };
@@ -578,7 +581,8 @@
   const LEADERBOARD_URL = "";
 
   const STORE = { id: "voltfin.playerId", best: "voltfin.best", joined: "voltfin.joined",
-                  lifetime: "voltfin.lifetime", skin: "voltfin.skin" };
+                  banked: "voltfin.banked", owned: "voltfin.owned", skin: "voltfin.skin",
+                  lifetime: "voltfin.lifetime" };   // lifetime: retired, read once to migrate
 
   // Storage throws in private browsing and wherever it is blocked. Never let
   // that stop a kid playing the game.
@@ -693,18 +697,17 @@
     burst(player.x, player.y, `hsl(${player.hue},80%,65%)`, 60, 7);
     lastRunMs = Date.now() - runStartedAt - pausedMs;
 
-    // lifetime points only ever go up; they are what unlock skins
-    lifetime += Math.round(score);
-    writeStore(STORE.lifetime, String(lifetime));
-    const earned = Engine.skinsUnlockedBy(lifetime - Math.round(score), lifetime);
+    // the dive's score goes into the bank, to be spent on skins
+    banked = Engine.deposit(banked, score);
+    writeStore(STORE.banked, String(banked));
 
     best = Math.max(best, Math.round(score));
     writeStore(STORE.best, String(best));          // survives a reload, never leaves the device
     document.getElementById("finalScore").textContent = Math.round(score);
     document.getElementById("best").textContent = best;
     updateBoard(Math.round(score), lastRunMs);
-    document.getElementById("oversub").textContent = earned.length
-      ? `${reason} — you unlocked ${earned.map(s => s.name).join(" and ")}!`
+    document.getElementById("oversub").textContent = Math.round(score) > 0
+      ? `${reason} — ${Math.round(score).toLocaleString()} points banked`
       : reason;
     show("hud", false); show("powerbar", false); show("zapBtn", false); show("pauseBtn", false);
     setTimeout(() => show("over", true), 550);
@@ -1133,7 +1136,7 @@
       ctx.restore();
     }
     const glow = zap >= 1 ? 0.5 : 0.28;
-    drawEelBody(player.body, r, Engine.wearableSkin(skinId, lifetime), glow, true);
+    drawEelBody(player.body, r, Engine.wearableSkin(skinId, owned), glow, true);
     // if charged, crackle around head
     if (zap >= 1 && !reduceMotion){
       const [hx,hy] = worldToScreen(player.x, player.y);
@@ -1391,6 +1394,9 @@
     phase = next;
 
     if (event === "dive"){
+      const fare = Engine.payForDive(banked);   // broke players dive free, never blocked
+      banked = fare.banked;
+      writeStore(STORE.banked, String(banked));
       reset();
       runStartedAt = Date.now(); pausedMs = 0;
       pointer.x = W/2; pointer.y = H/2; pointer.has = false;
@@ -1416,47 +1422,124 @@
     show("pauseBtn", inDive);
   }
 
-  // ---------- skin picker ----------
+  // ---------- skin picker / shop ----------
+  // Buying asks first: a mis-tap should not spend a child's savings.
+  let pendingBuy = null;
+
   function renderSkins(){
     const grid = document.getElementById("skinGrid");
     grid.textContent = "";
-    const worn = Engine.wearableSkin(skinId, lifetime);
+    const worn = Engine.wearableSkin(skinId, owned);
 
     for (const skin of Engine.SKINS){
-      const unlocked = Engine.isSkinUnlocked(skin, lifetime);
+      const mine = Engine.isOwned(skin.id, owned);
+      const affordable = Engine.canAfford(skin, banked);
       const el = document.createElement("div");
-      el.className = "skin" + (skin.id === worn.id ? " on" : "") + (unlocked ? "" : " locked");
-      el.title = unlocked ? skin.name : `${skin.name} — ${skin.unlockAt.toLocaleString()} lifetime points`;
+      el.className = "skin" + (skin.id === worn.id ? " on" : "") + (mine ? "" : " locked");
+      el.title = mine ? skin.name : `${skin.name} — ${skin.price.toLocaleString()} points`;
 
       const swatch = document.createElement("div");
       swatch.className = "swatch";
       const colour = `hsl(${skin.hue},${skin.sat}%,${skin.headLight}%)`;
       swatch.style.color = colour;
       swatch.style.background = colour;
-      if (!unlocked) swatch.style.filter = "grayscale(.45) brightness(.8)";
+      if (!mine) swatch.style.filter = "grayscale(.45) brightness(.8)";
 
       const name = document.createElement("div");
       name.className = "name"; name.textContent = skin.name;
 
       const cost = document.createElement("div");
       cost.className = "cost";
-      cost.textContent = unlocked ? (skin.unlockAt ? "earned" : "") : skin.unlockAt.toLocaleString();
+      cost.textContent = mine ? (skin.price ? "yours" : "") : skin.price.toLocaleString();
+      if (!mine && affordable) cost.style.color = "var(--volt)";
 
       el.append(swatch, name, cost);
-      if (unlocked) el.addEventListener("click", () => {
-        skinId = skin.id; writeStore(STORE.skin, skinId); renderSkins();
+      el.addEventListener("click", () => {
+        if (mine){ skinId = skin.id; writeStore(STORE.skin, skinId); pendingBuy = null; }
+        else pendingBuy = affordable ? skin.id : null;
+        renderSkins();
       });
       grid.appendChild(el);
     }
 
-    const next = Engine.nextUnlock(lifetime);
-    document.getElementById("skinNote").textContent = next
-      ? `${lifetime.toLocaleString()} lifetime points — ${next.pointsToGo.toLocaleString()} more to unlock ${next.skin.name}.`
-      : `${lifetime.toLocaleString()} lifetime points — every skin unlocked.`;
+    renderBankNote();
   }
+
+  function renderBankNote(){
+    const note = document.getElementById("skinNote");
+    note.textContent = "";
+
+    const balance = document.createElement("div");
+    balance.append("Bank ");
+    const amount = document.createElement("b");
+    amount.textContent = banked.toLocaleString();
+    balance.append(amount, " points");
+    note.appendChild(balance);
+
+    if (pendingBuy){
+      const skin = Engine.skinById(pendingBuy);
+      const ask = document.createElement("div");
+      ask.className = "buyrow";
+      const label = document.createElement("span");
+      label.textContent = `Buy ${skin.name} for ${skin.price.toLocaleString()}?`;
+
+      const yes = document.createElement("button");
+      yes.className = "quiet"; yes.id = "buyBtn"; yes.textContent = "Buy";
+      yes.addEventListener("click", () => {
+        const result = Engine.buySkin({ banked, owned }, pendingBuy);
+        if (result.bought){
+          banked = result.banked; owned = result.owned;
+          writeStore(STORE.banked, String(banked));
+          writeStore(STORE.owned, JSON.stringify(owned));
+          skinId = pendingBuy;                     // wear it straight away
+          writeStore(STORE.skin, skinId);
+        }
+        pendingBuy = null;
+        renderSkins();
+      });
+
+      const no = document.createElement("button");
+      no.className = "quiet"; no.id = "cancelBuyBtn"; no.textContent = "Not yet";
+      no.addEventListener("click", () => { pendingBuy = null; renderSkins(); });
+
+      ask.append(label, yes, no);
+      note.appendChild(ask);
+      return;
+    }
+
+    const next = Engine.nextSkinToBuy(banked, owned);
+    const hint = document.createElement("div");
+    hint.className = "hint";
+    if (!next) hint.textContent = "Every skin is yours.";
+    else if (next.pointsToGo === 0) hint.textContent = `You can afford ${next.skin.name} — tap it.`;
+    else hint.textContent = `${next.pointsToGo.toLocaleString()} more for ${next.skin.name}.`;
+    note.appendChild(hint);
+
+    const fare = document.createElement("div");
+    fare.className = "hint"; fare.id = "fareNote";
+    fare.textContent = Engine.canAffordDive(banked)
+      ? `A dive costs ${Engine.diveCost()} points.`
+      : `A dive costs ${Engine.diveCost()} points — this one is on the house.`;
+    note.appendChild(fare);
+  }
+
   best = Number(readStore(STORE.best)) || 0;
-  lifetime = Number(readStore(STORE.lifetime)) || 0;
-  skinId = Engine.wearableSkin(readStore(STORE.skin), lifetime).id;
+  banked = Number(readStore(STORE.banked)) || 0;
+  try { owned = JSON.parse(readStore(STORE.owned)) ?? []; } catch { owned = []; }
+  if (!Array.isArray(owned)) owned = [];
+
+  // One-off migration from the earlier unlock-by-lifetime-points scheme: keep
+  // the skins that had been earned, and bank the total.
+  const retiredLifetime = Number(readStore(STORE.lifetime)) || 0;
+  if (retiredLifetime > 0 && !readStore(STORE.banked)){
+    banked = retiredLifetime;
+    owned = Engine.SKINS.filter(sk => sk.price > 0 && sk.price <= retiredLifetime).map(sk => sk.id);
+    writeStore(STORE.banked, String(banked));
+    writeStore(STORE.owned, JSON.stringify(owned));
+    dropStore(STORE.lifetime);
+  }
+
+  skinId = Engine.wearableSkin(readStore(STORE.skin), owned).id;
   document.getElementById("best").textContent = best;
   renderSkins();
 

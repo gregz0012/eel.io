@@ -23,6 +23,7 @@ const ENGINE_MODULES = [
   "identity.js",
   "leaderboard.js",
   "session.js",
+  "bank.js",
   "skins.js",
 ];
 

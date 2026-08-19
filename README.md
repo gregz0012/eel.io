@@ -15,13 +15,16 @@ No accounts, no ads, no tracking, no runtime dependencies. The game ships as one
 
 ## Your eel
 
-Pick a colour on the home screen. Five are yours from the start; six more —
-copper, iron, gold, emerald, diamond and platinum — unlock as your **lifetime
-points** add up. That total is everything you have ever scored and it never goes
-down, so a skin you have earned stays earned. Nothing is spent to unlock one.
+Every dive's score is **banked**. Spend it on skins from the home screen: five
+colours are yours from the start, and copper, iron, gold, emerald, diamond and
+platinum are bought out of the bank. Buying deducts the points — but a skin you
+have bought is yours forever, however empty the bank gets afterwards.
 
-Your colours, your best score and your lifetime total are kept on your own
-device and never sent anywhere.
+Diving costs a few points too. If you can't cover it, the dive is free: you can
+always play.
+
+Your bank, your skins and your best score are kept on your own device and never
+sent anywhere.
 
 ## What's in the sea
 

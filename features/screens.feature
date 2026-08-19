@@ -27,25 +27,56 @@ Feature: Screens, pausing and skins
     And they head for the surface
     Then they are on the home screen
 
-  Scenario: A new player has five colours to choose from
-    Given a player who has never scored
-    Then they can wear 5 skins
-    And they cannot wear the gold skin
+  Scenario: A new player has five colours and an empty bank
+    Given a player with an empty bank
+    Then they own 5 skins
+    And they do not own the gold skin
+    And their bank holds 0 points
 
-  Scenario: Points earned across runs unlock new skins
-    Given a player who has never scored
-    When they score 400 points across a run
-    And they score 200 points across a run
-    Then they have unlocked the copper skin
-    And they can wear 6 skins
+  Scenario: Scores are banked when a dive ends
+    Given a player with an empty bank
+    When they finish a dive worth 400 points
+    And they finish a dive worth 250 points
+    Then their bank holds 650 points
 
-  Scenario: An earned skin is never lost
-    Given a player who has never scored
-    When they score 600 points across a run
-    And they score 0 points across a run
-    Then they have unlocked the copper skin
+  Scenario: Buying a skin spends the points
+    Given a player with 5000 points banked
+    When they buy the gold skin
+    Then they own the gold skin
+    And their bank holds 1000 points
 
-  Scenario: A skin cannot be worn before it is earned
-    Given a player who has never scored
+  Scenario: A skin you cannot afford is not sold to you
+    Given a player with 100 points banked
+    When they buy the gold skin
+    Then they do not own the gold skin
+    And their bank holds 100 points
+
+  Scenario: A bought skin is never lost, even when the bank empties
+    Given a player with 4500 points banked
+    When they buy the gold skin
+    And they buy the copper skin
+    Then their bank holds 0 points
+    And they own the gold skin
+    And they own the copper skin
+
+  Scenario: A skin cannot be worn before it is bought
+    Given a player with an empty bank
     When they try to wear the platinum skin
     Then they are wearing the volt skin
+
+  Scenario: Diving costs points
+    Given a player with 5000 points banked
+    When they dive and pay for it
+    Then their bank holds 4990 points
+
+  Scenario: A player with nothing banked can still dive
+    Given a player with an empty bank
+    When they dive and pay for it
+    Then the dive was free
+    And their bank holds 0 points
+
+  Scenario: Diving repeatedly never puts a player in debt
+    Given a player with 25 points banked
+    When they dive and pay for it 10 times
+    Then their bank holds 0 points
+    And the dive was free
