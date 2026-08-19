@@ -278,6 +278,10 @@ npx wrangler deploy                                          # prints the URL fo
 
 The D1 database is `eelio`; its binding and id are in `worker/wrangler.toml`.
 
+Wrangler reports anonymous usage telemetry to Cloudflare by default. It concerns
+the CLI, not players, but given design value #1 it is worth knowing you can turn
+it off with `npx wrangler telemetry disable` or `WRANGLER_SEND_METRICS=false`.
+
 ---
 
 ## 7. Conventions & guardrails

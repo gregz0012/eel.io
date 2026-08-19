@@ -66,6 +66,8 @@ npx wrangler d1 execute eelio --remote --file=./schema.sql   # create the table,
 npx wrangler deploy                                          # prints the Worker's URL
 ```
 
+Paste that URL into `LEADERBOARD_URL` in `src/index.html`, then `npm run build`.
+
 ## Working on it
 
 The shipped `index.html` is **generated** — don't edit it by hand. The sources
