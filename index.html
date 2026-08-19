@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-<title>Voltfin — deep sea eel</title>
+<title>Fin.io — deep sea eel</title>
 <style>
   :root{
     --abyss:#031521;
@@ -187,6 +187,14 @@
   #bankLine b{color:var(--volt);font-weight:700;}
 
   /* skin picker (its own screen) */
+  #skinPreviewWrap{
+    display:flex;flex-direction:column;align-items:center;gap:4px;
+    background:rgba(4,26,38,.5);border:1px solid rgba(79,230,214,.2);border-radius:16px;
+    padding:14px 18px;
+  }
+  #skinPreview{display:block;}
+  #skinPreviewName{font-size:14px;font-weight:700;color:var(--ink);letter-spacing:.02em;}
+  #skinPreviewStatus{font-size:11px;color:var(--muted);}
   #skins{max-width:560px;width:100%;}
   #skinGrid{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;}
   .skin{
@@ -264,7 +272,7 @@
 
 <!-- Start screen -->
 <div id="start" class="overlay">
-  <h1>VOLTFIN<span class="sub">deep sea eel</span></h1>
+  <h1>FIN.IO<span class="sub">deep sea eel</span></h1>
   <div id="eelSummary">
     <div id="wornSwatch"></div>
     <div id="wornInfo">
@@ -303,6 +311,11 @@
 
 <div id="skinsScreen" class="overlay hidden">
   <h1>YOUR EEL<span class="sub">pick a colour</span></h1>
+  <div id="skinPreviewWrap">
+    <canvas id="skinPreview" width="260" height="100"></canvas>
+    <div id="skinPreviewName">Volt</div>
+    <div id="skinPreviewStatus">Wearing this</div>
+  </div>
   <div id="skins">
     <div id="skinGrid"></div>
     <div id="skinNote"></div>
@@ -778,6 +791,18 @@
     function skinFromHue(hue) {
       return { id: "rival", name: "Rival", hue, sat: 70, bodyLight: 38, headLight: 58, price: 0 };
     }
+    
+    /**
+     * Which of four states a skin is in for a given player — what the shop's
+     * preview panel should say about whatever is currently being browsed:
+     * "worn" (currently equipped), "owned" (bought, not worn), "affordable" (not
+     * owned, but the bank covers it), or "locked" (not owned, not yet affordable).
+     */
+    function skinStatus(skin, { wornId, owned, banked } = {}) {
+      if (skin.id === wornId) return "worn";
+      if (isOwned(skin.id, owned)) return "owned";
+      return canAfford(skin, banked) ? "affordable" : "locked";
+    }
 
     // ---- src/engine/presents.js ----
     // What is inside a present.
@@ -805,7 +830,7 @@
       return kind === "points" || kind === "starfish" || kind === "zap";
     }
 
-    return { CONFIG, seededRng, randInt, weightedPick, addScore, deductLevel, predatorTarget, isBossLevel, levelSpeed, tagFor, isWellFormedTag, tagSpaceSize, validateSubmission, bestOf, rankOf, topRows, PHASES, nextPhase, canDo, isRunning, deposit, diveCost, payForDive, canAffordDive, SKINS, DEFAULT_SKIN_ID, skinById, isOwned, ownedSkins, canAfford, buySkin, wearableSkin, nextSkinToBuy, skinFromHue, PRESENT_KINDS, rollPresent, isKindGift };
+    return { CONFIG, seededRng, randInt, weightedPick, addScore, deductLevel, predatorTarget, isBossLevel, levelSpeed, tagFor, isWellFormedTag, tagSpaceSize, validateSubmission, bestOf, rankOf, topRows, PHASES, nextPhase, canDo, isRunning, deposit, diveCost, payForDive, canAffordDive, SKINS, DEFAULT_SKIN_ID, skinById, isOwned, ownedSkins, canAfford, buySkin, wearableSkin, nextSkinToBuy, skinFromHue, skinStatus, PRESENT_KINDS, rollPresent, isKindGift };
   })();
 
   const canvas = document.getElementById("game");
@@ -2058,6 +2083,11 @@
     // points-per-second check
     if (from === "paused") pausedMs += Date.now() - pausedAt;
     if (event === "surface") renderSkins();     // the run may have unlocked something
+    if (event === "openSkins"){                 // always open showing what's worn
+      previewSkinId = null;
+      updatePreviewInfo();
+      startPreviewLoop();
+    }
 
     running = Engine.isRunning(phase);
     const inDive = phase === "playing" || phase === "paused";
@@ -2074,6 +2104,121 @@
   // ---------- skin picker / shop ----------
   // Buying asks first: a mis-tap should not spend a child's savings.
   let pendingBuy = null;
+
+  // ---------- skin preview ----------
+  // A small, self-contained eel drawn on its own canvas so a browsing player
+  // can see a skin — including a gem's shimmer — before spending anything.
+  // Deliberately not a reuse of drawEelBody: that function is coupled to the
+  // game's single camera and world coordinates, and swapping those out from
+  // under a live game loop for a second, unrelated canvas is exactly the kind
+  // of fragile cleverness this codebase avoids. A little duplicated drawing
+  // code is the simpler, safer trade.
+  const previewCanvas = document.getElementById("skinPreview");
+  const pctx = previewCanvas.getContext("2d");
+  let previewSkinId = null;      // null => show whatever is currently worn
+  let previewLoopRunning = false;
+
+  // a fixed, gentle S-curve in the preview canvas's own pixel space — no
+  // camera, no world coordinates, just a shape to hang a skin on
+  const PREVIEW_BODY = (() => {
+    const w = previewCanvas.width, h = previewCanvas.height, pts = [];
+    for (let i = 0; i < 46; i++){
+      const t = i / 45;
+      pts.push({ x: w * (0.92 - t*0.84), y: h/2 + Math.sin(t*TAU*1.15) * h*0.22 });
+    }
+    return pts;
+  })();
+
+  function currentPreviewSkin(){
+    return Engine.skinById(previewSkinId ?? skinId);
+  }
+
+  function drawPreviewEel(skin){
+    const { hue, sat, bodyLight, headLight, gem } = skin;
+    const w = previewCanvas.width, h = previewCanvas.height, body = PREVIEW_BODY;
+    const radius = h * 0.16;
+    pctx.clearRect(0, 0, w, h);
+    pctx.lineCap = "round"; pctx.lineJoin = "round";
+
+    pctx.save();
+    pctx.globalCompositeOperation = "lighter";
+    pctx.strokeStyle = `hsla(${hue},${Math.min(100,sat+20)}%,${Math.min(80,headLight+8)}%,${gem ? 0.55 : 0.32})`;
+    pctx.lineWidth = radius*2 + (gem ? 11 : 8);
+    pctx.beginPath();
+    body.forEach((pt,i) => i === 0 ? pctx.moveTo(pt.x,pt.y) : pctx.lineTo(pt.x,pt.y));
+    pctx.stroke();
+    pctx.restore();
+
+    for (let i = body.length - 1; i > 0; i--){
+      const t = 1 - i/body.length;
+      const r = radius * (0.35 + 0.65*t);
+      pctx.strokeStyle = `hsl(${hue},${sat}%,${bodyLight + t*18}%)`;
+      pctx.lineWidth = r*2;
+      pctx.beginPath(); pctx.moveTo(body[i].x, body[i].y); pctx.lineTo(body[i-1].x, body[i-1].y); pctx.stroke();
+    }
+
+    if (gem && !reduceMotion){
+      const now = performance.now();
+      pctx.save(); pctx.globalCompositeOperation = "lighter";
+      for (let i = 0; i < body.length; i += 3){
+        const t = 1 - i/body.length;
+        const r = radius * (0.35 + 0.65*t);
+        const twinkle = Math.sin(now*0.004 + i*0.6);
+        if (twinkle < 0.55) continue;
+        pctx.fillStyle = `hsla(${hue},${Math.min(100,sat+15)}%,${Math.min(96,headLight+22)}%,${(twinkle-0.55)/0.45})`;
+        pctx.beginPath(); pctx.arc(body[i].x, body[i].y - r*0.4, Math.max(1.4, r*0.3), 0, TAU); pctx.fill();
+      }
+      pctx.restore();
+    }
+
+    const head = body[0], neck = body[3];
+    const ang = Math.atan2(head.y - neck.y, head.x - neck.x);
+    pctx.save();
+    pctx.translate(head.x, head.y); pctx.rotate(ang);
+    pctx.fillStyle = `hsl(${hue},${sat}%,${headLight}%)`;
+    pctx.beginPath(); pctx.ellipse(0,0,radius*1.5,radius*1.15,0,0,TAU); pctx.fill();
+    if (gem){
+      pctx.save(); pctx.globalCompositeOperation = "lighter";
+      pctx.fillStyle = `hsla(${hue},${Math.min(100,sat+10)}%,96%,0.8)`;
+      pctx.beginPath();
+      pctx.moveTo(-radius*0.15, -radius*0.85);
+      pctx.lineTo(radius*0.35, -radius*0.55);
+      pctx.lineTo(-radius*0.05, -radius*0.35);
+      pctx.closePath(); pctx.fill();
+      pctx.restore();
+    }
+    pctx.fillStyle = "#eaffff";
+    pctx.beginPath(); pctx.arc(radius*0.5,-radius*0.55,radius*0.42,0,TAU); pctx.fill();
+    pctx.beginPath(); pctx.arc(radius*0.5, radius*0.55,radius*0.42,0,TAU); pctx.fill();
+    pctx.fillStyle = "#04202c";
+    pctx.beginPath(); pctx.arc(radius*0.65,-radius*0.55,radius*0.2,0,TAU); pctx.fill();
+    pctx.beginPath(); pctx.arc(radius*0.65, radius*0.55,radius*0.2,0,TAU); pctx.fill();
+    pctx.restore();
+  }
+
+  function updatePreviewInfo(){
+    const skin = currentPreviewSkin();
+    document.getElementById("skinPreviewName").textContent = skin.name;
+    const status = Engine.skinStatus(skin, { wornId: skinId, owned, banked });
+    document.getElementById("skinPreviewStatus").textContent = {
+      worn: "Wearing this",
+      owned: "Tap to wear",
+      affordable: `Tap to buy — ${skin.price.toLocaleString()} points`,
+      locked: `${(skin.price - banked).toLocaleString()} more points needed`,
+    }[status];
+  }
+
+  // self-terminating: just stops rescheduling once the shop screen closes
+  function previewLoop(){
+    if (phase !== "skins"){ previewLoopRunning = false; return; }
+    drawPreviewEel(currentPreviewSkin());
+    requestAnimationFrame(previewLoop);
+  }
+  function startPreviewLoop(){
+    if (previewLoopRunning) return;
+    previewLoopRunning = true;
+    previewLoop();
+  }
 
   function renderSkins(){
     const grid = document.getElementById("skinGrid");
@@ -2104,7 +2249,9 @@
       if (!mine && affordable) cost.style.color = "var(--volt)";
 
       el.append(swatch, name, cost);
+      el.addEventListener("mouseenter", () => { previewSkinId = skin.id; updatePreviewInfo(); });
       el.addEventListener("click", () => {
+        previewSkinId = skin.id;               // browsing always previews, buying or not
         if (mine){ skinId = skin.id; writeStore(STORE.skin, skinId); pendingBuy = null; }
         else pendingBuy = affordable ? skin.id : null;
         renderSkins();
@@ -2114,6 +2261,7 @@
 
     renderBankNote();
     renderHomeSummary(worn);
+    updatePreviewInfo();
   }
 
   function renderHomeSummary(worn){

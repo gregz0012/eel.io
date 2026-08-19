@@ -1,4 +1,4 @@
-// Voltfin leaderboard Worker (Cloudflare Workers + D1).
+// Fin.io leaderboard Worker (Cloudflare Workers + D1).
 //
 //   GET  /top          -> [{ tag, score }]  the board, highest first
 //   POST /scores       -> { rank, best }    submit a run: { id, score, durationMs }

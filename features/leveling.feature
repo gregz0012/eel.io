@@ -1,5 +1,5 @@
 Feature: Levelling and the difficulty ramp
-  Score is what drives Voltfin's difficulty. Levels are sticky — losing points
+  Score is what drives Fin.io's difficulty. Levels are sticky — losing points
   (biting your own tail, sprinting) must never take a level, and the perks that
   came with it, back off the player.
 

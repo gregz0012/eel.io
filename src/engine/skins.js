@@ -101,3 +101,15 @@ export function nextSkinToBuy(banked, owned) {
 export function skinFromHue(hue) {
   return { id: "rival", name: "Rival", hue, sat: 70, bodyLight: 38, headLight: 58, price: 0 };
 }
+
+/**
+ * Which of four states a skin is in for a given player — what the shop's
+ * preview panel should say about whatever is currently being browsed:
+ * "worn" (currently equipped), "owned" (bought, not worn), "affordable" (not
+ * owned, but the bank covers it), or "locked" (not owned, not yet affordable).
+ */
+export function skinStatus(skin, { wornId, owned, banked } = {}) {
+  if (skin.id === wornId) return "worn";
+  if (isOwned(skin.id, owned)) return "owned";
+  return canAfford(skin, banked) ? "affordable" : "locked";
+}

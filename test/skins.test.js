@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   SKINS, DEFAULT_SKIN_ID, skinById, isOwned, ownedSkins, canAfford,
-  buySkin, wearableSkin, nextSkinToBuy, skinFromHue,
+  buySkin, wearableSkin, nextSkinToBuy, skinFromHue, skinStatus,
 } from "../src/engine/skins.js";
 
 const free = SKINS.filter(s => s.price === 0);
@@ -187,5 +187,34 @@ describe("canAfford", () => {
 describe("skinFromHue", () => {
   it("dresses a rival eel in its own hue", () => {
     expect(skinFromHue(210).hue).toBe(210);
+  });
+});
+
+describe("skinStatus", () => {
+  const gold = skinById("gold");
+
+  it("is worn when it is the one currently equipped", () => {
+    expect(skinStatus(gold, { wornId: "gold", owned: [], banked: 0 })).toBe("worn");
+  });
+
+  it("is owned when bought but not currently worn", () => {
+    expect(skinStatus(gold, { wornId: "volt", owned: ["gold"], banked: 0 })).toBe("owned");
+  });
+
+  it("is affordable when not owned but the bank covers it", () => {
+    expect(skinStatus(gold, { wornId: "volt", owned: [], banked: gold.price })).toBe("affordable");
+  });
+
+  it("is locked when not owned and not yet affordable", () => {
+    expect(skinStatus(gold, { wornId: "volt", owned: [], banked: gold.price - 1 })).toBe("locked");
+  });
+
+  it("prefers worn over owned when they happen to coincide", () => {
+    expect(skinStatus(gold, { wornId: "gold", owned: ["gold"], banked: 0 })).toBe("worn");
+  });
+
+  it("a free skin is always owned, never locked", () => {
+    const volt = skinById("volt");
+    expect(skinStatus(volt, { wornId: "gold", owned: [], banked: 0 })).toBe("owned");
   });
 });
