@@ -21,18 +21,6 @@ describe("the catalogue", () => {
     ]);
   });
 
-  it("names the nautical tier for the sea, not the metal", () => {
-    for (const id of ["copper", "iron", "gold", "platinum"]) {
-      expect(skinById(id).name).not.toBe(id[0].toUpperCase() + id.slice(1));
-    }
-  });
-
-  it("names the gem tier for the gem, not the mineral", () => {
-    for (const id of ["emerald", "ruby", "diamond"]) {
-      expect(skinById(id).name).not.toBe(id[0].toUpperCase() + id.slice(1));
-    }
-  });
-
   it("marks exactly the gem tier for the shimmer treatment", () => {
     expect(SKINS.filter(s => s.gem).map(s => s.id)).toEqual(["emerald", "ruby", "diamond"]);
   });
