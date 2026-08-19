@@ -27,6 +27,13 @@ Feature: Screens, pausing and skins
     And they head for the surface
     Then they are on the home screen
 
+  Scenario: Opening and closing the skin shop
+    Given a player on the home screen
+    When they open the skin shop
+    Then they are on the skin shop screen
+    When they close the skin shop
+    Then they are on the home screen
+
   Scenario: A new player has one colour and an empty bank
     Given a player with an empty bank
     Then they own 1 skin

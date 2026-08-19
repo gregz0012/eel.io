@@ -44,9 +44,20 @@ describe("phases", () => {
     expect(nextPhase("playing", "wibble")).toBe("playing");
   });
 
+  it("opens and closes the skin shop from home", () => {
+    expect(nextPhase("home", "openSkins")).toBe("skins");
+    expect(nextPhase("skins", "closeSkins")).toBe("home");
+  });
+
+  it("cannot open the skin shop except from home", () => {
+    for (const phase of ["playing", "paused", "over"]) {
+      expect(nextPhase(phase, "openSkins")).toBe(phase);
+    }
+  });
+
   it("only ever lands on a known phase", () => {
     for (const phase of PHASES) {
-      for (const event of ["dive", "pause", "resume", "die", "surface"]) {
+      for (const event of ["dive", "pause", "resume", "die", "surface", "openSkins", "closeSkins"]) {
         expect(PHASES).toContain(nextPhase(phase, event));
       }
     }
@@ -58,11 +69,15 @@ describe("canDo", () => {
     expect(canDo("playing", "pause")).toBe(true);
     expect(canDo("home", "pause")).toBe(false);
   });
+
+  it("cannot dive from the skin shop", () => {
+    expect(canDo("skins", "dive")).toBe(false);
+  });
 });
 
 describe("isRunning", () => {
   it("advances the world only while playing", () => {
     expect(isRunning("playing")).toBe(true);
-    for (const phase of ["home", "paused", "over"]) expect(isRunning(phase)).toBe(false);
+    for (const phase of ["home", "paused", "over", "skins"]) expect(isRunning(phase)).toBe(false);
   });
 });
