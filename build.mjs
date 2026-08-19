@@ -20,6 +20,8 @@ const root = dirname(fileURLToPath(import.meta.url));
 const ENGINE_MODULES = [
   "config.js",
   "scoring.js",
+  "identity.js",
+  "leaderboard.js",
 ];
 
 const MARKER = "/* @inject:engine */";

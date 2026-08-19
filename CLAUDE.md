@@ -10,7 +10,9 @@ Guidance for working in this repo. Read this before making changes.
 
 Design values, in priority order:
 
-1. **No ads, no accounts, no tracking.** Ever.
+1. **No ads, no accounts, no tracking.** Ever. The leaderboard is opt-in and
+   anonymous — see §4; if a feature needs to know *who* someone is, it is the
+   wrong feature.
 2. **Runs offline, zero runtime dependencies.** The shipped `index.html` is one self-contained file of plain HTML/CSS/JS on a `<canvas>`. No frameworks or libraries reach the browser.
 3. **Family-friendly and approachable.** It's played by kids. Keep controls forgiving and difficulty fair.
 4. **Readable over clever.** This is a hobby project meant to be understood and tinkered with.
@@ -36,7 +38,7 @@ It also hid a fatal bug for the whole life of the file: `let predTarget = PRED_B
 
 The goal is to make behaviour **testable without a browser** by separating a **pure game core** from all side effects. We drive that separation with **BDD first** (describe the behaviour we want) then **TDD** (unit-test and implement the pieces).
 
-> Migrate incrementally — see §7. Do not rewrite it all at once.
+> Migrate incrementally — see §8. Do not rewrite it all at once.
 
 ---
 
@@ -53,24 +55,33 @@ eel.io/
 │   │   ├── vector.js     # pure math: dist, angleLerp, clamp, etc.
 │   │   ├── config.js     # tunables: speeds, spawn targets, thresholds, level rules
 │   │   ├── scoring.js    # addScore, level rules, difficulty ramp (pure)
+│   │   ├── identity.js   # anonymous player tag: id -> "AmberLantern-4721" (pure)
+│   │   ├── leaderboard.js# submission validation, ranking, board sorting (pure)
 │   │   ├── collision.js  # geometry: head-vs-body, tail-bite index, self-cross detection
 │   │   ├── entities.js   # factories: makeEel, makeFish, makePredator, makeBoss, ...
 │   │   ├── spawn.js      # spawn rules (takes rng + config, returns entities)
 │   │   └── world.js      # step(state, input, dt, rng) -> state  ← the heart, pure
 │   ├── render/draw.js    # reads state, draws to canvas (NOT unit-tested; visual only)
 │   └── input/controls.js # pointer/keyboard/touch -> intent object {aim, boost, zap}
+├── worker/               # leaderboard server (Cloudflare Workers + D1)
+│   ├── index.js          # imports the SAME rules from src/engine/
+│   ├── schema.sql
+│   └── wrangler.toml
 ├── features/             # BDD (acceptance): Gherkin .feature files + step defs
 │   ├── leveling.feature
+│   ├── leaderboard.feature
 │   └── steps/
-│       └── leveling.steps.js
 ├── test/                 # TDD (unit): Vitest specs
 │   ├── scoring.test.js   # one spec per engine module
+│   ├── identity.test.js
+│   ├── leaderboard.test.js
+│   ├── worker.test.js    # the Worker's decisions, against a stubbed D1
 │   └── build.test.js     # the build output stays in sync and actually executes
 ├── cucumber.js
 └── package.json          # dev-only deps (vitest, cucumber); ZERO runtime deps
 ```
 
-Only `config.js` and `scoring.js` exist so far. The rest is the destination, not a description of today — see §7.
+`config.js`, `scoring.js`, `identity.js` and `leaderboard.js` exist so far. The rest is the destination, not a description of today — see §8.
 
 ### Why a build step
 
@@ -133,7 +144,62 @@ Now `expect(addScore({score:0,level:1}, 1200).levelsGained).toContain(10)` is a 
 
 ---
 
-## 4. Development workflow: BDD → TDD
+## 4. The leaderboard, and why it does not track anyone
+
+The leaderboard is the one feature that talks to a server, so it is the one most
+able to violate §1. The rules that keep it honest:
+
+**Players are a random id, never a device.** The shell generates a
+`crypto.randomUUID()` once and keeps it in `localStorage`. Deriving an id from
+the device instead — canvas fingerprint, user agent, screen metrics — is exactly
+the tracking §1 forbids, however anonymous the name that comes out. It is also
+worse at the job: fingerprints shift under browser updates, differ between
+browsers on one machine, and **collide across identical tablets**, which is
+precisely what a school or a family has.
+
+**The server names the player, not the client.** `tagFor(id)` is pure, so the
+Worker derives the display tag from the id it was sent and ignores anything else.
+A client cannot put free text on a board that children read — no real names, no
+rude words, no injection. That property is worth more than it looks; do not
+"simplify" it by accepting a tag in the payload.
+
+**Opt-in, and reversible.** Nothing is sent until the player presses *join*. The
+`/forget` endpoint deletes their row, and the shell drops the local id so they
+come back as a new anonymous player.
+
+**It degrades to nothing.** With `LEADERBOARD_URL` empty the feature is inert:
+no requests, no id generated, no storage beyond the local best score. Offline or
+server down, the overlay says so and the game plays exactly as before. The game
+must never need the network.
+
+**Stored data is the minimum:** id, score, duration, timestamps. No IP addresses,
+no user agents, nothing a person typed.
+
+### The caps are a speed bump, not a lock
+
+`validateSubmission` rejects impossible scores (an absolute ceiling, a
+points-per-second rate, a minimum run length) and the Worker rate-limits per
+player. That stops casual tampering. It does **not** stop someone who reads the
+code, because a client-submitted score can always be forged.
+
+The real fix falls out of the architecture: once `world.step` is pure and seeded,
+a submission can carry its seed and input trace, and the server can re-simulate
+the run to check the score is one the game would actually produce. Determinism
+turns anti-cheat into a free side effect. The payload and schema are shaped to
+allow that without a migration.
+
+**One source of truth for the rules.** `worker/index.js` imports
+`src/engine/leaderboard.js` directly, so a cap cannot drift between what the
+client believes and what the server enforces. Change it in `config.js` and both
+sides move together.
+
+**No client SDK, ever.** Firebase's and Supabase's JS SDKs are runtime
+dependencies in the browser and break design value #2 and the single-file build.
+Talk to the server with `fetch` and plain JSON, or not at all.
+
+---
+
+## 5. Development workflow: BDD → TDD
 
 For any **behaviour** change, follow this loop.
 
@@ -188,7 +254,7 @@ Unit tests green, then the scenario green, then refactor with the suite as your 
 
 ---
 
-## 5. Commands
+## 6. Commands
 
 ```bash
 npm install          # dev deps only (vitest, @cucumber/cucumber)
@@ -202,9 +268,18 @@ npm run check        # build:check + bdd + unit         — run before every com
 npm start            # serve at http://localhost:8000 (or just open index.html)
 ```
 
+The leaderboard server is deployed separately and only when it changes:
+
+```bash
+cd worker
+npx wrangler d1 create voltfin-leaderboard          # once; paste the id into wrangler.toml
+npx wrangler d1 execute voltfin-leaderboard --remote --file=./schema.sql
+npx wrangler deploy                                  # prints the URL for LEADERBOARD_URL
+```
+
 ---
 
-## 6. Conventions & guardrails
+## 7. Conventions & guardrails
 
 - **Purity is non-negotiable in `engine/`.** Reaching for `document`, `Math.random`, or `performance.now()` inside `engine/` means stop and inject it instead.
 - **Never hand-edit the root `index.html`.** It is generated. Your change will be silently overwritten by the next build.
@@ -214,12 +289,15 @@ npm start            # serve at http://localhost:8000 (or just open index.html)
 - **Don't unit-test the renderer.** `draw.js` is validated by eye. Keep logic *out* of it so there's nothing there worth testing.
 - **Determinism:** every test that touches randomness seeds the RNG. No test may depend on wall-clock time or real randomness.
 - **No runtime dependencies ship to the browser.** `vitest` and `cucumber` are `devDependencies` only. Keep it that way — `test/build.test.js` asserts the shipped file loads nothing external.
+- **The leaderboard server derives the player's name; it never accepts one.** See §4.
+- **Nothing the leaderboard needs may become something the game needs.** With no
+  server configured, or no network, the game must play exactly as it does today.
 - **Small commits, green suite.** Don't commit red.
 - **Preserve the design values in §1.** Reject changes that add ads, tracking, accounts, or a heavy runtime dependency.
 
 ---
 
-## 7. Migrating the shell (incremental)
+## 8. Migrating the shell (incremental)
 
 One slice at a time, never all at once:
 
@@ -233,13 +311,16 @@ Extraction order — each step only depends on earlier ones:
 
 `vector` → **`scoring` ✅ done** → `collision` → `entities` → `spawn` → `world.step`
 
+`identity` and `leaderboard` sit outside that chain: they were new behaviour rather
+than extracted monolith, so they went straight in as pure modules.
+
 leaving draw/input/loop as the thin side-effect shell. `entities` comes before `spawn` because spawn rules build entities.
 
 Move a tunable into `config.js` when its slice moves, not before — a config full of constants nobody reads yet is worse than one that tracks reality.
 
 ---
 
-## 8. Definition of done
+## 9. Definition of done
 
 A change is done when:
 
@@ -253,11 +334,13 @@ A change is done when:
 
 ---
 
-## 9. Known gaps
+## 10. Known gaps
 
 Honest list of what this architecture does not yet cover:
 
-- **The high score is in-memory only.** `best` resets on reload. Persisting it means `localStorage`, which is compatible with "no accounts, no tracking" (it never leaves the device) — but decide deliberately, and keep it in the shell, not the engine.
+- **Leaderboard scores are not verifiable.** The caps in §4 stop casual forgery and nothing more. Replay verification is the fix and it waits on `world.step`.
+- **The leaderboard is unauthenticated by design.** Anyone who clears their storage becomes a new player. That is the privacy trade: no accounts means no way to tell a returning player from a new one, and no way to stop someone farming fresh ids.
+- **`/forget` trusts whoever holds the id.** The id is a random UUID that only that browser and the server ever see, so this is a capability, not a password. Good enough here; not a pattern to copy somewhere it matters.
 - **No CI.** `npm run check` runs only when someone remembers. A GitHub Actions workflow running it on push would be a cheap win.
 - **No lint or formatter.** Fine for now; the codebase is small and consistent.
-- **`src/index.html` is still a monolith** — everything except scoring. That is expected; see §7.
+- **`src/index.html` is still a monolith** — everything except scoring, identity and the leaderboard rules. That is expected; see §8.

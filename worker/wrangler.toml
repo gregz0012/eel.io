@@ -1,0 +1,16 @@
+name = "voltfin-leaderboard"
+main = "index.js"
+compatibility_date = "2025-01-01"
+
+# Created with:  npx wrangler d1 create voltfin-leaderboard
+# Paste the database_id it prints below, then apply the schema:
+#   npx wrangler d1 execute voltfin-leaderboard --remote --file=./schema.sql
+[[d1_databases]]
+binding = "DB"
+database_name = "voltfin-leaderboard"
+database_id = "PASTE_YOUR_DATABASE_ID_HERE"
+
+# Origins allowed to call this Worker. Keep it to your own pages so the endpoint
+# is not a free write API for anyone who finds it.
+[vars]
+ALLOWED_ORIGINS = "https://gregz0012.github.io,http://localhost:8000"

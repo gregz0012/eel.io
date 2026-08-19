@@ -45,6 +45,28 @@ python3 -m http.server 8000
 # then visit http://localhost:8000
 ```
 
+## Leaderboard
+
+Optional, opt-in, and anonymous. Your browser generates a random id the first
+time you join and turns it into a name like `AmberLantern-4721` — the same name
+every time you come back. There is no account, no sign-in, and nothing about
+your device or about you is collected. "Leave the board" deletes your row and
+forgets the id.
+
+The game does not need it: with no server configured, or with no internet, it
+plays exactly the same and your best score is still kept on your own device.
+
+To run one, deploy the Cloudflare Worker in [`worker/`](worker/) (free tier is
+plenty) and paste its URL into `LEADERBOARD_URL` in `src/index.html`, then
+rebuild:
+
+```bash
+cd worker
+npx wrangler d1 create voltfin-leaderboard    # paste the id it prints into wrangler.toml
+npx wrangler d1 execute voltfin-leaderboard --remote --file=./schema.sql
+npx wrangler deploy
+```
+
 ## Working on it
 
 The shipped `index.html` is **generated** — don't edit it by hand. The sources
