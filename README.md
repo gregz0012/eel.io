@@ -15,10 +15,11 @@ No accounts, no ads, no tracking, no runtime dependencies. The game ships as one
 
 ## Your eel
 
-Every dive's score is **banked**. Spend it on skins from the home screen: five
-colours are yours from the start, and copper, iron, gold, emerald, diamond and
-platinum are bought out of the bank. Buying deducts the points — but a skin you
-have bought is yours forever, however empty the bank gets afterwards.
+Every dive's score is **banked**. Spend it on skins from the home screen: Volt
+is yours from the start, four more everyday colours are cheap first buys, and
+five nautical skins — Copper Hull, Iron Anchor, Gold Doubloon, Diamond Reef and
+Platinum Compass — are the long-term goal. Buying deducts the points — but a
+skin you have bought is yours forever, however empty the bank gets afterwards.
 
 Diving costs a few points too. If you can't cover it, the dive is free: you can
 always play.
