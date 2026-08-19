@@ -62,9 +62,8 @@ rebuild:
 
 ```bash
 cd worker
-npx wrangler d1 create voltfin-leaderboard    # paste the id it prints into wrangler.toml
-npx wrangler d1 execute voltfin-leaderboard --remote --file=./schema.sql
-npx wrangler deploy
+npx wrangler d1 execute eelio --remote --file=./schema.sql   # create the table, once
+npx wrangler deploy                                          # prints the Worker's URL
 ```
 
 ## Working on it

@@ -272,10 +272,11 @@ The leaderboard server is deployed separately and only when it changes:
 
 ```bash
 cd worker
-npx wrangler d1 create voltfin-leaderboard          # once; paste the id into wrangler.toml
-npx wrangler d1 execute voltfin-leaderboard --remote --file=./schema.sql
-npx wrangler deploy                                  # prints the URL for LEADERBOARD_URL
+npx wrangler d1 execute eelio --remote --file=./schema.sql   # create the table, once
+npx wrangler deploy                                          # prints the URL for LEADERBOARD_URL
 ```
+
+The D1 database is `eelio`; its binding and id are in `worker/wrangler.toml`.
 
 ---
 
