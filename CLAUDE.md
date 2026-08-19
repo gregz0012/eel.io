@@ -1,4 +1,4 @@
-# CLAUDE.md — Voltfin (eel.io)
+# CLAUDE.md — Fin.io (eel.io)
 
 Guidance for working in this repo. Read this before making changes.
 
@@ -6,7 +6,7 @@ Guidance for working in this repo. Read this before making changes.
 
 ## 1. Background
 
-**Voltfin** is a small, ad-free browser game in the spirit of *slither.io* / *snake.io*, set in the deep sea. You play a young electric eel: eat fish to grow, bite chunks off rival eels, dodge or shock-and-devour predators, and fight a boss every ten levels.
+**Fin.io** is a small, ad-free browser game in the spirit of *slither.io* / *snake.io*, set in the deep sea. You play a young electric eel: eat fish to grow, bite chunks off rival eels, dodge or shock-and-devour predators, and fight a boss every ten levels.
 
 Design values, in priority order:
 
@@ -97,7 +97,7 @@ eel.io/
 
 ### Why a build step
 
-The engine is written as ES modules so Node can import it directly in tests. Browsers refuse to load ES modules over `file://`, and design value #2 says Voltfin stays a single file you can double-click or email to a kid. Those two facts are irreconcilable without a build.
+The engine is written as ES modules so Node can import it directly in tests. Browsers refuse to load ES modules over `file://`, and design value #2 says Fin.io stays a single file you can double-click or email to a kid. Those two facts are irreconcilable without a build.
 
 So `build.mjs` concatenates the engine modules into one scope, exposes them to the shell as `Engine`, and writes the root `index.html`. There is still **no runtime dependency and no bundler** — the output is plain HTML/CSS/JS, and the build is ~90 lines of readable Node with no packages behind it.
 

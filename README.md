@@ -1,4 +1,4 @@
-# 🌊 Voltfin — deep sea eel
+# 🌊 Fin.io — deep sea eel
 
 A small, ad-free, single-file browser game in the spirit of *slither.io* / *snake.io*, but set in the deep sea. You're a young electric eel: eat fish, grow, bite chunks off rivals, dodge (or shock and devour) predators, and take down a boss every ten levels.
 
