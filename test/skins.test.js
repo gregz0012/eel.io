@@ -13,16 +13,56 @@ describe("the catalogue", () => {
     expect(free[0].id).toBe(DEFAULT_SKIN_ID);
   });
 
-  it("sells the rest, cheap recolours, then metals, then gems", () => {
+  it("sells the rest: colours, then metals, then gems, then heroes", () => {
     expect(paid.map(s => s.id)).toEqual([
       "coral", "orchid", "sky", "lime",
       "copper", "iron", "gold", "platinum",
       "emerald", "ruby", "diamond",
+      "webslinger", "berserker", "symbiote",
     ]);
   });
 
   it("marks exactly the gem tier for the shimmer treatment", () => {
     expect(SKINS.filter(s => s.gem).map(s => s.id)).toEqual(["emerald", "ruby", "diamond"]);
+  });
+
+  it("charges one price per tier", () => {
+    const priceOf = id => skinById(id).price;
+    for (const id of ["coral", "orchid", "sky", "lime"]) expect(priceOf(id)).toBe(250);
+    for (const id of ["emerald", "ruby", "diamond"]) expect(priceOf(id)).toBe(7500);
+    for (const id of ["webslinger", "berserker", "symbiote"]) expect(priceOf(id)).toBe(10000);
+  });
+
+  it("climbs the metals in price", () => {
+    expect(["copper", "iron", "gold", "platinum"].map(id => skinById(id).price))
+      .toEqual([500, 1000, 2000, 5000]);
+  });
+
+  it("gives every metal a sheen that rises with its price", () => {
+    // sheen is what makes a metal read as metal rather than flat colour, so
+    // the dearer metal must always be the shinier one — platinum has to look
+    // visibly better than iron, not merely cost more.
+    const metals = SKINS.filter(s => s.sheen > 0);
+    expect(metals.map(s => s.id)).toEqual(["copper", "iron", "gold", "platinum"]);
+
+    const byPrice = [...metals].sort((a, b) => a.price - b.price);
+    const sheens = byPrice.map(s => s.sheen);
+    expect([...sheens].sort((a, b) => a - b)).toEqual(sheens);
+    expect(skinById("platinum").sheen).toBeGreaterThan(skinById("iron").sheen);
+  });
+
+  it("gives every hero a second colour to band with", () => {
+    for (const id of ["webslinger", "berserker", "symbiote"]) {
+      expect(skinById(id).accent).toMatchObject({
+        hue: expect.any(Number), sat: expect.any(Number), light: expect.any(Number),
+      });
+    }
+  });
+
+  it("keeps the finishes separate — no skin is two things at once", () => {
+    for (const s of SKINS) {
+      expect([s.gem, s.sheen > 0, !!s.accent].filter(Boolean).length).toBeLessThanOrEqual(1);
+    }
   });
 
   it("prices them in the order they are listed", () => {
@@ -121,10 +161,10 @@ describe("buySkin", () => {
     let w = wallet(5000);
     for (const skin of paid) w = buySkin(w, skin.id);
     expect(w.banked).toBeGreaterThanOrEqual(0);
-    // 100+200+300+400+500+1500 = 3000 of the 5000 covers everything up to
-    // iron; gold (4000) and beyond are each too much on what is left (2000)
-    expect(w.owned).toEqual(["coral", "orchid", "sky", "lime", "copper", "iron"]);
-    expect(w.banked).toBe(2000);
+    // 4x250 + 500 + 1000 + 2000 = 4500 of the 5000 covers everything up to
+    // gold; platinum (5000) and beyond are each too much on the 500 left
+    expect(w.owned).toEqual(["coral", "orchid", "sky", "lime", "copper", "iron", "gold"]);
+    expect(w.banked).toBe(500);
   });
 });
 
