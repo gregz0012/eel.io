@@ -716,6 +716,11 @@
     //               This is the whole ladder from dull iron to mirror platinum,
     //               so it rises with price.
     //   accent: {}  a second colour, banded along the body, for two-tone skins.
+    //   accentRatio how much of each band cycle the accent takes, 0..1, default
+    //               half. Low values give thin streaks on a dominant base — which
+    //               is what keeps Symbiote mostly black rather than half white.
+    //   mark: "…"   one extra flourish drawn over the skin: "web" for crosshatched
+    //               strands, "ears" for a pointed cowl, "patch" for masked eyes.
     
     /**
      * Colours are HSL parts the renderer assembles, so a skin can be a metal
@@ -743,12 +748,14 @@
       { id: "diamond",  name: "Diamond",  hue: 190, sat: 45, bodyLight: 58, headLight: 82, price: 7500, gem: true },
     
       // two-tone heroes — the top of the shop
-      { id: "webslinger", name: "Webslinger", hue: 352, sat: 82, bodyLight: 43, headLight: 52, price: 10000,
-        accent: { hue: 222, sat: 78, light: 33 } },
-      { id: "berserker",  name: "Berserker",  hue: 47,  sat: 92, bodyLight: 47, headLight: 62, price: 10000,
-        accent: { hue: 224, sat: 68, light: 25 } },
-      { id: "symbiote",   name: "Symbiote",   hue: 265, sat: 20, bodyLight: 17, headLight: 26, price: 10000,
-        accent: { hue: 0,   sat: 0,  light: 92 } },
+      { id: "spider",   name: "Spider",   hue: 352, sat: 84, bodyLight: 41, headLight: 49, price: 10000,
+        accent: { hue: 222, sat: 80, light: 31 }, accentRatio: 0.3, mark: "web" },
+      { id: "wolfey",   name: "Wolfey",   hue: 47,  sat: 94, bodyLight: 48, headLight: 62, price: 10000,
+        accent: { hue: 226, sat: 72, light: 20 }, accentRatio: 0.42, mark: "ears" },
+      { id: "symbiote", name: "Symbiote", hue: 265, sat: 26, bodyLight: 10, headLight: 15, price: 10000,
+        accent: { hue: 0,   sat: 0,  light: 95 }, accentRatio: 0.18, mark: "web" },
+      { id: "deadeye",  name: "Deadeye",  hue: 354, sat: 82, bodyLight: 38, headLight: 46, price: 10000,
+        accent: { hue: 0,   sat: 0,  light: 9 },  accentRatio: 0.3, mark: "patch" },
     ];
     
     const DEFAULT_SKIN_ID = "volt";
@@ -1694,8 +1701,9 @@
   }
 
   function drawEelBody(body, radius, skin, glow, isPlayer){
-    const { hue, sat, bodyLight, headLight, gem, sheen = 0, accent } = skin;
+    const { hue, sat, bodyLight, headLight, gem, sheen = 0, accent, accentRatio = 0.5, mark } = skin;
     if (body.length < 2) return;
+    const BAND = 52;                               // body points per light/dark cycle
     // sample every few points for smooth ribbon
     const step = 3;
     ctx.lineCap = "round"; ctx.lineJoin = "round";
@@ -1719,13 +1727,39 @@
       const r = radius * (0.35 + 0.65 * t);
       const [ax,ay] = worldToScreen(body[i].x, body[i].y);
       const [bx,by] = worldToScreen(body[Math.max(0,i-step)].x, body[Math.max(0,i-step)].y);
-      const band = accent && Math.floor(i / 26) % 2 === 1;
+      const band = accent && (i % BAND) < BAND * accentRatio;
       const bh = band ? accent.hue : hue;
       const bs = band ? accent.sat : sat;
       const bl = band ? accent.light : bodyLight;
       ctx.strokeStyle = `hsl(${bh},${bs}%,${bl + t*18}%)`;
       ctx.lineWidth = r*2;
       ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by); ctx.stroke();
+    }
+
+    // "web": a strand down the spine crossed by ribs, which is as much of a
+    // web as reads at this size — the crosshatch is the recognisable part
+    if (mark === "web"){
+      const ink = `hsla(${hue},${Math.round(sat*0.4)}%,7%,0.6)`;
+      ctx.strokeStyle = ink;
+      ctx.lineWidth = Math.max(0.7, radius*0.12);
+      ctx.beginPath();
+      for (let i = 0; i < body.length; i += step){
+        const [sx,sy] = worldToScreen(body[i].x, body[i].y);
+        i === 0 ? ctx.moveTo(sx,sy) : ctx.lineTo(sx,sy);
+      }
+      ctx.stroke();
+      for (let i = body.length - 1 - step; i >= 0; i -= step*3){
+        const t = 1 - i / body.length;
+        const r = radius * (0.35 + 0.65 * t);
+        const [ax,ay] = worldToScreen(body[i].x, body[i].y);
+        const [bx,by] = worldToScreen(body[Math.max(0,i-step)].x, body[Math.max(0,i-step)].y);
+        const dx = bx-ax, dy = by-ay, len = Math.hypot(dx,dy) || 1;
+        const nx = -dy/len, ny = dx/len;
+        ctx.beginPath();
+        ctx.moveTo(ax - nx*r*0.95, ay - ny*r*0.95);
+        ctx.lineTo(ax + nx*r*0.95, ay + ny*r*0.95);
+        ctx.stroke();
+      }
     }
 
     // metals: a bright specular streak down one flank and a dark rim down the
@@ -1782,6 +1816,18 @@
                            body[0].x - body[Math.min(6,body.length-1)].x);
     ctx.save();
     ctx.translate(hx,hy); ctx.rotate(ang);
+    // "ears": a pointed cowl swept back off the head, drawn under it so the
+    // head reads as sitting inside the mask
+    if (mark === "ears" && accent){
+      ctx.fillStyle = `hsl(${accent.hue},${accent.sat}%,${accent.light + 20}%)`;
+      for (const s of [-1, 1]){
+        ctx.beginPath();
+        ctx.moveTo(radius*0.35, s*radius*0.65);
+        ctx.lineTo(-radius*0.35, s*radius*2.5);   // tip, swept out and back
+        ctx.lineTo(-radius*0.9,  s*radius*0.45);
+        ctx.closePath(); ctx.fill();
+      }
+    }
     ctx.fillStyle = `hsl(${hue},${sat}%,${headLight}%)`;
     ctx.beginPath(); ctx.ellipse(0,0,radius*1.5,radius*1.15,0,0,TAU); ctx.fill();
     if (gem){
@@ -1795,6 +1841,16 @@
       ctx.lineTo(-radius*0.05, -radius*0.35);
       ctx.closePath(); ctx.fill();
       ctx.restore();
+    }
+    // "patch": a dark mask panel behind each eye, so the whites read as the
+    // cut-outs of a mask rather than as plain eyes
+    if (mark === "patch" && accent){
+      ctx.fillStyle = `hsl(${accent.hue},${accent.sat}%,${accent.light}%)`;
+      for (const s of [-1, 1]){
+        ctx.beginPath();
+        ctx.ellipse(radius*0.52, s*radius*0.55, radius*0.72, radius*0.58, 0, 0, TAU);
+        ctx.fill();
+      }
     }
     // eyes
     ctx.fillStyle = "#eaffff";
@@ -2187,8 +2243,9 @@
   }
 
   function drawPreviewEel(skin){
-    const { hue, sat, bodyLight, headLight, gem, sheen = 0, accent } = skin;
+    const { hue, sat, bodyLight, headLight, gem, sheen = 0, accent, accentRatio = 0.5, mark } = skin;
     const w = previewCanvas.width, h = previewCanvas.height, body = PREVIEW_BODY;
+    const BAND = 10;                               // preview body is shorter, so a tighter cycle
     const radius = h * 0.16;
     pctx.clearRect(0, 0, w, h);
     pctx.lineCap = "round"; pctx.lineJoin = "round";
@@ -2205,13 +2262,32 @@
     for (let i = body.length - 1; i > 0; i--){
       const t = 1 - i/body.length;
       const r = radius * (0.35 + 0.65*t);
-      const band = accent && Math.floor(i / 5) % 2 === 1;
+      const band = accent && (i % BAND) < BAND * accentRatio;
       const bh = band ? accent.hue : hue;
       const bs = band ? accent.sat : sat;
       const bl = band ? accent.light : bodyLight;
       pctx.strokeStyle = `hsl(${bh},${bs}%,${bl + t*18}%)`;
       pctx.lineWidth = r*2;
       pctx.beginPath(); pctx.moveTo(body[i].x, body[i].y); pctx.lineTo(body[i-1].x, body[i-1].y); pctx.stroke();
+    }
+
+    if (mark === "web"){
+      pctx.strokeStyle = `hsla(${hue},${Math.round(sat*0.4)}%,7%,0.6)`;
+      pctx.lineWidth = Math.max(0.7, radius*0.12);
+      pctx.beginPath();
+      body.forEach((pt,i) => i === 0 ? pctx.moveTo(pt.x,pt.y) : pctx.lineTo(pt.x,pt.y));
+      pctx.stroke();
+      for (let i = body.length - 1; i > 0; i -= 3){
+        const t = 1 - i/body.length;
+        const r = radius * (0.35 + 0.65*t);
+        const ax = body[i].x, ay = body[i].y;
+        const dx = body[i-1].x-ax, dy = body[i-1].y-ay, len = Math.hypot(dx,dy) || 1;
+        const nx = -dy/len, ny = dx/len;
+        pctx.beginPath();
+        pctx.moveTo(ax - nx*r*0.95, ay - ny*r*0.95);
+        pctx.lineTo(ax + nx*r*0.95, ay + ny*r*0.95);
+        pctx.stroke();
+      }
     }
 
     // same specular treatment the game uses, so the preview is honest
@@ -2257,6 +2333,16 @@
     const ang = Math.atan2(head.y - neck.y, head.x - neck.x);
     pctx.save();
     pctx.translate(head.x, head.y); pctx.rotate(ang);
+    if (mark === "ears" && accent){
+      pctx.fillStyle = `hsl(${accent.hue},${accent.sat}%,${accent.light + 20}%)`;
+      for (const s of [-1, 1]){
+        pctx.beginPath();
+        pctx.moveTo(radius*0.35, s*radius*0.65);
+        pctx.lineTo(-radius*0.35, s*radius*2.5);   // tip, swept out and back
+        pctx.lineTo(-radius*0.9,  s*radius*0.45);
+        pctx.closePath(); pctx.fill();
+      }
+    }
     pctx.fillStyle = `hsl(${hue},${sat}%,${headLight}%)`;
     pctx.beginPath(); pctx.ellipse(0,0,radius*1.5,radius*1.15,0,0,TAU); pctx.fill();
     if (gem){
@@ -2268,6 +2354,14 @@
       pctx.lineTo(-radius*0.05, -radius*0.35);
       pctx.closePath(); pctx.fill();
       pctx.restore();
+    }
+    if (mark === "patch" && accent){
+      pctx.fillStyle = `hsl(${accent.hue},${accent.sat}%,${accent.light}%)`;
+      for (const s of [-1, 1]){
+        pctx.beginPath();
+        pctx.ellipse(radius*0.52, s*radius*0.55, radius*0.72, radius*0.58, 0, 0, TAU);
+        pctx.fill();
+      }
     }
     pctx.fillStyle = "#eaffff";
     pctx.beginPath(); pctx.arc(radius*0.5,-radius*0.55,radius*0.42,0,TAU); pctx.fill();

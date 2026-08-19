@@ -20,6 +20,11 @@
 //               This is the whole ladder from dull iron to mirror platinum,
 //               so it rises with price.
 //   accent: {}  a second colour, banded along the body, for two-tone skins.
+//   accentRatio how much of each band cycle the accent takes, 0..1, default
+//               half. Low values give thin streaks on a dominant base — which
+//               is what keeps Symbiote mostly black rather than half white.
+//   mark: "…"   one extra flourish drawn over the skin: "web" for crosshatched
+//               strands, "ears" for a pointed cowl, "patch" for masked eyes.
 
 /**
  * Colours are HSL parts the renderer assembles, so a skin can be a metal
@@ -47,12 +52,14 @@ export const SKINS = [
   { id: "diamond",  name: "Diamond",  hue: 190, sat: 45, bodyLight: 58, headLight: 82, price: 7500, gem: true },
 
   // two-tone heroes — the top of the shop
-  { id: "webslinger", name: "Webslinger", hue: 352, sat: 82, bodyLight: 43, headLight: 52, price: 10000,
-    accent: { hue: 222, sat: 78, light: 33 } },
-  { id: "berserker",  name: "Berserker",  hue: 47,  sat: 92, bodyLight: 47, headLight: 62, price: 10000,
-    accent: { hue: 224, sat: 68, light: 25 } },
-  { id: "symbiote",   name: "Symbiote",   hue: 265, sat: 20, bodyLight: 17, headLight: 26, price: 10000,
-    accent: { hue: 0,   sat: 0,  light: 92 } },
+  { id: "spider",   name: "Spider",   hue: 352, sat: 84, bodyLight: 41, headLight: 49, price: 10000,
+    accent: { hue: 222, sat: 80, light: 31 }, accentRatio: 0.3, mark: "web" },
+  { id: "wolfey",   name: "Wolfey",   hue: 47,  sat: 94, bodyLight: 48, headLight: 62, price: 10000,
+    accent: { hue: 226, sat: 72, light: 20 }, accentRatio: 0.42, mark: "ears" },
+  { id: "symbiote", name: "Symbiote", hue: 265, sat: 26, bodyLight: 10, headLight: 15, price: 10000,
+    accent: { hue: 0,   sat: 0,  light: 95 }, accentRatio: 0.18, mark: "web" },
+  { id: "deadeye",  name: "Deadeye",  hue: 354, sat: 82, bodyLight: 38, headLight: 46, price: 10000,
+    accent: { hue: 0,   sat: 0,  light: 9 },  accentRatio: 0.3, mark: "patch" },
 ];
 
 export const DEFAULT_SKIN_ID = "volt";

@@ -18,7 +18,7 @@ describe("the catalogue", () => {
       "coral", "orchid", "sky", "lime",
       "copper", "iron", "gold", "platinum",
       "emerald", "ruby", "diamond",
-      "webslinger", "berserker", "symbiote",
+      "spider", "wolfey", "symbiote", "deadeye",
     ]);
   });
 
@@ -30,7 +30,7 @@ describe("the catalogue", () => {
     const priceOf = id => skinById(id).price;
     for (const id of ["coral", "orchid", "sky", "lime"]) expect(priceOf(id)).toBe(250);
     for (const id of ["emerald", "ruby", "diamond"]) expect(priceOf(id)).toBe(7500);
-    for (const id of ["webslinger", "berserker", "symbiote"]) expect(priceOf(id)).toBe(10000);
+    for (const id of ["spider", "wolfey", "symbiote", "deadeye"]) expect(priceOf(id)).toBe(10000);
   });
 
   it("climbs the metals in price", () => {
@@ -52,7 +52,7 @@ describe("the catalogue", () => {
   });
 
   it("gives every hero a second colour to band with", () => {
-    for (const id of ["webslinger", "berserker", "symbiote"]) {
+    for (const id of ["spider", "wolfey", "symbiote", "deadeye"]) {
       expect(skinById(id).accent).toMatchObject({
         hue: expect.any(Number), sat: expect.any(Number), light: expect.any(Number),
       });
@@ -62,6 +62,29 @@ describe("the catalogue", () => {
   it("keeps the finishes separate — no skin is two things at once", () => {
     for (const s of SKINS) {
       expect([s.gem, s.sheen > 0, !!s.accent].filter(Boolean).length).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("only ever asks for a mark the renderer knows how to draw", () => {
+    for (const s of SKINS) {
+      if (s.mark) expect(["web", "ears", "patch"]).toContain(s.mark);
+    }
+  });
+
+  it("keeps Symbiote mostly black rather than half white", () => {
+    // the accent is near-white, so the ratio is the only thing stopping it
+    // reading as a white eel with black stripes
+    const symbiote = skinById("symbiote");
+    expect(symbiote.accent.light).toBeGreaterThan(80);
+    expect(symbiote.accentRatio).toBeLessThan(0.25);
+    expect(symbiote.bodyLight).toBeLessThan(15);
+  });
+
+  it("keeps every accentRatio a sane fraction", () => {
+    for (const s of SKINS) {
+      if (s.accentRatio === undefined) continue;
+      expect(s.accentRatio).toBeGreaterThan(0);
+      expect(s.accentRatio).toBeLessThan(1);
     }
   });
 
