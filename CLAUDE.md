@@ -26,7 +26,8 @@ Design values, in priority order:
 - **Power-ups:** `starfish` = one-hit shield; `baby electric eel` = charges the zap meter.
 - **Zap:** when charged, stuns **everything** nearby (predators and eels, any size) for a few seconds; nearby fish burst into energy.
 - **Self-cross:** crossing your own tail bites it off — you lose length and points (with a short cooldown and a generous "neck" buffer so ordinary tight turns are safe).
-- **Levelling:** score-based and **sticky** (never falls). `+1 predator every 2 levels`; a `boss every 10 levels` — slower than a normal predator but takes **2 hits** (stun, then ram twice).
+- **Presents:** a wrapped box holding one of six things — points, a shield, a full zap meter, lost points, a predator spawned nearby, or a level taken away. Kind outcomes outweigh cruel ones roughly 7 to 3.
+- **Levelling:** score-based and **sticky** (never falls, except to a present). `+1 predator every 2 levels`; a `boss every 10 levels` — slower than a normal predator but takes **2 hits** (stun, then ram twice).
 
 ---
 
@@ -52,6 +53,7 @@ eel.io/
 │   ├── index.html        # the shell: canvas + HUD + game loop, with /* @inject:engine */
 │   ├── engine/           # PURE game core — no DOM, no canvas, no globals, no wall-clock, no Math.random
 │   │   ├── rng.js        # seeded RNG (deterministic; injected everywhere randomness is needed)
+│   │   ├── presents.js   # what a present holds, rolled from an injected rng (pure)
 │   │   ├── vector.js     # pure math: dist, angleLerp, clamp, etc.
 │   │   ├── config.js     # tunables: speeds, spawn targets, thresholds, level rules
 │   │   ├── scoring.js    # addScore, level rules, difficulty ramp (pure)
@@ -80,6 +82,8 @@ eel.io/
 │   ├── identity.test.js
 │   ├── leaderboard.test.js
 │   ├── session.test.js
+│   ├── rng.test.js
+│   ├── presents.test.js
 │   ├── bank.test.js
 │   ├── skins.test.js
 │   ├── worker.test.js    # the Worker's decisions, against a stubbed D1
@@ -88,8 +92,8 @@ eel.io/
 └── package.json          # dev-only deps (vitest, cucumber); ZERO runtime deps
 ```
 
-`config.js`, `scoring.js`, `identity.js`, `leaderboard.js`, `session.js`, `bank.js`
-and `skins.js` exist so far. The rest is the destination, not a description of today — see §9.
+`config.js`, `rng.js`, `scoring.js`, `identity.js`, `leaderboard.js`, `session.js`,
+`bank.js`, `skins.js` and `presents.js` exist so far. The rest is the destination, not a description of today — see §9.
 
 ### Why a build step
 
@@ -252,6 +256,28 @@ that one does live in `config.js`.
 Buying asks for confirmation in the shell. A mis-tap should not spend a child's
 savings.
 
+### Presents, and the one exception to sticky levels
+
+A present holds one of six effects, rolled by `presents.js` from an **injected
+rng** — the shell passes `Math.random`, tests pass a seeded one, which is what
+makes "kind outcomes outweigh cruel ones" a thing a test can assert rather than
+a hope.
+
+One of those effects takes a level away, and that is a deliberate hole in the
+rule §1 states. Levels remain sticky against *losing points* — `addScore` will
+never lower one — and `deductLevel` is the only function that can, reachable
+only from a present.
+
+It could not simply decrement the level: `addScore` recomputes the level from
+the score, so the next fish eaten would hand it straight back. So a deduction
+also drops the score to the floor of the level below, keeping the two
+consistent. If you add another way to lose a level, use `deductLevel`; do not
+reach for `state.level--`.
+
+The present that spawns a predator puts it 420–620 units away, not on top of the
+player. Being eaten the instant you open a box is not a difficulty spike, it is
+a bug report.
+
 ---
 
 ## 6. Development workflow: BDD → TDD
@@ -347,6 +373,7 @@ it off with `npx wrangler telemetry disable` or `WRANGLER_SEND_METRICS=false`.
 - **Tunables live in `config.js`**, not scattered as magic numbers, so tests can pin them and balance changes stay in one place.
 - **One engine module = one unit spec.** New engine file ⇒ new `test/*.test.js`. Add it to `ENGINE_MODULES` in `build.mjs` too, in dependency order.
 - **Don't unit-test the renderer.** `draw.js` is validated by eye. Keep logic *out* of it so there's nothing there worth testing.
+- **Anything random in `engine/` takes an `rng` argument** — `rollPresent(rng)`, never `Math.random()`. The shell passes the real thing.
 - **Determinism:** every test that touches randomness seeds the RNG. No test may depend on wall-clock time or real randomness.
 - **No runtime dependencies ship to the browser.** `vitest` and `cucumber` are `devDependencies` only. Keep it that way — `test/build.test.js` asserts the shipped file loads nothing external.
 - **The leaderboard server derives the player's name; it never accepts one.** See §4.

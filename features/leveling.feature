@@ -8,6 +8,18 @@ Feature: Levelling and the difficulty ramp
     When the player scores 120 points
     Then the player is on level 2
 
+  Scenario: A present is the one thing that can take a level
+    Given a new game
+    When the player scores 640 points
+    And the player opens a present holding a level deduction
+    Then the player is on level 5
+    And scoring another point does not give the level back
+
+  Scenario: Losing a level cannot go below the first
+    Given a new game
+    When the player opens a present holding a level deduction
+    Then the player is on level 1
+
   Scenario: Levels never fall when points are lost
     Given a new game
     When the player scores 360 points

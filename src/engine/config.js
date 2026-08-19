@@ -16,6 +16,23 @@ export const CONFIG = {
   levelSpeedPerLevel: 0.015,
   levelSpeedMax: 1.4,
 
+  // presents: a wrapped box that could be anything. Weights are relative, so
+  // adding an effect does not mean rebalancing every other number. Good
+  // outcomes outweigh bad ones roughly 7 to 3 — a present should feel like a
+  // treat you sometimes regret, not a coin flip.
+  presents: {
+    target: 3,              // how many drift in the sea at once
+    spawnChance: 0.012,     // per frame, while below target
+    effects: [
+      { kind: "points",    weight: 30, min: 40, max: 260 },
+      { kind: "starfish",  weight: 20 },
+      { kind: "zap",       weight: 20 },
+      { kind: "pointsLost", weight: 12, min: 30, max: 150 },
+      { kind: "predator",  weight: 12 },
+      { kind: "levelDown", weight: 6 },
+    ],
+  },
+
   // the bank: points earned in a dive are banked, and spent on skins
   bank: {
     diveCost: 10,   // charged per dive; a player who cannot afford it dives free

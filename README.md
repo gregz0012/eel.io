@@ -37,6 +37,7 @@ sent anywhere.
 | 🦈 Predators | They'll eat you — dodge them, or shock them and swim in to devour |
 | ⭐ Starfish | A shield that absorbs one hit |
 | ⚡ Baby electric eel | Charges your zap meter |
+| 🎁 Present | Could be points, a shield or a full zap meter — or lost points, a predator on your tail, or a level taken off you |
 | 👑 Boss | Appears every 10 levels — slower than a predator but takes two hits |
 
 ## Mechanics
@@ -46,6 +47,7 @@ sent anywhere.
 - **Bite, don't just swallow.** Hitting a rival's tail chops it off — the rival shrinks and swims on, and the severed piece becomes energy.
 - **The zap stuns everything** nearby (any predator, any eel) for a few seconds. Stun a predator, then ram it to eat it. Stun a boss and land two hits.
 - **Levels ramp difficulty.** A new predator joins every 2 levels; a boss is unleashed every 10.
+- **Presents are a gamble.** Most are a treat. Some are not — and one of them is the only thing in the game that can take a level off you.
 - **Mind your own tail.** Cross over yourself and you'll bite your own tail off, losing length and points.
 - **Getting eaten takes you back to the surface**, not straight into another dive — so you can change your eel before you go again.
 

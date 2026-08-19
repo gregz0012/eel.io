@@ -20,6 +20,21 @@ export function addScore(state, n) {
   return { score, level, levelsGained };
 }
 
+/**
+ * Take a level away — the one thing that can lower it.
+ *
+ * Levels are sticky against *losing points*, so dropping the level alone would
+ * be undone by the next fish the player ate: addScore would recompute the level
+ * from the score and put it straight back. So a deduction drops the score to
+ * the floor of the level below, keeping the two consistent. This is only
+ * reachable from a present (see engine/presents.js); nothing else may call it.
+ */
+export function deductLevel(state) {
+  const level = Math.max(1, state.level - 1);
+  if (level === state.level) return { score: state.score, level };
+  return { score: Math.min(state.score, (level - 1) * CONFIG.pointsPerLevel), level };
+}
+
 /** How many predators should be hunting at this level. */
 export function predatorTarget(level) {
   return CONFIG.predatorsBase + Math.floor(level / CONFIG.levelsPerPredator);

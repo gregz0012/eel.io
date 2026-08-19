@@ -19,12 +19,14 @@ const root = dirname(fileURLToPath(import.meta.url));
 // Dependency order, shallowest first. Add a module here when you extract one.
 const ENGINE_MODULES = [
   "config.js",
+  "rng.js",
   "scoring.js",
   "identity.js",
   "leaderboard.js",
   "session.js",
   "bank.js",
   "skins.js",
+  "presents.js",
 ];
 
 const MARKER = "/* @inject:engine */";

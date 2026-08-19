@@ -263,6 +263,7 @@
       <span class="dot" style="color:#2b5468;background:#2b5468;border:1px solid #ff5d6c"></span><span>Predators — they'll eat you. Shock them, then devour</span>
       <span class="dot" style="color:#ffd166;background:#ffd166"></span><span>Starfish — a shield that saves you from one hit</span>
       <span class="dot" style="color:#f6ff8a;background:#f6ff8a"></span><span>Baby electric eel — fills your zap meter</span>
+      <span class="dot" style="color:#ff7de0;background:#ff7de0"></span><span>Present — could be points, a shield, a charge… or a nasty surprise</span>
     </div>
   </div>
   <div class="tip">Hold mouse / tap-hold to sprint · Space or tap the meter to unleash a shock that stuns everything nearby — then feast · <b>P</b> or <b>Esc</b> to pause</div>
@@ -353,7 +354,7 @@
   zapBtn.addEventListener("touchstart", e => { tryZap(); e.preventDefault(); }, {passive:false});
 
   // ---------- world entities ----------
-  let fish = [], eels = [], predators = [], stars = [], babies = [], feasts = [], energy = [], particles = [], bubbles = [];
+  let fish = [], eels = [], predators = [], stars = [], babies = [], feasts = [], presents = [], energy = [], particles = [], bubbles = [];
   let player, camera, running = false, score = 0, level = 1, best = 0, lastRunMs = 0;
   let phase = "home";                  // home | playing | paused | over — see engine/session.js
   let banked = 0, owned = [], skinId = "volt";   // the bank: earned, spent on skins
@@ -362,6 +363,7 @@
   const ZAP_COST = 1;      // full meter to fire
   let shieldOn = false;
   let shakeT = 0, flashT = 0;
+  let toast = null;            // {text, colour, t} — what the last present held
 
   const FISH_TARGET = 280;
   const EEL_TARGET = 14;
@@ -369,6 +371,7 @@
   const STAR_TARGET = 4;
   const BABY_TARGET = 4;
   const FEAST_TARGET = 3;
+  const PRESENT_TARGET = Engine.CONFIG.presents.target;
 
   function makeEel(x, y, len, isPlayer){
     return {
@@ -421,16 +424,20 @@
     babies.push({ x:p.x, y:p.y, a:rand(0,TAU), r:8, v:rand(.6,1.1),
                   wander:rand(0,TAU), flick:rand(0,TAU) });
   }
+  function addPresent(){
+    const p = spawnAwayFromPlayer(260);
+    presents.push({ x:p.x, y:p.y, r:14, bob:rand(0,TAU), spin:rand(-.4,.4) });
+  }
   function addFeast(){
     const p = spawnAwayFromPlayer(300);
     feasts.push({ x:p.x, y:p.y, r:16, spin:rand(0,TAU), pulse:rand(0,TAU) });
   }
 
   function reset(){
-    fish = []; eels = []; predators = []; stars = []; babies = []; feasts = []; energy = [];
+    fish = []; eels = []; predators = []; stars = []; babies = []; feasts = []; presents = []; energy = [];
     particles = []; bubbles = [];
     score = 0; level = 1; zap = 0.35; shieldOn = false; shakeT = 0; flashT = 0;
-    predTarget = PRED_BASE; bossAlert = 0;
+    predTarget = PRED_BASE; bossAlert = 0; toast = null;
     player = makeEel(WORLD.w/2, WORLD.h/2, 14, true);
     player.body = [];
     player.biteCd = 0;
@@ -442,6 +449,7 @@
     for (let i = 0; i < STAR_TARGET; i++) addStar();
     for (let i = 0; i < BABY_TARGET; i++) addBaby();
     for (let i = 0; i < FEAST_TARGET; i++) addFeast();
+    for (let i = 0; i < PRESENT_TARGET; i++) addPresent();
     for (let i = 0; i < 60; i++)
       bubbles.push({ x:rand(0,WORLD.w), y:rand(0,WORLD.h), r:rand(1,4), v:rand(.2,.8), drift:rand(0,TAU) });
   }
@@ -469,6 +477,51 @@
       addEnergy(p.x + rand(-7,7), p.y + rand(-7,7), hue);
     }
   }
+  // What was in the box. The engine rolls it (pure, seeded in tests); the shell
+  // is what actually grants a shield or spawns a predator.
+  function openPresent(g){
+    const { kind, amount } = Engine.rollPresent(Math.random);
+    burst(g.x, g.y, Engine.isKindGift(kind) ? "#ff7de0" : "#ff5d6c", 30, 6);
+
+    if (kind === "points"){
+      addScore(amount);
+      showToast(`+${amount} points!`, "#8ef3ff");
+    } else if (kind === "starfish"){
+      shieldOn = true;
+      showToast("A shield!", "#ffd166");
+    } else if (kind === "zap"){
+      zap = 1;
+      showToast("Zap charged!", "#f6ff8a");
+    } else if (kind === "pointsLost"){
+      addScore(-amount);
+      showToast(`Oh no — ${amount} points gone`, "#ff9e6d");
+    } else if (kind === "predator"){
+      spawnPredatorNear(player.x, player.y);
+      showToast("A predator! Swim!", "#ff5d6c");
+      shakeT = .35;
+    } else if (kind === "levelDown"){
+      const after = Engine.deductLevel({ score, level });
+      score = after.score;
+      level = after.level;
+      predTarget = Engine.predatorTarget(level);   // the perks go with it
+      showToast("You dropped a level", "#ff5d6c");
+      shakeT = .35;
+    }
+  }
+
+  function showToast(text, colour){ toast = { text, colour, t: 2.2 }; }
+
+  // A present's predator arrives close enough to be frightening, far enough to
+  // be escapable — being eaten the instant you open a box is not fair.
+  function spawnPredatorNear(x, y){
+    const a = rand(0, TAU), d = rand(420, 620);
+    predators.push({ x: clamp(x + Math.cos(a)*d, 40, WORLD.w-40),
+                     y: clamp(y + Math.sin(a)*d, 40, WORLD.h-40),
+                     a: rand(0,TAU), v: rand(1.15,1.55),
+                     r: rand(26,40), wanderA: rand(0,TAU), thinkT: 0, stun: 0,
+                     tail: 0, hue: rand(190,210), dead: false });
+  }
+
   function killEel(e, byPlayer){
     if (e.dead) return;
     e.dead = true;
@@ -902,6 +955,16 @@
       }
     }
 
+    // --- presents (could be anything) ---
+    for (let i = presents.length-1; i>=0; i--){
+      const g = presents[i];
+      g.bob += dt*2.2;
+      if (dist2(g.x,g.y,player.x,player.y) < (R+g.r)*(R+g.r)){
+        presents.splice(i,1);
+        openPresent(g);
+      }
+    }
+
     // --- baby electric eels (charge) ---
     for (let i = babies.length-1; i>=0; i--){
       const b = babies[i];
@@ -976,9 +1039,11 @@
     while (stars.length < STAR_TARGET && Math.random()<0.02) addStar();
     while (babies.length < BABY_TARGET && Math.random()<0.03) addBaby();
     while (feasts.length < FEAST_TARGET && Math.random()<0.015) addFeast();
+    while (presents.length < PRESENT_TARGET && Math.random()<Engine.CONFIG.presents.spawnChance) addPresent();
 
     if (shakeT > 0) shakeT -= dt;
     if (flashT > 0) flashT -= dt;
+    if (toast) { toast.t -= dt; if (toast.t <= 0) toast = null; }
     if (bossAlert > 0) bossAlert -= dt;
 
     // HUD
@@ -1221,6 +1286,46 @@
     }
   }
 
+  function drawPresents(){
+    for (const g of presents){
+      const [sx,sy] = worldToScreen(g.x,g.y);
+      if (sx<-40||sx>W+40||sy<-40||sy>H+40) continue;
+      const lift = Math.sin(g.bob)*3;
+      ctx.save();
+      ctx.translate(sx, sy + lift);
+
+      ctx.save(); ctx.globalCompositeOperation = "lighter";
+      ctx.fillStyle = "rgba(255,125,224,0.28)";
+      ctx.beginPath(); ctx.arc(0,0,g.r*1.9,0,TAU); ctx.fill();
+      ctx.restore();
+
+      const w = g.r*1.6;
+      ctx.fillStyle = "#ff7de0";
+      ctx.fillRect(-w/2, -w/2, w, w);                 // the box
+      ctx.fillStyle = "#ffd166";
+      ctx.fillRect(-w/2, -w*0.12, w, w*0.24);         // ribbon across
+      ctx.fillRect(-w*0.12, -w/2, w*0.24, w);         // ribbon down
+      ctx.beginPath();                                 // bow
+      ctx.arc(-w*0.16, -w/2, w*0.16, 0, TAU);
+      ctx.arc( w*0.16, -w/2, w*0.16, 0, TAU);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  function drawToast(){
+    if (!toast) return;
+    const fade = Math.min(1, toast.t / 0.5);
+    ctx.save();
+    ctx.globalAlpha = fade;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.font = "800 clamp(20px,4.5vw,34px) Trebuchet MS,sans-serif";
+    ctx.fillStyle = toast.colour;
+    ctx.shadowColor = toast.colour; ctx.shadowBlur = 18;
+    ctx.fillText(toast.text, W/2, H*0.3);
+    ctx.restore();
+  }
+
   function drawStars(){
     for (const s of stars){
       const [sx,sy] = worldToScreen(s.x,s.y);
@@ -1345,6 +1450,7 @@
     drawWorldBounds();
     drawBubbles();
     drawEnergy();
+    drawPresents();
     drawStars();
     drawFeasts();
     drawBabies();
@@ -1358,6 +1464,8 @@
       ctx.fillStyle = `rgba(142,243,255,${flashT*0.5})`;
       ctx.fillRect(0,0,W,H);
     }
+
+    drawToast();
 
     if (bossAlert > 0){
       ctx.save();
