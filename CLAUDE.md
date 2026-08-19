@@ -38,7 +38,7 @@ It also hid a fatal bug for the whole life of the file: `let predTarget = PRED_B
 
 The goal is to make behaviour **testable without a browser** by separating a **pure game core** from all side effects. We drive that separation with **BDD first** (describe the behaviour we want) then **TDD** (unit-test and implement the pieces).
 
-> Migrate incrementally — see §8. Do not rewrite it all at once.
+> Migrate incrementally — see §9. Do not rewrite it all at once.
 
 ---
 
@@ -57,6 +57,8 @@ eel.io/
 │   │   ├── scoring.js    # addScore, level rules, difficulty ramp (pure)
 │   │   ├── identity.js   # anonymous player tag: id -> "AmberLantern-4721" (pure)
 │   │   ├── leaderboard.js# submission validation, ranking, board sorting (pure)
+│   │   ├── session.js    # which screen we are on: home/playing/paused/over (pure)
+│   │   ├── skins.js      # the skin catalogue and what unlocks them (pure)
 │   │   ├── collision.js  # geometry: head-vs-body, tail-bite index, self-cross detection
 │   │   ├── entities.js   # factories: makeEel, makeFish, makePredator, makeBoss, ...
 │   │   ├── spawn.js      # spawn rules (takes rng + config, returns entities)
@@ -70,18 +72,21 @@ eel.io/
 ├── features/             # BDD (acceptance): Gherkin .feature files + step defs
 │   ├── leveling.feature
 │   ├── leaderboard.feature
+│   ├── screens.feature
 │   └── steps/
 ├── test/                 # TDD (unit): Vitest specs
 │   ├── scoring.test.js   # one spec per engine module
 │   ├── identity.test.js
 │   ├── leaderboard.test.js
+│   ├── session.test.js
+│   ├── skins.test.js
 │   ├── worker.test.js    # the Worker's decisions, against a stubbed D1
 │   └── build.test.js     # the build output stays in sync and actually executes
 ├── cucumber.js
 └── package.json          # dev-only deps (vitest, cucumber); ZERO runtime deps
 ```
 
-`config.js`, `scoring.js`, `identity.js` and `leaderboard.js` exist so far. The rest is the destination, not a description of today — see §8.
+`config.js`, `scoring.js`, `identity.js`, `leaderboard.js`, `session.js` and `skins.js` exist so far. The rest is the destination, not a description of today — see §9.
 
 ### Why a build step
 
@@ -199,7 +204,40 @@ Talk to the server with `fetch` and plain JSON, or not at all.
 
 ---
 
-## 5. Development workflow: BDD → TDD
+## 5. Screens and skins
+
+**Screens are a state machine** (`engine/session.js`), not a pile of booleans.
+The shell used to infer everything from one `running` flag, which cannot tell
+paused from dead from not-started — that is how you get a resume button that
+revives a dead eel. Every legal move is named in one table and anything else is
+ignored, so `goTo("resume")` from the game over screen is simply a no-op rather
+than a bug. Add a screen by adding a transition, not an `if`.
+
+**Death goes home.** `over` leads only to `home`; there is deliberately no
+`over -> playing`. A player always passes the home screen, so they can change
+their eel before diving again.
+
+**Pausing freezes the world, not the picture.** The loop keeps drawing (the sea
+drifts on behind the overlay) but only `phase === "playing"` calls `update`.
+Paused time is subtracted from the run duration, so a pause cannot flatter the
+leaderboard's points-per-second check.
+
+**Skins unlock on lifetime points** — the running total of everything ever
+scored, which only goes up. Nothing is spent and nothing is lost, the same
+promise the level rules make: a skin, once earned, is earned. (A spend-and-
+deduct model was the alternative; it was rejected because a seven-year-old
+should not be able to bankrupt themselves buying gold.)
+
+`wearableSkin(id, lifetimePoints)` is the only way the shell should pick a skin.
+It falls back to the default for a skin that does not exist or has not been
+earned, which is what stops a stored-value edit putting a player in platinum.
+The catalogue in `skins.js` holds the colours *and* the costs together — it is
+the tunable surface for skins, and splitting it across `config.js` would only
+make a balance change touch two files.
+
+---
+
+## 6. Development workflow: BDD → TDD
 
 For any **behaviour** change, follow this loop.
 
@@ -254,7 +292,7 @@ Unit tests green, then the scenario green, then refactor with the suite as your 
 
 ---
 
-## 6. Commands
+## 7. Commands
 
 ```bash
 npm install          # dev deps only (vitest, @cucumber/cucumber)
@@ -284,7 +322,7 @@ it off with `npx wrangler telemetry disable` or `WRANGLER_SEND_METRICS=false`.
 
 ---
 
-## 7. Conventions & guardrails
+## 8. Conventions & guardrails
 
 - **Purity is non-negotiable in `engine/`.** Reaching for `document`, `Math.random`, or `performance.now()` inside `engine/` means stop and inject it instead.
 - **Never hand-edit the root `index.html`.** It is generated. Your change will be silently overwritten by the next build.
@@ -302,7 +340,7 @@ it off with `npx wrangler telemetry disable` or `WRANGLER_SEND_METRICS=false`.
 
 ---
 
-## 8. Migrating the shell (incremental)
+## 9. Migrating the shell (incremental)
 
 One slice at a time, never all at once:
 
@@ -316,8 +354,9 @@ Extraction order — each step only depends on earlier ones:
 
 `vector` → **`scoring` ✅ done** → `collision` → `entities` → `spawn` → `world.step`
 
-`identity` and `leaderboard` sit outside that chain: they were new behaviour rather
-than extracted monolith, so they went straight in as pure modules.
+`identity`, `leaderboard`, `session` and `skins` sit outside that chain: they were
+new behaviour rather than extracted monolith, so they went straight in as pure
+modules.
 
 leaving draw/input/loop as the thin side-effect shell. `entities` comes before `spawn` because spawn rules build entities.
 
@@ -325,7 +364,7 @@ Move a tunable into `config.js` when its slice moves, not before — a config fu
 
 ---
 
-## 9. Definition of done
+## 10. Definition of done
 
 A change is done when:
 
@@ -339,7 +378,7 @@ A change is done when:
 
 ---
 
-## 10. Known gaps
+## 11. Known gaps
 
 Honest list of what this architecture does not yet cover:
 
@@ -348,4 +387,5 @@ Honest list of what this architecture does not yet cover:
 - **`/forget` trusts whoever holds the id.** The id is a random UUID that only that browser and the server ever see, so this is a capability, not a password. Good enough here; not a pattern to copy somewhere it matters.
 - **No CI.** `npm run check` runs only when someone remembers. A GitHub Actions workflow running it on push would be a cheap win.
 - **No lint or formatter.** Fine for now; the codebase is small and consistent.
-- **`src/index.html` is still a monolith** — everything except scoring, identity and the leaderboard rules. That is expected; see §8.
+- **Skins and lifetime points are local-only.** Clearing site data loses them, and they do not follow a player to another device. Syncing them would need an account, which §1 rules out — so this is a trade we accept, not a bug to fix.
+- **`src/index.html` is still a monolith** — everything except the extracted engine modules. That is expected; see §9.

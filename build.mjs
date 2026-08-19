@@ -22,6 +22,8 @@ const ENGINE_MODULES = [
   "scoring.js",
   "identity.js",
   "leaderboard.js",
+  "session.js",
+  "skins.js",
 ];
 
 const MARKER = "/* @inject:engine */";

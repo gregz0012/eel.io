@@ -11,6 +11,17 @@ No accounts, no ads, no tracking, no runtime dependencies. The game ships as one
 - **Steer** with your mouse or finger — the eel follows your pointer.
 - **Sprint** by holding the mouse button / keeping your finger down (costs a little length).
 - **Shock** with the big **ZAP** button (bottom-right) or the **Space** bar once the meter is charged.
+- **Pause** with **P** or **Esc**, or the button in the top-right corner.
+
+## Your eel
+
+Pick a colour on the home screen. Five are yours from the start; six more —
+copper, iron, gold, emerald, diamond and platinum — unlock as your **lifetime
+points** add up. That total is everything you have ever scored and it never goes
+down, so a skin you have earned stays earned. Nothing is spent to unlock one.
+
+Your colours, your best score and your lifetime total are kept on your own
+device and never sent anywhere.
 
 ## What's in the sea
 
@@ -33,6 +44,7 @@ No accounts, no ads, no tracking, no runtime dependencies. The game ships as one
 - **The zap stuns everything** nearby (any predator, any eel) for a few seconds. Stun a predator, then ram it to eat it. Stun a boss and land two hits.
 - **Levels ramp difficulty.** A new predator joins every 2 levels; a boss is unleashed every 10.
 - **Mind your own tail.** Cross over yourself and you'll bite your own tail off, losing length and points.
+- **Getting eaten takes you back to the surface**, not straight into another dive — so you can change your eel before you go again.
 
 ## Run it locally
 

@@ -105,11 +105,14 @@
   /* ---- overlays ---- */
   .overlay{
     position:absolute;inset:0;display:flex;flex-direction:column;
-    align-items:center;justify-content:center;text-align:center;
-    padding:24px;gap:18px;
+    align-items:center;justify-content:flex-start;text-align:center;
+    padding:24px;gap:18px;overflow-y:auto;
     background:radial-gradient(120% 120% at 50% 30%,rgba(6,42,62,.55),rgba(3,21,33,.9));
     backdrop-filter:blur(3px);
   }
+  /* centred when it fits, scrolled from the top when it doesn't */
+  .overlay>:first-child{margin-top:auto;}
+  .overlay>:last-child{margin-bottom:auto;}
   .hidden{display:none !important;}
   h1{
     font-size:clamp(42px,11vw,86px);
@@ -167,6 +170,42 @@
   }
   button.quiet:hover{box-shadow:0 0 16px rgba(79,230,214,.3);transform:none;}
   .boardactions{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:12px;}
+
+  /* skin picker */
+  #skins{max-width:520px;width:100%;}
+  #skins h2{
+    font-size:11px;letter-spacing:.32em;text-transform:uppercase;
+    color:var(--biolume);font-weight:700;margin-bottom:10px;
+  }
+  #skinGrid{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;}
+  .skin{
+    width:74px;padding:8px 4px 7px;border-radius:12px;cursor:pointer;
+    background:rgba(4,26,38,.55);border:1px solid rgba(79,230,214,.18);
+    display:flex;flex-direction:column;align-items:center;gap:5px;
+    transition:border-color .15s ease,transform .1s ease;
+  }
+  .skin:hover{transform:translateY(-2px);}
+  .skin.on{border-color:var(--volt);box-shadow:0 0 16px rgba(142,243,255,.35);}
+  .skin.locked{cursor:not-allowed;opacity:.6;}
+  .skin.locked .swatch{box-shadow:inset 0 -4px 8px rgba(0,0,0,.45);}
+  .skin .swatch{
+    width:34px;height:34px;border-radius:50%;
+    box-shadow:0 0 12px currentColor,inset 0 -4px 8px rgba(0,0,0,.35);
+  }
+  .skin .name{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink);}
+  .skin .cost{font-size:9px;letter-spacing:.06em;color:var(--muted);font-variant-numeric:tabular-nums;}
+  .skin.locked .name{color:var(--muted);}
+  #skinNote{font-size:12px;color:var(--muted);margin-top:10px;letter-spacing:.03em;}
+  #skinNote b{color:var(--volt);}
+
+  /* pause */
+  #pauseBtn{
+    position:absolute;top:16px;right:16px;z-index:3;
+    width:44px;height:44px;border-radius:50%;padding:0;font-size:15px;letter-spacing:0;
+    background:rgba(4,26,38,.72);color:var(--volt);
+    border:1px solid rgba(79,230,214,.35);box-shadow:none;
+  }
+  #pauseBtn:hover{box-shadow:0 0 18px rgba(79,230,214,.4);transform:none;}
   @media (prefers-reduced-motion:reduce){*{transition:none !important;}}
 </style>
 </head>
@@ -196,10 +235,17 @@
 </div>
 
 <button id="zapBtn" class="hidden">ZAP<small id="zapPct">charging</small></button>
+<button id="pauseBtn" class="hidden" aria-label="Pause">❚❚</button>
 
 <!-- Start screen -->
 <div id="start" class="overlay">
   <h1>VOLTFIN<span class="sub">deep sea eel</span></h1>
+  <div id="skins">
+    <h2>Your eel</h2>
+    <div id="skinGrid"></div>
+    <div id="skinNote"></div>
+  </div>
+  <button id="startBtn">Dive in</button>
   <div class="card">
     You're a young electric eel in the twilight zone. <b>Steer with your mouse or finger.</b>
     Eat little fish to grow. Bite chunks off rival eels — or swallow smaller ones whole. Grab a
@@ -216,8 +262,14 @@
       <span class="dot" style="color:#f6ff8a;background:#f6ff8a"></span><span>Baby electric eel — fills your zap meter</span>
     </div>
   </div>
-  <button id="startBtn">Dive in</button>
-  <div class="tip">Hold mouse / tap-hold to sprint · Space or tap the meter to unleash a shock that stuns everything nearby — then feast</div>
+  <div class="tip">Hold mouse / tap-hold to sprint · Space or tap the meter to unleash a shock that stuns everything nearby — then feast · <b>P</b> or <b>Esc</b> to pause</div>
+</div>
+
+<div id="pause" class="overlay hidden">
+  <h1>PAUSED<span class="sub">the sea holds its breath</span></h1>
+  <div class="final">Score<b id="pauseScore">0</b></div>
+  <button id="resumeBtn">Keep swimming</button>
+  <button id="surfaceBtn" class="quiet">Back to the surface</button>
 </div>
 
 <!-- Game over -->
@@ -234,7 +286,7 @@
       <button id="leaveBtn" class="quiet hidden">Leave the board</button>
     </div>
   </div>
-  <button id="againBtn">Dive again</button>
+  <button id="againBtn">Back to the surface</button>
 </div>
 
 <script>
@@ -436,7 +488,112 @@
         .slice(0, limit);
     }
 
-    return { CONFIG, addScore, predatorTarget, isBossLevel, levelSpeed, tagFor, isWellFormedTag, tagSpaceSize, validateSubmission, bestOf, rankOf, topRows };
+    // ---- src/engine/session.js ----
+    // Which screen the game is on, as a state machine.
+    //
+    // Small, but worth having: the shell used to infer "am I playing?" from a
+    // single `running` boolean, which cannot tell paused from dead from
+    // not-started. That is how you get a resume button that revives a dead eel.
+    // Every transition is named here and anything unnamed is ignored.
+    
+    const PHASES = ["home", "playing", "paused", "over"];
+    
+    const TRANSITIONS = {
+      home:    { dive: "playing" },
+      playing: { pause: "paused", die: "over" },
+      paused:  { resume: "playing", surface: "home" },   // surface = give up the run
+      over:    { surface: "home" },                       // death always goes home first
+    };
+    
+    /** The phase this event leads to, or the current phase if it does not apply. */
+    function nextPhase(phase, event) {
+      return TRANSITIONS[phase]?.[event] ?? phase;
+    }
+    
+    /** Does this event do anything from here? */
+    function canDo(phase, event) {
+      return nextPhase(phase, event) !== phase;
+    }
+    
+    /** Only one phase advances the world. */
+    function isRunning(phase) {
+      return phase === "playing";
+    }
+
+    // ---- src/engine/skins.js ----
+    // Eel skins: five to start with, six more unlocked by playing.
+    //
+    // Unlocks are thresholds against *lifetime* points — the running total of
+    // everything ever scored, which only goes up. Nothing is spent and nothing can
+    // be lost, the same promise the level rules make. A skin, once earned, is
+    // earned.
+    //
+    // This catalogue is the tunable surface for skins: costs and colours both live
+    // here rather than being split between two files.
+    
+    /**
+     * Colours are HSL parts the renderer assembles, so a skin can be a metal
+     * (low saturation, bright head) and not just a hue.
+     */
+    const SKINS = [
+      // the five you start with
+      { id: "volt",     name: "Volt",     hue: 165, sat: 70, bodyLight: 38, headLight: 58, unlockAt: 0 },
+      { id: "coral",    name: "Coral",    hue: 14,  sat: 78, bodyLight: 40, headLight: 60, unlockAt: 0 },
+      { id: "orchid",   name: "Orchid",   hue: 292, sat: 62, bodyLight: 40, headLight: 60, unlockAt: 0 },
+      { id: "sky",      name: "Sky",      hue: 205, sat: 74, bodyLight: 40, headLight: 60, unlockAt: 0 },
+      { id: "lime",     name: "Lime",     hue: 95,  sat: 62, bodyLight: 36, headLight: 56, unlockAt: 0 },
+    
+      // earned, cheapest first
+      { id: "copper",   name: "Copper",   hue: 22,  sat: 58, bodyLight: 36, headLight: 54, unlockAt: 500 },
+      { id: "iron",     name: "Iron",     hue: 210, sat: 10, bodyLight: 34, headLight: 56, unlockAt: 1500 },
+      { id: "gold",     name: "Gold",     hue: 45,  sat: 80, bodyLight: 42, headLight: 62, unlockAt: 4000 },
+      { id: "emerald",  name: "Emerald",  hue: 150, sat: 72, bodyLight: 32, headLight: 54, unlockAt: 9000 },
+      { id: "diamond",  name: "Diamond",  hue: 190, sat: 45, bodyLight: 55, headLight: 78, unlockAt: 20000 },
+      { id: "platinum", name: "Platinum", hue: 220, sat: 8,  bodyLight: 58, headLight: 82, unlockAt: 40000 },
+    ];
+    
+    const DEFAULT_SKIN_ID = "volt";
+    
+    function skinById(id) {
+      return SKINS.find(s => s.id === id) ?? SKINS.find(s => s.id === DEFAULT_SKIN_ID);
+    }
+    
+    function isSkinUnlocked(skin, lifetimePoints) {
+      return (lifetimePoints ?? 0) >= skin.unlockAt;
+    }
+    
+    function unlockedSkins(lifetimePoints) {
+      return SKINS.filter(s => isSkinUnlocked(s, lifetimePoints));
+    }
+    
+    /**
+     * The skin a player can select, falling back to the default if they have not
+     * earned the one they asked for. Guards against a stale stored choice, and
+     * against anyone editing their own storage to wear platinum.
+     */
+    function wearableSkin(id, lifetimePoints) {
+      const skin = skinById(id);
+      return isSkinUnlocked(skin, lifetimePoints) ? skin : skinById(DEFAULT_SKIN_ID);
+    }
+    
+    /** The next skin to work towards, with how far off it is. */
+    function nextUnlock(lifetimePoints) {
+      const points = lifetimePoints ?? 0;
+      const skin = SKINS.filter(s => s.unlockAt > points).sort((a, b) => a.unlockAt - b.unlockAt)[0];
+      return skin ? { skin, pointsToGo: skin.unlockAt - points } : null;
+    }
+    
+    /** Skins unlocked by crossing from one lifetime total to another. */
+    function skinsUnlockedBy(before, after) {
+      return SKINS.filter(s => s.unlockAt > 0 && s.unlockAt > (before ?? 0) && s.unlockAt <= (after ?? 0));
+    }
+    
+    /** Turn a bare hue (rival eels) into a skin the renderer can use. */
+    function skinFromHue(hue) {
+      return { id: "rival", name: "Rival", hue, sat: 70, bodyLight: 38, headLight: 58, unlockAt: 0 };
+    }
+
+    return { CONFIG, addScore, predatorTarget, isBossLevel, levelSpeed, tagFor, isWellFormedTag, tagSpaceSize, validateSubmission, bestOf, rankOf, topRows, PHASES, nextPhase, canDo, isRunning, SKINS, DEFAULT_SKIN_ID, skinById, isSkinUnlocked, unlockedSkins, wearableSkin, nextUnlock, skinsUnlockedBy, skinFromHue };
   })();
 
   const canvas = document.getElementById("game");
@@ -480,6 +637,11 @@
   canvas.addEventListener("touchmove", e => { setPointer(e); e.preventDefault(); }, {passive:false});
   window.addEventListener("touchend", () => pointer.boosting = false);
   window.addEventListener("keydown", e => {
+    if (e.key === "Escape" || e.key === "p" || e.key === "P"){
+      goTo(phase === "paused" ? "resume" : "pause");
+      e.preventDefault();
+      return;
+    }
     if (e.code === "Space"){ e.preventDefault(); tryZap(); }
   });
   document.getElementById("charge").addEventListener("click", tryZap);
@@ -491,6 +653,8 @@
   // ---------- world entities ----------
   let fish = [], eels = [], predators = [], stars = [], babies = [], feasts = [], energy = [], particles = [], bubbles = [];
   let player, camera, running = false, score = 0, level = 1, best = 0, lastRunMs = 0;
+  let phase = "home";                  // home | playing | paused | over — see engine/session.js
+  let lifetime = 0, skinId = "volt";   // lifetime points never fall; they unlock skins
   let predTarget = Engine.CONFIG.predatorsBase, bossAlert = 0;
   let zap = 0;             // 0..1 charge
   const ZAP_COST = 1;      // full meter to fire
@@ -511,7 +675,7 @@
       radius: 7 + len * 0.05,
       body: [],                        // trail points
       isPlayer: !!isPlayer,
-      hue: isPlayer ? 165 : rand(150, 260),
+      hue: isPlayer ? Engine.wearableSkin(skinId, lifetime).hue : rand(150, 260),
       thinkT: 0, wanderA: rand(0, TAU),
       dead: false
     };
@@ -714,7 +878,8 @@
   // Deploy worker/ and paste its address here to switch it on.
   const LEADERBOARD_URL = "";
 
-  const STORE = { id: "voltfin.playerId", best: "voltfin.best", joined: "voltfin.joined" };
+  const STORE = { id: "voltfin.playerId", best: "voltfin.best", joined: "voltfin.joined",
+                  lifetime: "voltfin.lifetime", skin: "voltfin.skin" };
 
   // Storage throws in private browsing and wherever it is blocked. Never let
   // that stop a kid playing the game.
@@ -739,7 +904,7 @@
   }
 
   let joined = readStore(STORE.joined) === "yes";
-  let runStartedAt = 0;
+  let runStartedAt = 0, pausedAt = 0, pausedMs = 0;
 
   async function api(path, options){
     const res = await fetch(LEADERBOARD_URL + path, options);
@@ -824,19 +989,26 @@
   });
 
   function die(reason){
+    phase = Engine.nextPhase(phase, "die");
     running = false;
     burst(player.x, player.y, `hsl(${player.hue},80%,65%)`, 60, 7);
-    lastRunMs = Date.now() - runStartedAt;
+    lastRunMs = Date.now() - runStartedAt - pausedMs;
+
+    // lifetime points only ever go up; they are what unlock skins
+    lifetime += Math.round(score);
+    writeStore(STORE.lifetime, String(lifetime));
+    const earned = Engine.skinsUnlockedBy(lifetime - Math.round(score), lifetime);
+
     best = Math.max(best, Math.round(score));
     writeStore(STORE.best, String(best));          // survives a reload, never leaves the device
     document.getElementById("finalScore").textContent = Math.round(score);
     document.getElementById("best").textContent = best;
     updateBoard(Math.round(score), lastRunMs);
-    document.getElementById("oversub").textContent = reason;
-    document.getElementById("hud").classList.add("hidden");
-    document.getElementById("powerbar").classList.add("hidden");
-    document.getElementById("zapBtn").classList.add("hidden");
-    setTimeout(() => document.getElementById("over").classList.remove("hidden"), 550);
+    document.getElementById("oversub").textContent = earned.length
+      ? `${reason} — you unlocked ${earned.map(s => s.name).join(" and ")}!`
+      : reason;
+    show("hud", false); show("powerbar", false); show("zapBtn", false); show("pauseBtn", false);
+    setTimeout(() => show("over", true), 550);
   }
 
   // ---------- update ----------
@@ -1200,7 +1372,8 @@
     }
   }
 
-  function drawEelBody(body, radius, hue, glow, isPlayer){
+  function drawEelBody(body, radius, skin, glow, isPlayer){
+    const { hue, sat, bodyLight, headLight } = skin;
     if (body.length < 2) return;
     // sample every few points for smooth ribbon
     const step = 3;
@@ -1209,7 +1382,7 @@
     // glow underlay
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
-    ctx.strokeStyle = `hsla(${hue},90%,60%,${glow})`;
+    ctx.strokeStyle = `hsla(${hue},${Math.min(100, sat + 20)}%,${Math.min(80, headLight + 8)}%,${glow})`;
     ctx.lineWidth = radius*2 + 8;
     ctx.beginPath();
     for (let i = 0; i < body.length; i += step){
@@ -1225,7 +1398,7 @@
       const r = radius * (0.35 + 0.65 * t);
       const [ax,ay] = worldToScreen(body[i].x, body[i].y);
       const [bx,by] = worldToScreen(body[Math.max(0,i-step)].x, body[Math.max(0,i-step)].y);
-      ctx.strokeStyle = `hsl(${hue},70%,${38 + t*18}%)`;
+      ctx.strokeStyle = `hsl(${hue},${sat}%,${bodyLight + t*18}%)`;
       ctx.lineWidth = r*2;
       ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by); ctx.stroke();
     }
@@ -1236,7 +1409,7 @@
                            body[0].x - body[Math.min(6,body.length-1)].x);
     ctx.save();
     ctx.translate(hx,hy); ctx.rotate(ang);
-    ctx.fillStyle = `hsl(${hue},72%,58%)`;
+    ctx.fillStyle = `hsl(${hue},${sat}%,${headLight}%)`;
     ctx.beginPath(); ctx.ellipse(0,0,radius*1.5,radius*1.15,0,0,TAU); ctx.fill();
     // eyes
     ctx.fillStyle = "#eaffff";
@@ -1261,7 +1434,7 @@
       ctx.restore();
     }
     const glow = zap >= 1 ? 0.5 : 0.28;
-    drawEelBody(player.body, r, player.hue, glow, true);
+    drawEelBody(player.body, r, Engine.wearableSkin(skinId, lifetime), glow, true);
     // if charged, crackle around head
     if (zap >= 1 && !reduceMotion){
       const [hx,hy] = worldToScreen(player.x, player.y);
@@ -1282,7 +1455,7 @@
     for (const e of eels){
       const [sx,sy] = worldToScreen(e.x,e.y);
       if (sx<-200||sx>W+200||sy<-200||sy>H+200) continue;
-      drawEelBody(e.body, radiusFor(e.len), e.hue, 0.18, false);
+      drawEelBody(e.body, radiusFor(e.len), Engine.skinFromHue(e.hue), 0.18, false);
       if (e.stun > 0 && !reduceMotion){
         ctx.save(); ctx.globalCompositeOperation="lighter";
         ctx.strokeStyle="rgba(142,243,255,0.7)"; ctx.lineWidth=1.5;
@@ -1501,29 +1674,98 @@
   function loop(now){
     let dt = (now - last) / 1000; last = now;
     dt = Math.min(dt, 0.05);
-    if (running) update(dt);
+    if (running) update(dt);      // paused draws the frozen scene but does not step it
     draw();
     requestAnimationFrame(loop);
   }
   requestAnimationFrame(loop);
 
   // ---------- start / restart ----------
-  function startGame(){
-    reset();
-    running = true;
-    runStartedAt = Date.now();
-    pointer.x = W/2; pointer.y = H/2; pointer.has = false;
-    document.getElementById("start").classList.add("hidden");
-    document.getElementById("over").classList.add("hidden");
-    document.getElementById("hud").classList.remove("hidden");
-    document.getElementById("powerbar").classList.remove("hidden");
-    document.getElementById("zapBtn").classList.remove("hidden");
+  // ---------- screens ----------
+  // engine/session.js owns which transitions are legal; this applies them.
+  function show(id, on){ document.getElementById(id).classList.toggle("hidden", !on); }
+
+  function goTo(event){
+    const next = Engine.nextPhase(phase, event);
+    if (next === phase) return;                 // not a legal move from here
+    const from = phase;
+    phase = next;
+
+    if (event === "dive"){
+      reset();
+      runStartedAt = Date.now(); pausedMs = 0;
+      pointer.x = W/2; pointer.y = H/2; pointer.has = false;
+    }
+    if (event === "pause"){
+      pausedAt = Date.now();
+      pointer.boosting = false;                 // no sprinting through a pause
+      document.getElementById("pauseScore").textContent = Math.round(score);
+    }
+    // paused time is not dive time, so a pause cannot flatter the leaderboard's
+    // points-per-second check
+    if (from === "paused") pausedMs += Date.now() - pausedAt;
+    if (event === "surface") renderSkins();     // the run may have unlocked something
+
+    running = Engine.isRunning(phase);
+    const inDive = phase === "playing" || phase === "paused";
+    show("start", phase === "home");
+    show("over", false);                        // die() reveals it on a short delay
+    show("pause", phase === "paused");
+    show("hud", inDive);
+    show("powerbar", inDive);
+    show("zapBtn", inDive);
+    show("pauseBtn", inDive);
+  }
+
+  // ---------- skin picker ----------
+  function renderSkins(){
+    const grid = document.getElementById("skinGrid");
+    grid.textContent = "";
+    const worn = Engine.wearableSkin(skinId, lifetime);
+
+    for (const skin of Engine.SKINS){
+      const unlocked = Engine.isSkinUnlocked(skin, lifetime);
+      const el = document.createElement("div");
+      el.className = "skin" + (skin.id === worn.id ? " on" : "") + (unlocked ? "" : " locked");
+      el.title = unlocked ? skin.name : `${skin.name} — ${skin.unlockAt.toLocaleString()} lifetime points`;
+
+      const swatch = document.createElement("div");
+      swatch.className = "swatch";
+      const colour = `hsl(${skin.hue},${skin.sat}%,${skin.headLight}%)`;
+      swatch.style.color = colour;
+      swatch.style.background = colour;
+      if (!unlocked) swatch.style.filter = "grayscale(.45) brightness(.8)";
+
+      const name = document.createElement("div");
+      name.className = "name"; name.textContent = skin.name;
+
+      const cost = document.createElement("div");
+      cost.className = "cost";
+      cost.textContent = unlocked ? (skin.unlockAt ? "earned" : "") : skin.unlockAt.toLocaleString();
+
+      el.append(swatch, name, cost);
+      if (unlocked) el.addEventListener("click", () => {
+        skinId = skin.id; writeStore(STORE.skin, skinId); renderSkins();
+      });
+      grid.appendChild(el);
+    }
+
+    const next = Engine.nextUnlock(lifetime);
+    document.getElementById("skinNote").textContent = next
+      ? `${lifetime.toLocaleString()} lifetime points — ${next.pointsToGo.toLocaleString()} more to unlock ${next.skin.name}.`
+      : `${lifetime.toLocaleString()} lifetime points — every skin unlocked.`;
   }
   best = Number(readStore(STORE.best)) || 0;
+  lifetime = Number(readStore(STORE.lifetime)) || 0;
+  skinId = Engine.wearableSkin(readStore(STORE.skin), lifetime).id;
   document.getElementById("best").textContent = best;
+  renderSkins();
 
-  document.getElementById("startBtn").addEventListener("click", startGame);
-  document.getElementById("againBtn").addEventListener("click", startGame);
+  document.getElementById("startBtn").addEventListener("click", () => goTo("dive"));
+  document.getElementById("againBtn").addEventListener("click", () => goTo("surface"));
+  document.getElementById("resumeBtn").addEventListener("click", () => goTo("resume"));
+  document.getElementById("surfaceBtn").addEventListener("click", () => goTo("surface"));
+  document.getElementById("pauseBtn").addEventListener("click", () => goTo("pause"));
 })();
 </script>
 </body>

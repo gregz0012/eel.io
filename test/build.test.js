@@ -25,14 +25,18 @@ describe("built index.html", () => {
   });
 
   it("executes without throwing when loaded", () => {
-    const el = new Proxy({}, { get: (_t, k) => {
-      if (k === "getContext") return () => new Proxy({}, { get: () => () => new Proxy({}, { get: () => () => {} }) });
-      if (k === "classList") return { add() {}, remove() {} };
-      if (k === "style") return {};
-      return () => {};
-    }});
+    const ctx2d = new Proxy({}, { get: () => () => new Proxy({}, { get: () => () => {} }) });
+    const makeEl = () => ({
+      style: {}, textContent: "", className: "", title: "",
+      classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
+      getContext: () => ctx2d,
+      addEventListener() {}, append() {}, appendChild() {}, removeChild() {},
+      querySelectorAll: () => [],
+    });
+    const el = makeEl();
     const sandbox = {
-      document: { getElementById: () => el, addEventListener() {} },
+      document: { getElementById: () => el, createElement: () => makeEl(),
+                  querySelectorAll: () => [], addEventListener() {} },
       window: { innerWidth: 800, innerHeight: 600, devicePixelRatio: 1,
                 addEventListener() {}, matchMedia: () => ({ matches: false }) },
       requestAnimationFrame: () => 0,
