@@ -16,6 +16,12 @@ export const CONFIG = {
   levelSpeedPerLevel: 0.015,
   levelSpeedMax: 1.4,
 
+  // growth: how long the player's eel can get. Uncapped growth eventually
+  // turns the body-trail array into real per-frame cost (hundreds of segments
+  // at 60fps) and makes the eel unwieldy to steer well before that — a cap
+  // keeps both the frame budget and the controls sane.
+  maxLen: 250,
+
   // presents: a wrapped box that could be anything. Weights are relative, so
   // adding an effect does not mean rebalancing every other number. Good
   // outcomes outweigh bad ones roughly 7 to 3 — a present should feel like a
