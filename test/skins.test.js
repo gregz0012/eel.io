@@ -8,13 +8,22 @@ const free = SKINS.filter(s => s.price === 0);
 const paid = SKINS.filter(s => s.price > 0);
 
 describe("the catalogue", () => {
-  it("gives everyone five colours to start with", () => {
-    expect(free).toHaveLength(5);
+  it("gives everyone exactly one colour to start with", () => {
+    expect(free).toHaveLength(1);
+    expect(free[0].id).toBe(DEFAULT_SKIN_ID);
   });
 
-  it("sells the six earnable skins", () => {
-    expect(paid.map(s => s.id))
-      .toEqual(["copper", "iron", "gold", "emerald", "diamond", "platinum"]);
+  it("sells the rest, cheap recolours before the nautical tier", () => {
+    expect(paid.map(s => s.id)).toEqual([
+      "coral", "orchid", "sky", "lime",
+      "copper", "iron", "gold", "diamond", "platinum",
+    ]);
+  });
+
+  it("names the nautical tier for the sea, not the metal", () => {
+    for (const id of ["copper", "iron", "gold", "diamond", "platinum"]) {
+      expect(skinById(id).name).not.toBe(id[0].toUpperCase() + id.slice(1));
+    }
   });
 
   it("prices them in the order they are listed", () => {
@@ -37,7 +46,7 @@ describe("the catalogue", () => {
 });
 
 describe("ownership", () => {
-  it("a new player owns the five free colours and nothing else", () => {
+  it("a new player owns only the free colour", () => {
     expect(ownedSkins([]).map(s => s.id)).toEqual(free.map(s => s.id));
   });
 
@@ -111,11 +120,12 @@ describe("buySkin", () => {
 
   it("cannot spend a balance into the negative across many buys", () => {
     let w = wallet(5000);
-    for (const id of ["copper", "iron", "gold", "emerald", "diamond", "platinum"]) {
-      w = buySkin(w, id);
-    }
+    for (const skin of paid) w = buySkin(w, skin.id);
     expect(w.banked).toBeGreaterThanOrEqual(0);
-    expect(w.owned).toEqual(["copper", "iron"]);   // only what 5000 covers
+    // 100+200+300+400+500+1500 = 3000 of the 5000 covers everything up to
+    // iron; gold (4000) and beyond are each too much on what is left (2000)
+    expect(w.owned).toEqual(["coral", "orchid", "sky", "lime", "copper", "iron"]);
+    expect(w.banked).toBe(2000);
   });
 });
 
@@ -135,16 +145,16 @@ describe("wearableSkin", () => {
 
 describe("nextSkinToBuy", () => {
   it("points at the cheapest skin not yet owned", () => {
-    expect(nextSkinToBuy(0, []).skin.id).toBe("copper");
+    expect(nextSkinToBuy(0, []).skin.id).toBe("coral");
   });
 
   it("skips what is already owned", () => {
-    expect(nextSkinToBuy(0, ["copper"]).skin.id).toBe("iron");
+    expect(nextSkinToBuy(0, ["coral", "orchid", "sky", "lime"]).skin.id).toBe("copper");
   });
 
   it("says how much more is needed", () => {
-    const copper = skinById("copper");
-    expect(nextSkinToBuy(copper.price - 100, []).pointsToGo).toBe(100);
+    const coral = skinById("coral");
+    expect(nextSkinToBuy(coral.price - 20, []).pointsToGo).toBe(20);
   });
 
   it("needs nothing more once affordable", () => {

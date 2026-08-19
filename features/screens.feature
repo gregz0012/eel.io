@@ -27,9 +27,9 @@ Feature: Screens, pausing and skins
     And they head for the surface
     Then they are on the home screen
 
-  Scenario: A new player has five colours and an empty bank
+  Scenario: A new player has one colour and an empty bank
     Given a player with an empty bank
-    Then they own 5 skins
+    Then they own 1 skin
     And they do not own the gold skin
     And their bank holds 0 points
 

@@ -66,6 +66,10 @@ Then("they own {int} skins", function (n) {
   assert.equal(ownedSkins(this.wallet.owned).length, n);
 });
 
+Then("they own {int} skin", function (n) {
+  assert.equal(ownedSkins(this.wallet.owned).length, n);
+});
+
 Then("they own the {word} skin", function (id) {
   assert.equal(isOwned(id, this.wallet.owned), true);
 });

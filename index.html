@@ -640,14 +640,17 @@
     }
 
     // ---- src/engine/skins.js ----
-    // Eel skins: five you start with, six you buy.
+    // Eel skins: one you start with, the rest you buy.
     //
     // A skin is bought once out of the bank and owned forever — the balance goes
     // down, ownership never does. Nothing can take a skin away, which is the same
     // promise the level rules make.
     //
     // This catalogue is the tunable surface for skins: prices and colours live here
-    // together, because a balance change should touch one file, not two.
+    // together, because a balance change should touch one file, not two. The top
+    // tier (copper through platinum) is named for the sea rather than the metal —
+    // things a diver actually finds down there — while staying priced and coloured
+    // like the rarity ladder it is.
     
     /**
      * Colours are HSL parts the renderer assembles, so a skin can be a metal
@@ -655,19 +658,20 @@
      */
     const SKINS = [
       // yours from the start
-      { id: "volt",     name: "Volt",     hue: 165, sat: 70, bodyLight: 38, headLight: 58, price: 0 },
-      { id: "coral",    name: "Coral",    hue: 14,  sat: 78, bodyLight: 40, headLight: 60, price: 0 },
-      { id: "orchid",   name: "Orchid",   hue: 292, sat: 62, bodyLight: 40, headLight: 60, price: 0 },
-      { id: "sky",      name: "Sky",      hue: 205, sat: 74, bodyLight: 40, headLight: 60, price: 0 },
-      { id: "lime",     name: "Lime",     hue: 95,  sat: 62, bodyLight: 36, headLight: 56, price: 0 },
+      { id: "volt",     name: "Volt",            hue: 165, sat: 70, bodyLight: 38, headLight: 58, price: 0 },
     
-      // bought, cheapest first
-      { id: "copper",   name: "Copper",   hue: 22,  sat: 58, bodyLight: 36, headLight: 54, price: 500 },
-      { id: "iron",     name: "Iron",     hue: 210, sat: 10, bodyLight: 34, headLight: 56, price: 1500 },
-      { id: "gold",     name: "Gold",     hue: 45,  sat: 80, bodyLight: 42, headLight: 62, price: 4000 },
-      { id: "emerald",  name: "Emerald",  hue: 150, sat: 72, bodyLight: 32, headLight: 54, price: 9000 },
-      { id: "diamond",  name: "Diamond",  hue: 190, sat: 45, bodyLight: 55, headLight: 78, price: 20000 },
-      { id: "platinum", name: "Platinum", hue: 220, sat: 8,  bodyLight: 58, headLight: 82, price: 40000 },
+      // cheap recolours — an early, easy first purchase
+      { id: "coral",    name: "Coral",           hue: 14,  sat: 78, bodyLight: 40, headLight: 60, price: 100 },
+      { id: "orchid",   name: "Orchid",          hue: 292, sat: 62, bodyLight: 40, headLight: 60, price: 200 },
+      { id: "sky",      name: "Sky",             hue: 205, sat: 74, bodyLight: 40, headLight: 60, price: 300 },
+      { id: "lime",     name: "Lime",            hue: 95,  sat: 62, bodyLight: 36, headLight: 56, price: 400 },
+    
+      // the nautical tier, cheapest first
+      { id: "copper",   name: "Copper Hull",     hue: 22,  sat: 58, bodyLight: 36, headLight: 54, price: 500 },
+      { id: "iron",     name: "Iron Anchor",     hue: 210, sat: 10, bodyLight: 34, headLight: 56, price: 1500 },
+      { id: "gold",     name: "Gold Doubloon",   hue: 45,  sat: 80, bodyLight: 42, headLight: 62, price: 4000 },
+      { id: "diamond",  name: "Diamond Reef",    hue: 190, sat: 45, bodyLight: 55, headLight: 78, price: 10000 },
+      { id: "platinum", name: "Platinum Compass",hue: 220, sat: 8,  bodyLight: 58, headLight: 82, price: 25000 },
     ];
     
     const DEFAULT_SKIN_ID = "volt";
@@ -676,7 +680,7 @@
       return SKINS.find(s => s.id === id) ?? SKINS.find(s => s.id === DEFAULT_SKIN_ID);
     }
     
-    /** The five free skins need no purchase; the rest must have been bought. */
+    /** The one free skin needs no purchase; the rest must have been bought. */
     function isOwned(id, owned) {
       const skin = SKINS.find(s => s.id === id);
       if (!skin) return false;
