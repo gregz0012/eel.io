@@ -6,9 +6,14 @@
 //
 // This catalogue is the tunable surface for skins: prices and colours live here
 // together, because a balance change should touch one file, not two. The top
-// tier (copper through platinum) is named for the sea rather than the metal —
-// things a diver actually finds down there — while staying priced and coloured
-// like the rarity ladder it is.
+// tiers are named for the sea rather than the material — things a diver
+// actually finds down there — while staying priced and coloured like the
+// rarity ladder they are.
+//
+// `gem: true` marks the top three as a rarer, showier finish: the renderer
+// gives them a shimmer the plain metals don't get (see drawEelBody in
+// src/index.html). It is a flag, not a hue — the engine only says what a skin
+// *is*; how that gets drawn is entirely the shell's business.
 
 /**
  * Colours are HSL parts the renderer assembles, so a skin can be a metal
@@ -16,20 +21,24 @@
  */
 export const SKINS = [
   // yours from the start
-  { id: "volt",     name: "Volt",            hue: 165, sat: 70, bodyLight: 38, headLight: 58, price: 0 },
+  { id: "volt",     name: "Volt",             hue: 165, sat: 70, bodyLight: 38, headLight: 58, price: 0 },
 
   // cheap recolours — an early, easy first purchase
-  { id: "coral",    name: "Coral",           hue: 14,  sat: 78, bodyLight: 40, headLight: 60, price: 100 },
-  { id: "orchid",   name: "Orchid",          hue: 292, sat: 62, bodyLight: 40, headLight: 60, price: 200 },
-  { id: "sky",      name: "Sky",             hue: 205, sat: 74, bodyLight: 40, headLight: 60, price: 300 },
-  { id: "lime",     name: "Lime",            hue: 95,  sat: 62, bodyLight: 36, headLight: 56, price: 400 },
+  { id: "coral",    name: "Coral",            hue: 14,  sat: 78, bodyLight: 40, headLight: 60, price: 100 },
+  { id: "orchid",   name: "Orchid",           hue: 292, sat: 62, bodyLight: 40, headLight: 60, price: 200 },
+  { id: "sky",      name: "Sky",              hue: 205, sat: 74, bodyLight: 40, headLight: 60, price: 300 },
+  { id: "lime",     name: "Lime",             hue: 95,  sat: 62, bodyLight: 36, headLight: 56, price: 400 },
 
-  // the nautical tier, cheapest first
-  { id: "copper",   name: "Copper Hull",     hue: 22,  sat: 58, bodyLight: 36, headLight: 54, price: 500 },
-  { id: "iron",     name: "Iron Anchor",     hue: 210, sat: 10, bodyLight: 34, headLight: 56, price: 1500 },
-  { id: "gold",     name: "Gold Doubloon",   hue: 45,  sat: 80, bodyLight: 42, headLight: 62, price: 4000 },
-  { id: "diamond",  name: "Diamond Reef",    hue: 190, sat: 45, bodyLight: 55, headLight: 78, price: 10000 },
-  { id: "platinum", name: "Platinum Compass",hue: 220, sat: 8,  bodyLight: 58, headLight: 82, price: 25000 },
+  // the nautical metals — a solid, respectable collection
+  { id: "copper",   name: "Copper Hull",      hue: 22,  sat: 58, bodyLight: 36, headLight: 54, price: 500 },
+  { id: "iron",     name: "Iron Anchor",      hue: 210, sat: 10, bodyLight: 34, headLight: 56, price: 1500 },
+  { id: "gold",     name: "Gold Doubloon",    hue: 45,  sat: 80, bodyLight: 42, headLight: 62, price: 4000 },
+  { id: "platinum", name: "Platinum Compass", hue: 220, sat: 8,  bodyLight: 58, headLight: 82, price: 10000 },
+
+  // the gems — rarer, brighter, and rendered with a shimmer of their own
+  { id: "emerald",  name: "Emerald Tide",     hue: 150, sat: 85, bodyLight: 34, headLight: 60, price: 20000, gem: true },
+  { id: "ruby",     name: "Ruby Beacon",      hue: 350, sat: 82, bodyLight: 36, headLight: 60, price: 35000, gem: true },
+  { id: "diamond",  name: "Diamond Reef",     hue: 190, sat: 45, bodyLight: 58, headLight: 82, price: 60000, gem: true },
 ];
 
 export const DEFAULT_SKIN_ID = "volt";

@@ -25,6 +25,8 @@ When("they pause", function () { this.phase = nextPhase(this.phase, "pause"); })
 When("they resume", function () { this.phase = nextPhase(this.phase, "resume"); });
 When("they are eaten", function () { this.phase = nextPhase(this.phase, "die"); });
 When("they head for the surface", function () { this.phase = nextPhase(this.phase, "surface"); });
+When("they open the skin shop", function () { this.phase = nextPhase(this.phase, "openSkins"); });
+When("they close the skin shop", function () { this.phase = nextPhase(this.phase, "closeSkins"); });
 
 When("they finish a dive worth {int} points", function (score) {
   this.wallet.banked = deposit(this.wallet.banked, score);
@@ -57,6 +59,7 @@ Then("the world is frozen", function () { assert.equal(isRunning(this.phase), fa
 Then("the world is running again", function () { assert.equal(isRunning(this.phase), true); });
 Then("they are on the game over screen", function () { assert.equal(this.phase, "over"); });
 Then("they are on the home screen", function () { assert.equal(this.phase, "home"); });
+Then("they are on the skin shop screen", function () { assert.equal(this.phase, "skins"); });
 
 Then("diving again is not offered from there", function () {
   assert.equal(canDo(this.phase, "dive"), false);

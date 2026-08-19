@@ -171,12 +171,23 @@
   button.quiet:hover{box-shadow:0 0 16px rgba(79,230,214,.3);transform:none;}
   .boardactions{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:12px;}
 
-  /* skin picker */
-  #skins{max-width:520px;width:100%;}
-  #skins h2{
-    font-size:11px;letter-spacing:.32em;text-transform:uppercase;
-    color:var(--biolume);font-weight:700;margin-bottom:10px;
+  /* compact "your eel" summary on the home screen */
+  #eelSummary{
+    display:flex;align-items:center;gap:12px;
+    background:rgba(4,26,38,.5);border:1px solid rgba(79,230,214,.2);border-radius:16px;
+    padding:12px 16px;max-width:420px;width:100%;
   }
+  #wornSwatch{
+    width:38px;height:38px;border-radius:50%;flex:none;
+    box-shadow:0 0 12px currentColor,inset 0 -4px 8px rgba(0,0,0,.35);
+  }
+  #wornInfo{flex:1;text-align:left;min-width:0;}
+  #wornName{font-size:13px;font-weight:700;color:var(--ink);letter-spacing:.02em;}
+  #bankLine{font-size:11px;color:var(--muted);}
+  #bankLine b{color:var(--volt);font-weight:700;}
+
+  /* skin picker (its own screen) */
+  #skins{max-width:560px;width:100%;}
   #skinGrid{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;}
   .skin{
     width:74px;padding:8px 4px 7px;border-radius:12px;cursor:pointer;
@@ -195,6 +206,17 @@
   .skin .name{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink);}
   .skin .cost{font-size:9px;letter-spacing:.06em;color:var(--muted);font-variant-numeric:tabular-nums;}
   .skin.locked .name{color:var(--muted);}
+  /* gems get a shimmer the plain metals don't — a hue-matched pulsing halo */
+  .skin.gem{
+    --gem-hue:200;
+    animation:gemPulse 2.6s ease-in-out infinite;
+  }
+  .skin.gem.on{animation:none;}
+  @keyframes gemPulse{
+    0%,100%{ box-shadow:0 0 0 1px hsla(var(--gem-hue),75%,60%,.45), 0 0 10px hsla(var(--gem-hue),75%,55%,.35); }
+    50%{ box-shadow:0 0 0 1px hsla(var(--gem-hue),85%,68%,.85), 0 0 22px hsla(var(--gem-hue),80%,58%,.65); }
+  }
+  @media (prefers-reduced-motion:reduce){ .skin.gem{ animation:none; } }
   #skinNote{font-size:12px;color:var(--muted);margin-top:10px;letter-spacing:.03em;}
   #skinNote b{color:var(--volt);font-weight:700;}
   #skinNote .hint{font-size:11px;color:var(--muted);margin-top:3px;}
@@ -243,10 +265,13 @@
 <!-- Start screen -->
 <div id="start" class="overlay">
   <h1>VOLTFIN<span class="sub">deep sea eel</span></h1>
-  <div id="skins">
-    <h2>Your eel</h2>
-    <div id="skinGrid"></div>
-    <div id="skinNote"></div>
+  <div id="eelSummary">
+    <div id="wornSwatch"></div>
+    <div id="wornInfo">
+      <div id="wornName">Volt</div>
+      <div id="bankLine">Bank <b id="bankAmount">0</b> points</div>
+    </div>
+    <button id="openSkinsBtn" class="quiet">Change your eel</button>
   </div>
   <button id="startBtn">Dive in</button>
   <div class="card">
@@ -274,6 +299,15 @@
   <div class="final">Score<b id="pauseScore">0</b></div>
   <button id="resumeBtn">Keep swimming</button>
   <button id="surfaceBtn" class="quiet">Back to the surface</button>
+</div>
+
+<div id="skinsScreen" class="overlay hidden">
+  <h1>YOUR EEL<span class="sub">pick a colour</span></h1>
+  <div id="skins">
+    <div id="skinGrid"></div>
+    <div id="skinNote"></div>
+  </div>
+  <button id="closeSkinsBtn">Done</button>
 </div>
 
 <!-- Game over -->
@@ -583,13 +617,14 @@
     // not-started. That is how you get a resume button that revives a dead eel.
     // Every transition is named here and anything unnamed is ignored.
     
-    const PHASES = ["home", "playing", "paused", "over"];
+    const PHASES = ["home", "skins", "playing", "paused", "over"];
     
     const TRANSITIONS = {
-      home:    { dive: "playing" },
+      home:    { dive: "playing", openSkins: "skins" },
+      skins:   { closeSkins: "home" },                     // only ever leads back home
       playing: { pause: "paused", die: "over" },
-      paused:  { resume: "playing", surface: "home" },   // surface = give up the run
-      over:    { surface: "home" },                       // death always goes home first
+      paused:  { resume: "playing", surface: "home" },     // surface = give up the run
+      over:    { surface: "home" },                        // death always goes home first
     };
     
     /** The phase this event leads to, or the current phase if it does not apply. */
@@ -648,9 +683,14 @@
     //
     // This catalogue is the tunable surface for skins: prices and colours live here
     // together, because a balance change should touch one file, not two. The top
-    // tier (copper through platinum) is named for the sea rather than the metal —
-    // things a diver actually finds down there — while staying priced and coloured
-    // like the rarity ladder it is.
+    // tiers are named for the sea rather than the material — things a diver
+    // actually finds down there — while staying priced and coloured like the
+    // rarity ladder they are.
+    //
+    // `gem: true` marks the top three as a rarer, showier finish: the renderer
+    // gives them a shimmer the plain metals don't get (see drawEelBody in
+    // src/index.html). It is a flag, not a hue — the engine only says what a skin
+    // *is*; how that gets drawn is entirely the shell's business.
     
     /**
      * Colours are HSL parts the renderer assembles, so a skin can be a metal
@@ -658,20 +698,24 @@
      */
     const SKINS = [
       // yours from the start
-      { id: "volt",     name: "Volt",            hue: 165, sat: 70, bodyLight: 38, headLight: 58, price: 0 },
+      { id: "volt",     name: "Volt",             hue: 165, sat: 70, bodyLight: 38, headLight: 58, price: 0 },
     
       // cheap recolours — an early, easy first purchase
-      { id: "coral",    name: "Coral",           hue: 14,  sat: 78, bodyLight: 40, headLight: 60, price: 100 },
-      { id: "orchid",   name: "Orchid",          hue: 292, sat: 62, bodyLight: 40, headLight: 60, price: 200 },
-      { id: "sky",      name: "Sky",             hue: 205, sat: 74, bodyLight: 40, headLight: 60, price: 300 },
-      { id: "lime",     name: "Lime",            hue: 95,  sat: 62, bodyLight: 36, headLight: 56, price: 400 },
+      { id: "coral",    name: "Coral",            hue: 14,  sat: 78, bodyLight: 40, headLight: 60, price: 100 },
+      { id: "orchid",   name: "Orchid",           hue: 292, sat: 62, bodyLight: 40, headLight: 60, price: 200 },
+      { id: "sky",      name: "Sky",              hue: 205, sat: 74, bodyLight: 40, headLight: 60, price: 300 },
+      { id: "lime",     name: "Lime",             hue: 95,  sat: 62, bodyLight: 36, headLight: 56, price: 400 },
     
-      // the nautical tier, cheapest first
-      { id: "copper",   name: "Copper Hull",     hue: 22,  sat: 58, bodyLight: 36, headLight: 54, price: 500 },
-      { id: "iron",     name: "Iron Anchor",     hue: 210, sat: 10, bodyLight: 34, headLight: 56, price: 1500 },
-      { id: "gold",     name: "Gold Doubloon",   hue: 45,  sat: 80, bodyLight: 42, headLight: 62, price: 4000 },
-      { id: "diamond",  name: "Diamond Reef",    hue: 190, sat: 45, bodyLight: 55, headLight: 78, price: 10000 },
-      { id: "platinum", name: "Platinum Compass",hue: 220, sat: 8,  bodyLight: 58, headLight: 82, price: 25000 },
+      // the nautical metals — a solid, respectable collection
+      { id: "copper",   name: "Copper Hull",      hue: 22,  sat: 58, bodyLight: 36, headLight: 54, price: 500 },
+      { id: "iron",     name: "Iron Anchor",      hue: 210, sat: 10, bodyLight: 34, headLight: 56, price: 1500 },
+      { id: "gold",     name: "Gold Doubloon",    hue: 45,  sat: 80, bodyLight: 42, headLight: 62, price: 4000 },
+      { id: "platinum", name: "Platinum Compass", hue: 220, sat: 8,  bodyLight: 58, headLight: 82, price: 10000 },
+    
+      // the gems — rarer, brighter, and rendered with a shimmer of their own
+      { id: "emerald",  name: "Emerald Tide",     hue: 150, sat: 85, bodyLight: 34, headLight: 60, price: 20000, gem: true },
+      { id: "ruby",     name: "Ruby Beacon",      hue: 350, sat: 82, bodyLight: 36, headLight: 60, price: 35000, gem: true },
+      { id: "diamond",  name: "Diamond Reef",     hue: 190, sat: 45, bodyLight: 58, headLight: 82, price: 60000, gem: true },
     ];
     
     const DEFAULT_SKIN_ID = "volt";
@@ -1605,17 +1649,17 @@
   }
 
   function drawEelBody(body, radius, skin, glow, isPlayer){
-    const { hue, sat, bodyLight, headLight } = skin;
+    const { hue, sat, bodyLight, headLight, gem } = skin;
     if (body.length < 2) return;
     // sample every few points for smooth ribbon
     const step = 3;
     ctx.lineCap = "round"; ctx.lineJoin = "round";
 
-    // glow underlay
+    // glow underlay — gems run a little hotter than plain metal
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
-    ctx.strokeStyle = `hsla(${hue},${Math.min(100, sat + 20)}%,${Math.min(80, headLight + 8)}%,${glow})`;
-    ctx.lineWidth = radius*2 + 8;
+    ctx.strokeStyle = `hsla(${hue},${Math.min(100, sat + 20)}%,${Math.min(80, headLight + 8)}%,${gem ? Math.min(1, glow*1.3 + 0.12) : glow})`;
+    ctx.lineWidth = radius*2 + (gem ? 11 : 8);
     ctx.beginPath();
     for (let i = 0; i < body.length; i += step){
       const [sx,sy] = worldToScreen(body[i].x, body[i].y);
@@ -1635,6 +1679,25 @@
       ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by); ctx.stroke();
     }
 
+    // gems get a travelling twinkle down the spine that plain metal never has —
+    // this is the one thing that makes the top tier look worth the price, so it
+    // stays even under reduced motion (it is a colour change, not a shake)
+    if (gem && !reduceMotion){
+      const now = performance.now();
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      for (let i = 0; i < body.length; i += step*4){
+        const t = 1 - i / body.length;
+        const r = radius * (0.35 + 0.65*t);
+        const twinkle = Math.sin(now*0.004 + i*0.6);
+        if (twinkle < 0.55) continue;               // sparkles come and go, not always-on
+        const [sx,sy] = worldToScreen(body[i].x, body[i].y);
+        ctx.fillStyle = `hsla(${hue},${Math.min(100,sat+15)}%,${Math.min(96,headLight+22)}%,${(twinkle-0.55)/0.45})`;
+        ctx.beginPath(); ctx.arc(sx, sy - r*0.4, Math.max(1.4, r*0.3), 0, TAU); ctx.fill();
+      }
+      ctx.restore();
+    }
+
     // head
     const [hx,hy] = worldToScreen(body[0].x, body[0].y);
     const ang = Math.atan2(body[0].y - body[Math.min(6,body.length-1)].y,
@@ -1643,6 +1706,18 @@
     ctx.translate(hx,hy); ctx.rotate(ang);
     ctx.fillStyle = `hsl(${hue},${sat}%,${headLight}%)`;
     ctx.beginPath(); ctx.ellipse(0,0,radius*1.5,radius*1.15,0,0,TAU); ctx.fill();
+    if (gem){
+      // a faceted glint on the crown, standing in for a cut gem's flat faces
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.fillStyle = `hsla(${hue},${Math.min(100,sat+10)}%,96%,0.8)`;
+      ctx.beginPath();
+      ctx.moveTo(-radius*0.15, -radius*0.85);
+      ctx.lineTo(radius*0.35, -radius*0.55);
+      ctx.lineTo(-radius*0.05, -radius*0.35);
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
     // eyes
     ctx.fillStyle = "#eaffff";
     ctx.beginPath(); ctx.arc(radius*0.5,-radius*0.55,radius*0.42,0,TAU); ctx.fill();
@@ -1987,6 +2062,7 @@
     running = Engine.isRunning(phase);
     const inDive = phase === "playing" || phase === "paused";
     show("start", phase === "home");
+    show("skinsScreen", phase === "skins");
     show("over", false);                        // die() reveals it on a short delay
     show("pause", phase === "paused");
     show("hud", inDive);
@@ -2008,7 +2084,8 @@
       const mine = Engine.isOwned(skin.id, owned);
       const affordable = Engine.canAfford(skin, banked);
       const el = document.createElement("div");
-      el.className = "skin" + (skin.id === worn.id ? " on" : "") + (mine ? "" : " locked");
+      el.className = "skin" + (skin.gem ? " gem" : "") + (skin.id === worn.id ? " on" : "") + (mine ? "" : " locked");
+      if (skin.gem) el.style.setProperty("--gem-hue", skin.hue);
       el.title = mine ? skin.name : `${skin.name} — ${skin.price.toLocaleString()} points`;
 
       const swatch = document.createElement("div");
@@ -2036,6 +2113,16 @@
     }
 
     renderBankNote();
+    renderHomeSummary(worn);
+  }
+
+  function renderHomeSummary(worn){
+    const colour = `hsl(${worn.hue},${worn.sat}%,${worn.headLight}%)`;
+    const swatch = document.getElementById("wornSwatch");
+    swatch.style.color = colour;
+    swatch.style.background = colour;
+    document.getElementById("wornName").textContent = worn.name;
+    document.getElementById("bankAmount").textContent = banked.toLocaleString();
   }
 
   function renderBankNote(){
@@ -2121,6 +2208,8 @@
   document.getElementById("resumeBtn").addEventListener("click", () => goTo("resume"));
   document.getElementById("surfaceBtn").addEventListener("click", () => goTo("surface"));
   document.getElementById("pauseBtn").addEventListener("click", () => goTo("pause"));
+  document.getElementById("openSkinsBtn").addEventListener("click", () => goTo("openSkins"));
+  document.getElementById("closeSkinsBtn").addEventListener("click", () => goTo("closeSkins"));
 })();
 </script>
 </body>

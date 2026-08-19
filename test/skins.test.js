@@ -13,17 +13,28 @@ describe("the catalogue", () => {
     expect(free[0].id).toBe(DEFAULT_SKIN_ID);
   });
 
-  it("sells the rest, cheap recolours before the nautical tier", () => {
+  it("sells the rest, cheap recolours, then metals, then gems", () => {
     expect(paid.map(s => s.id)).toEqual([
       "coral", "orchid", "sky", "lime",
-      "copper", "iron", "gold", "diamond", "platinum",
+      "copper", "iron", "gold", "platinum",
+      "emerald", "ruby", "diamond",
     ]);
   });
 
   it("names the nautical tier for the sea, not the metal", () => {
-    for (const id of ["copper", "iron", "gold", "diamond", "platinum"]) {
+    for (const id of ["copper", "iron", "gold", "platinum"]) {
       expect(skinById(id).name).not.toBe(id[0].toUpperCase() + id.slice(1));
     }
+  });
+
+  it("names the gem tier for the gem, not the mineral", () => {
+    for (const id of ["emerald", "ruby", "diamond"]) {
+      expect(skinById(id).name).not.toBe(id[0].toUpperCase() + id.slice(1));
+    }
+  });
+
+  it("marks exactly the gem tier for the shimmer treatment", () => {
+    expect(SKINS.filter(s => s.gem).map(s => s.id)).toEqual(["emerald", "ruby", "diamond"]);
   });
 
   it("prices them in the order they are listed", () => {

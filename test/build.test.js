@@ -27,7 +27,7 @@ describe("built index.html", () => {
   it("executes without throwing when loaded", () => {
     const ctx2d = new Proxy({}, { get: () => () => new Proxy({}, { get: () => () => {} }) });
     const makeEl = () => ({
-      style: {}, textContent: "", className: "", title: "",
+      style: { setProperty() {} }, textContent: "", className: "", title: "",
       classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
       getContext: () => ctx2d,
       addEventListener() {}, append() {}, appendChild() {}, removeChild() {},
