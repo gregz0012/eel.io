@@ -16,11 +16,19 @@ No accounts, no ads, no tracking, no runtime dependencies. The game ships as one
 ## Your eel
 
 Every dive's score is **banked**. Spend it in the skin shop — tap "Change
-your eel" on the home screen: Volt is yours from the start, four more
-everyday colours are cheap first buys, four metals (Copper, Iron, Gold,
-Platinum) are the mid-game goal, and three gems — Emerald, Ruby and
-Diamond — shimmer above them as the top tier. Buying deducts the points — but a skin you have bought is yours
-forever, however empty the bank gets afterwards.
+your eel" on the home screen. Volt is yours from the start; after that:
+
+| Tier | Skins | Price each |
+| --- | --- | --- |
+| Colours | Coral, Orchid, Sky, Lime | 250 |
+| Metals | Copper, Iron, Gold, Platinum | 500 / 1,000 / 2,000 / 5,000 |
+| Gems | Emerald, Ruby, Diamond | 7,500 |
+| Heroes | Webslinger, Berserker, Symbiote | 10,000 |
+
+The metals catch the light — the dearer the metal, the harder it shines, so
+Platinum is a mirror where Copper is a soft glow. Gems shimmer. Heroes are
+banded in two colours. Buying deducts the points — but a skin you have bought
+is yours forever, however empty the bank gets afterwards.
 
 Diving costs a few points too. If you can't cover it, the dive is free: you can
 always play.

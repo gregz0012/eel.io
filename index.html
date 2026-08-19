@@ -703,10 +703,19 @@
     // This catalogue is the tunable surface for skins: prices and colours live here
     // together, because a balance change should touch one file, not two.
     //
-    // `gem: true` marks the top three as a rarer, showier finish: the renderer
-    // gives them a shimmer the plain metals don't get (see drawEelBody in
-    // src/index.html). It is a flag, not a hue — the engine only says what a skin
-    // *is*; how that gets drawn is entirely the shell's business.
+    // Three optional flags tell the renderer to do something beyond a flat colour.
+    // All of them are data, not drawing: the engine only says what a skin *is*,
+    // and how that gets drawn is entirely the shell's business (drawEelBody and
+    // drawPreviewEel in src/index.html).
+    //
+    //   gem: true   a rarer, showier finish — a travelling sparkle and a faceted
+    //               glint on the head.
+    //   sheen: n    0..1, how hard the light catches a metal. Drives a bright
+    //               specular streak down one flank and a dark rim down the other,
+    //               which is what reads as curved metal rather than flat colour.
+    //               This is the whole ladder from dull iron to mirror platinum,
+    //               so it rises with price.
+    //   accent: {}  a second colour, banded along the body, for two-tone skins.
     
     /**
      * Colours are HSL parts the renderer assembles, so a skin can be a metal
@@ -714,24 +723,32 @@
      */
     const SKINS = [
       // yours from the start
-      { id: "volt",     name: "Volt",             hue: 165, sat: 70, bodyLight: 38, headLight: 58, price: 0 },
+      { id: "volt",     name: "Volt",     hue: 165, sat: 70, bodyLight: 38, headLight: 58, price: 0 },
     
-      // cheap recolours — an early, easy first purchase
-      { id: "coral",    name: "Coral",            hue: 14,  sat: 78, bodyLight: 40, headLight: 60, price: 100 },
-      { id: "orchid",   name: "Orchid",           hue: 292, sat: 62, bodyLight: 40, headLight: 60, price: 200 },
-      { id: "sky",      name: "Sky",              hue: 205, sat: 74, bodyLight: 40, headLight: 60, price: 300 },
-      { id: "lime",     name: "Lime",             hue: 95,  sat: 62, bodyLight: 36, headLight: 56, price: 400 },
+      // plain colours — an early, easy first purchase, all one price
+      { id: "coral",    name: "Coral",    hue: 14,  sat: 78, bodyLight: 40, headLight: 60, price: 250 },
+      { id: "orchid",   name: "Orchid",   hue: 292, sat: 62, bodyLight: 40, headLight: 60, price: 250 },
+      { id: "sky",      name: "Sky",      hue: 205, sat: 74, bodyLight: 40, headLight: 60, price: 250 },
+      { id: "lime",     name: "Lime",     hue: 95,  sat: 62, bodyLight: 36, headLight: 56, price: 250 },
     
-      // the metals — a solid, respectable collection
-      { id: "copper",   name: "Copper",           hue: 22,  sat: 58, bodyLight: 36, headLight: 54, price: 500 },
-      { id: "iron",     name: "Iron",             hue: 210, sat: 10, bodyLight: 34, headLight: 56, price: 1500 },
-      { id: "gold",     name: "Gold",             hue: 45,  sat: 80, bodyLight: 42, headLight: 62, price: 4000 },
-      { id: "platinum", name: "Platinum",         hue: 220, sat: 8,  bodyLight: 58, headLight: 82, price: 10000 },
+      // the metals — sheen climbs with price, so the ladder is visible at a glance
+      { id: "copper",   name: "Copper",   hue: 24,  sat: 62, bodyLight: 32, headLight: 54, price: 500,  sheen: 0.32 },
+      { id: "iron",     name: "Iron",     hue: 210, sat: 10, bodyLight: 38, headLight: 64, price: 1000, sheen: 0.52 },
+      { id: "gold",     name: "Gold",     hue: 45,  sat: 78, bodyLight: 40, headLight: 66, price: 2000, sheen: 0.78 },
+      { id: "platinum", name: "Platinum", hue: 205, sat: 14, bodyLight: 56, headLight: 90, price: 5000, sheen: 1 },
     
-      // the gems — rarer, brighter, and rendered with a shimmer of their own
-      { id: "emerald",  name: "Emerald",          hue: 150, sat: 85, bodyLight: 34, headLight: 60, price: 20000, gem: true },
-      { id: "ruby",     name: "Ruby",             hue: 350, sat: 82, bodyLight: 36, headLight: 60, price: 35000, gem: true },
-      { id: "diamond",  name: "Diamond",          hue: 190, sat: 45, bodyLight: 58, headLight: 82, price: 60000, gem: true },
+      // the gems — all one price, all shimmering
+      { id: "emerald",  name: "Emerald",  hue: 150, sat: 85, bodyLight: 34, headLight: 60, price: 7500, gem: true },
+      { id: "ruby",     name: "Ruby",     hue: 350, sat: 82, bodyLight: 36, headLight: 60, price: 7500, gem: true },
+      { id: "diamond",  name: "Diamond",  hue: 190, sat: 45, bodyLight: 58, headLight: 82, price: 7500, gem: true },
+    
+      // two-tone heroes — the top of the shop
+      { id: "webslinger", name: "Webslinger", hue: 352, sat: 82, bodyLight: 43, headLight: 52, price: 10000,
+        accent: { hue: 222, sat: 78, light: 33 } },
+      { id: "berserker",  name: "Berserker",  hue: 47,  sat: 92, bodyLight: 47, headLight: 62, price: 10000,
+        accent: { hue: 224, sat: 68, light: 25 } },
+      { id: "symbiote",   name: "Symbiote",   hue: 265, sat: 20, bodyLight: 17, headLight: 26, price: 10000,
+        accent: { hue: 0,   sat: 0,  light: 92 } },
     ];
     
     const DEFAULT_SKIN_ID = "volt";
@@ -1677,7 +1694,7 @@
   }
 
   function drawEelBody(body, radius, skin, glow, isPlayer){
-    const { hue, sat, bodyLight, headLight, gem } = skin;
+    const { hue, sat, bodyLight, headLight, gem, sheen = 0, accent } = skin;
     if (body.length < 2) return;
     // sample every few points for smooth ribbon
     const step = 3;
@@ -1696,15 +1713,48 @@
     ctx.stroke();
     ctx.restore();
 
-    // main body with taper
+    // main body with taper — banded into two colours when the skin has an accent
     for (let i = body.length - 1 - step; i >= 0; i -= step){
       const t = 1 - i / body.length;               // 1 at head
       const r = radius * (0.35 + 0.65 * t);
       const [ax,ay] = worldToScreen(body[i].x, body[i].y);
       const [bx,by] = worldToScreen(body[Math.max(0,i-step)].x, body[Math.max(0,i-step)].y);
-      ctx.strokeStyle = `hsl(${hue},${sat}%,${bodyLight + t*18}%)`;
+      const band = accent && Math.floor(i / 26) % 2 === 1;
+      const bh = band ? accent.hue : hue;
+      const bs = band ? accent.sat : sat;
+      const bl = band ? accent.light : bodyLight;
+      ctx.strokeStyle = `hsl(${bh},${bs}%,${bl + t*18}%)`;
       ctx.lineWidth = r*2;
       ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by); ctx.stroke();
+    }
+
+    // metals: a bright specular streak down one flank and a dark rim down the
+    // other. Flat colour reads as plastic; this is what makes it read as a
+    // curved metal surface, and scaling it by sheen is what separates dull
+    // iron from mirror-bright platinum.
+    if (sheen > 0){
+      for (let i = body.length - 1 - step; i >= 0; i -= step){
+        const t = 1 - i / body.length;
+        const r = radius * (0.35 + 0.65 * t);
+        const [ax,ay] = worldToScreen(body[i].x, body[i].y);
+        const [bx,by] = worldToScreen(body[Math.max(0,i-step)].x, body[Math.max(0,i-step)].y);
+        const dx = bx-ax, dy = by-ay, len = Math.hypot(dx,dy) || 1;
+        const nx = -dy/len, ny = dx/len;           // unit normal to the spine
+
+        ctx.strokeStyle = `hsla(${hue},${sat}%,${Math.max(4, bodyLight - 20)}%,${0.55*sheen})`;
+        ctx.lineWidth = r*0.7;
+        ctx.beginPath();
+        ctx.moveTo(ax - nx*r*0.55, ay - ny*r*0.55);
+        ctx.lineTo(bx - nx*r*0.55, by - ny*r*0.55);
+        ctx.stroke();
+
+        ctx.strokeStyle = `hsla(${hue},${Math.max(0,sat-30)}%,${Math.min(98, headLight + 24)}%,${0.9*sheen})`;
+        ctx.lineWidth = r*0.5;
+        ctx.beginPath();
+        ctx.moveTo(ax + nx*r*0.5, ay + ny*r*0.5);
+        ctx.lineTo(bx + nx*r*0.5, by + ny*r*0.5);
+        ctx.stroke();
+      }
     }
 
     // gems get a travelling twinkle down the spine that plain metal never has —
@@ -2137,7 +2187,7 @@
   }
 
   function drawPreviewEel(skin){
-    const { hue, sat, bodyLight, headLight, gem } = skin;
+    const { hue, sat, bodyLight, headLight, gem, sheen = 0, accent } = skin;
     const w = previewCanvas.width, h = previewCanvas.height, body = PREVIEW_BODY;
     const radius = h * 0.16;
     pctx.clearRect(0, 0, w, h);
@@ -2155,9 +2205,38 @@
     for (let i = body.length - 1; i > 0; i--){
       const t = 1 - i/body.length;
       const r = radius * (0.35 + 0.65*t);
-      pctx.strokeStyle = `hsl(${hue},${sat}%,${bodyLight + t*18}%)`;
+      const band = accent && Math.floor(i / 5) % 2 === 1;
+      const bh = band ? accent.hue : hue;
+      const bs = band ? accent.sat : sat;
+      const bl = band ? accent.light : bodyLight;
+      pctx.strokeStyle = `hsl(${bh},${bs}%,${bl + t*18}%)`;
       pctx.lineWidth = r*2;
       pctx.beginPath(); pctx.moveTo(body[i].x, body[i].y); pctx.lineTo(body[i-1].x, body[i-1].y); pctx.stroke();
+    }
+
+    // same specular treatment the game uses, so the preview is honest
+    if (sheen > 0){
+      for (let i = body.length - 1; i > 0; i--){
+        const t = 1 - i/body.length;
+        const r = radius * (0.35 + 0.65*t);
+        const ax = body[i].x, ay = body[i].y, bx = body[i-1].x, by = body[i-1].y;
+        const dx = bx-ax, dy = by-ay, len = Math.hypot(dx,dy) || 1;
+        const nx = -dy/len, ny = dx/len;
+
+        pctx.strokeStyle = `hsla(${hue},${sat}%,${Math.max(4, bodyLight - 20)}%,${0.55*sheen})`;
+        pctx.lineWidth = r*0.7;
+        pctx.beginPath();
+        pctx.moveTo(ax - nx*r*0.55, ay - ny*r*0.55);
+        pctx.lineTo(bx - nx*r*0.55, by - ny*r*0.55);
+        pctx.stroke();
+
+        pctx.strokeStyle = `hsla(${hue},${Math.max(0,sat-30)}%,${Math.min(98, headLight + 24)}%,${0.9*sheen})`;
+        pctx.lineWidth = r*0.5;
+        pctx.beginPath();
+        pctx.moveTo(ax + nx*r*0.5, ay + ny*r*0.5);
+        pctx.lineTo(bx + nx*r*0.5, by + ny*r*0.5);
+        pctx.stroke();
+      }
     }
 
     if (gem && !reduceMotion){

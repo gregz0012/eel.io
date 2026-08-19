@@ -50,7 +50,7 @@ Feature: Screens, pausing and skins
     Given a player with 5000 points banked
     When they buy the gold skin
     Then they own the gold skin
-    And their bank holds 1000 points
+    And their bank holds 3000 points
 
   Scenario: A skin you cannot afford is not sold to you
     Given a player with 100 points banked
@@ -59,7 +59,7 @@ Feature: Screens, pausing and skins
     And their bank holds 100 points
 
   Scenario: A bought skin is never lost, even when the bank empties
-    Given a player with 4500 points banked
+    Given a player with 2500 points banked
     When they buy the gold skin
     And they buy the copper skin
     Then their bank holds 0 points

@@ -7,10 +7,19 @@
 // This catalogue is the tunable surface for skins: prices and colours live here
 // together, because a balance change should touch one file, not two.
 //
-// `gem: true` marks the top three as a rarer, showier finish: the renderer
-// gives them a shimmer the plain metals don't get (see drawEelBody in
-// src/index.html). It is a flag, not a hue — the engine only says what a skin
-// *is*; how that gets drawn is entirely the shell's business.
+// Three optional flags tell the renderer to do something beyond a flat colour.
+// All of them are data, not drawing: the engine only says what a skin *is*,
+// and how that gets drawn is entirely the shell's business (drawEelBody and
+// drawPreviewEel in src/index.html).
+//
+//   gem: true   a rarer, showier finish — a travelling sparkle and a faceted
+//               glint on the head.
+//   sheen: n    0..1, how hard the light catches a metal. Drives a bright
+//               specular streak down one flank and a dark rim down the other,
+//               which is what reads as curved metal rather than flat colour.
+//               This is the whole ladder from dull iron to mirror platinum,
+//               so it rises with price.
+//   accent: {}  a second colour, banded along the body, for two-tone skins.
 
 /**
  * Colours are HSL parts the renderer assembles, so a skin can be a metal
@@ -18,24 +27,32 @@
  */
 export const SKINS = [
   // yours from the start
-  { id: "volt",     name: "Volt",             hue: 165, sat: 70, bodyLight: 38, headLight: 58, price: 0 },
+  { id: "volt",     name: "Volt",     hue: 165, sat: 70, bodyLight: 38, headLight: 58, price: 0 },
 
-  // cheap recolours — an early, easy first purchase
-  { id: "coral",    name: "Coral",            hue: 14,  sat: 78, bodyLight: 40, headLight: 60, price: 100 },
-  { id: "orchid",   name: "Orchid",           hue: 292, sat: 62, bodyLight: 40, headLight: 60, price: 200 },
-  { id: "sky",      name: "Sky",              hue: 205, sat: 74, bodyLight: 40, headLight: 60, price: 300 },
-  { id: "lime",     name: "Lime",             hue: 95,  sat: 62, bodyLight: 36, headLight: 56, price: 400 },
+  // plain colours — an early, easy first purchase, all one price
+  { id: "coral",    name: "Coral",    hue: 14,  sat: 78, bodyLight: 40, headLight: 60, price: 250 },
+  { id: "orchid",   name: "Orchid",   hue: 292, sat: 62, bodyLight: 40, headLight: 60, price: 250 },
+  { id: "sky",      name: "Sky",      hue: 205, sat: 74, bodyLight: 40, headLight: 60, price: 250 },
+  { id: "lime",     name: "Lime",     hue: 95,  sat: 62, bodyLight: 36, headLight: 56, price: 250 },
 
-  // the metals — a solid, respectable collection
-  { id: "copper",   name: "Copper",           hue: 22,  sat: 58, bodyLight: 36, headLight: 54, price: 500 },
-  { id: "iron",     name: "Iron",             hue: 210, sat: 10, bodyLight: 34, headLight: 56, price: 1500 },
-  { id: "gold",     name: "Gold",             hue: 45,  sat: 80, bodyLight: 42, headLight: 62, price: 4000 },
-  { id: "platinum", name: "Platinum",         hue: 220, sat: 8,  bodyLight: 58, headLight: 82, price: 10000 },
+  // the metals — sheen climbs with price, so the ladder is visible at a glance
+  { id: "copper",   name: "Copper",   hue: 24,  sat: 62, bodyLight: 32, headLight: 54, price: 500,  sheen: 0.32 },
+  { id: "iron",     name: "Iron",     hue: 210, sat: 10, bodyLight: 38, headLight: 64, price: 1000, sheen: 0.52 },
+  { id: "gold",     name: "Gold",     hue: 45,  sat: 78, bodyLight: 40, headLight: 66, price: 2000, sheen: 0.78 },
+  { id: "platinum", name: "Platinum", hue: 205, sat: 14, bodyLight: 56, headLight: 90, price: 5000, sheen: 1 },
 
-  // the gems — rarer, brighter, and rendered with a shimmer of their own
-  { id: "emerald",  name: "Emerald",          hue: 150, sat: 85, bodyLight: 34, headLight: 60, price: 20000, gem: true },
-  { id: "ruby",     name: "Ruby",             hue: 350, sat: 82, bodyLight: 36, headLight: 60, price: 35000, gem: true },
-  { id: "diamond",  name: "Diamond",          hue: 190, sat: 45, bodyLight: 58, headLight: 82, price: 60000, gem: true },
+  // the gems — all one price, all shimmering
+  { id: "emerald",  name: "Emerald",  hue: 150, sat: 85, bodyLight: 34, headLight: 60, price: 7500, gem: true },
+  { id: "ruby",     name: "Ruby",     hue: 350, sat: 82, bodyLight: 36, headLight: 60, price: 7500, gem: true },
+  { id: "diamond",  name: "Diamond",  hue: 190, sat: 45, bodyLight: 58, headLight: 82, price: 7500, gem: true },
+
+  // two-tone heroes — the top of the shop
+  { id: "webslinger", name: "Webslinger", hue: 352, sat: 82, bodyLight: 43, headLight: 52, price: 10000,
+    accent: { hue: 222, sat: 78, light: 33 } },
+  { id: "berserker",  name: "Berserker",  hue: 47,  sat: 92, bodyLight: 47, headLight: 62, price: 10000,
+    accent: { hue: 224, sat: 68, light: 25 } },
+  { id: "symbiote",   name: "Symbiote",   hue: 265, sat: 20, bodyLight: 17, headLight: 26, price: 10000,
+    accent: { hue: 0,   sat: 0,  light: 92 } },
 ];
 
 export const DEFAULT_SKIN_ID = "volt";

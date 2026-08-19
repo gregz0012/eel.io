@@ -1187,7 +1187,7 @@
   }
 
   function drawEelBody(body, radius, skin, glow, isPlayer){
-    const { hue, sat, bodyLight, headLight, gem } = skin;
+    const { hue, sat, bodyLight, headLight, gem, sheen = 0, accent } = skin;
     if (body.length < 2) return;
     // sample every few points for smooth ribbon
     const step = 3;
@@ -1206,15 +1206,48 @@
     ctx.stroke();
     ctx.restore();
 
-    // main body with taper
+    // main body with taper — banded into two colours when the skin has an accent
     for (let i = body.length - 1 - step; i >= 0; i -= step){
       const t = 1 - i / body.length;               // 1 at head
       const r = radius * (0.35 + 0.65 * t);
       const [ax,ay] = worldToScreen(body[i].x, body[i].y);
       const [bx,by] = worldToScreen(body[Math.max(0,i-step)].x, body[Math.max(0,i-step)].y);
-      ctx.strokeStyle = `hsl(${hue},${sat}%,${bodyLight + t*18}%)`;
+      const band = accent && Math.floor(i / 26) % 2 === 1;
+      const bh = band ? accent.hue : hue;
+      const bs = band ? accent.sat : sat;
+      const bl = band ? accent.light : bodyLight;
+      ctx.strokeStyle = `hsl(${bh},${bs}%,${bl + t*18}%)`;
       ctx.lineWidth = r*2;
       ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by); ctx.stroke();
+    }
+
+    // metals: a bright specular streak down one flank and a dark rim down the
+    // other. Flat colour reads as plastic; this is what makes it read as a
+    // curved metal surface, and scaling it by sheen is what separates dull
+    // iron from mirror-bright platinum.
+    if (sheen > 0){
+      for (let i = body.length - 1 - step; i >= 0; i -= step){
+        const t = 1 - i / body.length;
+        const r = radius * (0.35 + 0.65 * t);
+        const [ax,ay] = worldToScreen(body[i].x, body[i].y);
+        const [bx,by] = worldToScreen(body[Math.max(0,i-step)].x, body[Math.max(0,i-step)].y);
+        const dx = bx-ax, dy = by-ay, len = Math.hypot(dx,dy) || 1;
+        const nx = -dy/len, ny = dx/len;           // unit normal to the spine
+
+        ctx.strokeStyle = `hsla(${hue},${sat}%,${Math.max(4, bodyLight - 20)}%,${0.55*sheen})`;
+        ctx.lineWidth = r*0.7;
+        ctx.beginPath();
+        ctx.moveTo(ax - nx*r*0.55, ay - ny*r*0.55);
+        ctx.lineTo(bx - nx*r*0.55, by - ny*r*0.55);
+        ctx.stroke();
+
+        ctx.strokeStyle = `hsla(${hue},${Math.max(0,sat-30)}%,${Math.min(98, headLight + 24)}%,${0.9*sheen})`;
+        ctx.lineWidth = r*0.5;
+        ctx.beginPath();
+        ctx.moveTo(ax + nx*r*0.5, ay + ny*r*0.5);
+        ctx.lineTo(bx + nx*r*0.5, by + ny*r*0.5);
+        ctx.stroke();
+      }
     }
 
     // gems get a travelling twinkle down the spine that plain metal never has —
@@ -1647,7 +1680,7 @@
   }
 
   function drawPreviewEel(skin){
-    const { hue, sat, bodyLight, headLight, gem } = skin;
+    const { hue, sat, bodyLight, headLight, gem, sheen = 0, accent } = skin;
     const w = previewCanvas.width, h = previewCanvas.height, body = PREVIEW_BODY;
     const radius = h * 0.16;
     pctx.clearRect(0, 0, w, h);
@@ -1665,9 +1698,38 @@
     for (let i = body.length - 1; i > 0; i--){
       const t = 1 - i/body.length;
       const r = radius * (0.35 + 0.65*t);
-      pctx.strokeStyle = `hsl(${hue},${sat}%,${bodyLight + t*18}%)`;
+      const band = accent && Math.floor(i / 5) % 2 === 1;
+      const bh = band ? accent.hue : hue;
+      const bs = band ? accent.sat : sat;
+      const bl = band ? accent.light : bodyLight;
+      pctx.strokeStyle = `hsl(${bh},${bs}%,${bl + t*18}%)`;
       pctx.lineWidth = r*2;
       pctx.beginPath(); pctx.moveTo(body[i].x, body[i].y); pctx.lineTo(body[i-1].x, body[i-1].y); pctx.stroke();
+    }
+
+    // same specular treatment the game uses, so the preview is honest
+    if (sheen > 0){
+      for (let i = body.length - 1; i > 0; i--){
+        const t = 1 - i/body.length;
+        const r = radius * (0.35 + 0.65*t);
+        const ax = body[i].x, ay = body[i].y, bx = body[i-1].x, by = body[i-1].y;
+        const dx = bx-ax, dy = by-ay, len = Math.hypot(dx,dy) || 1;
+        const nx = -dy/len, ny = dx/len;
+
+        pctx.strokeStyle = `hsla(${hue},${sat}%,${Math.max(4, bodyLight - 20)}%,${0.55*sheen})`;
+        pctx.lineWidth = r*0.7;
+        pctx.beginPath();
+        pctx.moveTo(ax - nx*r*0.55, ay - ny*r*0.55);
+        pctx.lineTo(bx - nx*r*0.55, by - ny*r*0.55);
+        pctx.stroke();
+
+        pctx.strokeStyle = `hsla(${hue},${Math.max(0,sat-30)}%,${Math.min(98, headLight + 24)}%,${0.9*sheen})`;
+        pctx.lineWidth = r*0.5;
+        pctx.beginPath();
+        pctx.moveTo(ax + nx*r*0.5, ay + ny*r*0.5);
+        pctx.lineTo(bx + nx*r*0.5, by + ny*r*0.5);
+        pctx.stroke();
+      }
     }
 
     if (gem && !reduceMotion){
