@@ -1,0 +1,21 @@
+{
+  "name": "voltfin",
+  "version": "1.0.0",
+  "description": "A small, ad-free deep-sea eel game. Zero runtime dependencies.",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "build": "node build.mjs",
+    "build:check": "node build.mjs --check",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "bdd": "cucumber-js",
+    "check": "npm run build:check && npm run bdd && npm test",
+    "start": "python3 -m http.server 8000"
+  },
+  "devDependencies": {
+    "@cucumber/cucumber": "^11.3.0",
+    "vitest": "^3.0.0"
+  }
+}
