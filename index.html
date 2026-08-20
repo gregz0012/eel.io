@@ -720,9 +720,9 @@
     //               half. Low values give thin streaks on a dominant base — which
     //               is what keeps Symbiote mostly black rather than half white.
     //   mark: "…"   a flourish drawn over the skin, or a list of them: "web" for
-    //               crosshatched strands, "ears" for a pointed cowl, "patch" for
-    //               black mask panels with small eye holes, "swords" for crossed
-    //               katanas on the back.
+    //               crosshatched strands, "ears" for a pointed cowl masked through
+    //               the eyes, "patch" for black mask panels with small eye holes,
+    //               "swords" for crossed katanas on the back.
     
     /**
      * Colours are HSL parts the renderer assembles, so a skin can be a metal
@@ -752,7 +752,7 @@
       // two-tone heroes — the top of the shop
       { id: "spider",   name: "Spider",   hue: 352, sat: 84, bodyLight: 41, headLight: 49, price: 10000,
         accent: { hue: 222, sat: 80, light: 31 }, accentRatio: 0.3, mark: "web" },
-      { id: "wolfey",   name: "Wolfey",   hue: 47,  sat: 94, bodyLight: 48, headLight: 62, price: 10000,
+      { id: "eelwolf",  name: "Eel-wolf", hue: 47,  sat: 94, bodyLight: 48, headLight: 62, price: 10000,
         accent: { hue: 226, sat: 72, light: 20 }, accentRatio: 0.42, mark: "ears" },
       { id: "symbiote", name: "Symbiote", hue: 265, sat: 26, bodyLight: 10, headLight: 15, price: 10000,
         accent: { hue: 0,   sat: 0,  light: 95 }, accentRatio: 0.18, mark: "web" },
@@ -1889,6 +1889,16 @@
       ctx.closePath(); ctx.fill();
       ctx.restore();
     }
+    // "ears" masks the face too: a band of the cowl colour across the eyes,
+    // clipped to the head so it runs right out to the edge and meets the
+    // horns — mask and cowl then read as one piece rather than two
+    if (marks.includes("ears") && accent){
+      ctx.save();
+      ctx.beginPath(); ctx.ellipse(0,0,radius*1.5,radius*1.15,0,0,TAU); ctx.clip();
+      ctx.fillStyle = `hsl(${accent.hue},${accent.sat}%,${accent.light + 20}%)`;
+      ctx.beginPath(); ctx.ellipse(radius*0.28, 0, radius*0.74, radius*1.6, 0, 0, TAU); ctx.fill();
+      ctx.restore();
+    }
     // "patch": a dark mask panel behind each eye, so the whites read as the
     // cut-outs of a mask rather than as plain eyes
     if (marks.includes("patch") && accent){
@@ -1904,6 +1914,13 @@
       for (const s of [-1, 1]){
         ctx.beginPath();
         ctx.ellipse(radius*0.56, s*radius*0.56, radius*0.30, radius*0.18, s*-0.35, 0, TAU);
+        ctx.fill();
+      }
+    } else if (marks.includes("ears") && accent){
+      ctx.fillStyle = "#eaffff";
+      for (const s of [-1, 1]){
+        ctx.beginPath();
+        ctx.ellipse(radius*0.54, s*radius*0.55, radius*0.34, radius*0.22, s*-0.3, 0, TAU);
         ctx.fill();
       }
     } else {
@@ -2418,6 +2435,16 @@
       pctx.closePath(); pctx.fill();
       pctx.restore();
     }
+    // "ears" masks the face too: a band of the cowl colour across the eyes,
+    // clipped to the head so it runs right out to the edge and meets the
+    // horns — mask and cowl then read as one piece rather than two
+    if (marks.includes("ears") && accent){
+      pctx.save();
+      pctx.beginPath(); pctx.ellipse(0,0,radius*1.5,radius*1.15,0,0,TAU); pctx.clip();
+      pctx.fillStyle = `hsl(${accent.hue},${accent.sat}%,${accent.light + 20}%)`;
+      pctx.beginPath(); pctx.ellipse(radius*0.28, 0, radius*0.74, radius*1.6, 0, 0, TAU); pctx.fill();
+      pctx.restore();
+    }
     if (marks.includes("patch") && accent){
       pctx.fillStyle = `hsl(${accent.hue},${accent.sat}%,${accent.light}%)`;
       for (const s of [-1, 1]){
@@ -2429,6 +2456,13 @@
       for (const s of [-1, 1]){
         pctx.beginPath();
         pctx.ellipse(radius*0.56, s*radius*0.56, radius*0.30, radius*0.18, s*-0.35, 0, TAU);
+        pctx.fill();
+      }
+    } else if (marks.includes("ears") && accent){
+      pctx.fillStyle = "#eaffff";
+      for (const s of [-1, 1]){
+        pctx.beginPath();
+        pctx.ellipse(radius*0.54, s*radius*0.55, radius*0.34, radius*0.22, s*-0.3, 0, TAU);
         pctx.fill();
       }
     } else {

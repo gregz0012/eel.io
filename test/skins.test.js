@@ -18,7 +18,7 @@ describe("the catalogue", () => {
       "coral", "orchid", "sky", "lime",
       "copper", "iron", "gold", "platinum",
       "emerald", "ruby", "diamond",
-      "spider", "wolfey", "symbiote", "eelpool",
+      "spider", "eelwolf", "symbiote", "eelpool",
     ]);
   });
 
@@ -30,7 +30,7 @@ describe("the catalogue", () => {
     const priceOf = id => skinById(id).price;
     for (const id of ["coral", "orchid", "sky", "lime"]) expect(priceOf(id)).toBe(250);
     for (const id of ["emerald", "ruby", "diamond"]) expect(priceOf(id)).toBe(7500);
-    for (const id of ["spider", "wolfey", "symbiote", "eelpool"]) expect(priceOf(id)).toBe(10000);
+    for (const id of ["spider", "eelwolf", "symbiote", "eelpool"]) expect(priceOf(id)).toBe(10000);
   });
 
   it("climbs the metals in price", () => {
@@ -52,7 +52,7 @@ describe("the catalogue", () => {
   });
 
   it("gives every hero a second colour to band with", () => {
-    for (const id of ["spider", "wolfey", "symbiote", "eelpool"]) {
+    for (const id of ["spider", "eelwolf", "symbiote", "eelpool"]) {
       expect(skinById(id).accent).toMatchObject({
         hue: expect.any(Number), sat: expect.any(Number), light: expect.any(Number),
       });

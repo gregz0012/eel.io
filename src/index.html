@@ -1373,6 +1373,16 @@
       ctx.closePath(); ctx.fill();
       ctx.restore();
     }
+    // "ears" masks the face too: a band of the cowl colour across the eyes,
+    // clipped to the head so it runs right out to the edge and meets the
+    // horns — mask and cowl then read as one piece rather than two
+    if (marks.includes("ears") && accent){
+      ctx.save();
+      ctx.beginPath(); ctx.ellipse(0,0,radius*1.5,radius*1.15,0,0,TAU); ctx.clip();
+      ctx.fillStyle = `hsl(${accent.hue},${accent.sat}%,${accent.light + 20}%)`;
+      ctx.beginPath(); ctx.ellipse(radius*0.28, 0, radius*0.74, radius*1.6, 0, 0, TAU); ctx.fill();
+      ctx.restore();
+    }
     // "patch": a dark mask panel behind each eye, so the whites read as the
     // cut-outs of a mask rather than as plain eyes
     if (marks.includes("patch") && accent){
@@ -1388,6 +1398,13 @@
       for (const s of [-1, 1]){
         ctx.beginPath();
         ctx.ellipse(radius*0.56, s*radius*0.56, radius*0.30, radius*0.18, s*-0.35, 0, TAU);
+        ctx.fill();
+      }
+    } else if (marks.includes("ears") && accent){
+      ctx.fillStyle = "#eaffff";
+      for (const s of [-1, 1]){
+        ctx.beginPath();
+        ctx.ellipse(radius*0.54, s*radius*0.55, radius*0.34, radius*0.22, s*-0.3, 0, TAU);
         ctx.fill();
       }
     } else {
@@ -1902,6 +1919,16 @@
       pctx.closePath(); pctx.fill();
       pctx.restore();
     }
+    // "ears" masks the face too: a band of the cowl colour across the eyes,
+    // clipped to the head so it runs right out to the edge and meets the
+    // horns — mask and cowl then read as one piece rather than two
+    if (marks.includes("ears") && accent){
+      pctx.save();
+      pctx.beginPath(); pctx.ellipse(0,0,radius*1.5,radius*1.15,0,0,TAU); pctx.clip();
+      pctx.fillStyle = `hsl(${accent.hue},${accent.sat}%,${accent.light + 20}%)`;
+      pctx.beginPath(); pctx.ellipse(radius*0.28, 0, radius*0.74, radius*1.6, 0, 0, TAU); pctx.fill();
+      pctx.restore();
+    }
     if (marks.includes("patch") && accent){
       pctx.fillStyle = `hsl(${accent.hue},${accent.sat}%,${accent.light}%)`;
       for (const s of [-1, 1]){
@@ -1913,6 +1940,13 @@
       for (const s of [-1, 1]){
         pctx.beginPath();
         pctx.ellipse(radius*0.56, s*radius*0.56, radius*0.30, radius*0.18, s*-0.35, 0, TAU);
+        pctx.fill();
+      }
+    } else if (marks.includes("ears") && accent){
+      pctx.fillStyle = "#eaffff";
+      for (const s of [-1, 1]){
+        pctx.beginPath();
+        pctx.ellipse(radius*0.54, s*radius*0.55, radius*0.34, radius*0.22, s*-0.3, 0, TAU);
         pctx.fill();
       }
     } else {

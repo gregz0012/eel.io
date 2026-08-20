@@ -24,9 +24,9 @@
 //               half. Low values give thin streaks on a dominant base — which
 //               is what keeps Symbiote mostly black rather than half white.
 //   mark: "…"   a flourish drawn over the skin, or a list of them: "web" for
-//               crosshatched strands, "ears" for a pointed cowl, "patch" for
-//               black mask panels with small eye holes, "swords" for crossed
-//               katanas on the back.
+//               crosshatched strands, "ears" for a pointed cowl masked through
+//               the eyes, "patch" for black mask panels with small eye holes,
+//               "swords" for crossed katanas on the back.
 
 /**
  * Colours are HSL parts the renderer assembles, so a skin can be a metal
@@ -56,7 +56,7 @@ export const SKINS = [
   // two-tone heroes — the top of the shop
   { id: "spider",   name: "Spider",   hue: 352, sat: 84, bodyLight: 41, headLight: 49, price: 10000,
     accent: { hue: 222, sat: 80, light: 31 }, accentRatio: 0.3, mark: "web" },
-  { id: "wolfey",   name: "Wolfey",   hue: 47,  sat: 94, bodyLight: 48, headLight: 62, price: 10000,
+  { id: "eelwolf",  name: "Eel-wolf", hue: 47,  sat: 94, bodyLight: 48, headLight: 62, price: 10000,
     accent: { hue: 226, sat: 72, light: 20 }, accentRatio: 0.42, mark: "ears" },
   { id: "symbiote", name: "Symbiote", hue: 265, sat: 26, bodyLight: 10, headLight: 15, price: 10000,
     accent: { hue: 0,   sat: 0,  light: 95 }, accentRatio: 0.18, mark: "web" },
