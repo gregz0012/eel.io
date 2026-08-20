@@ -1,4 +1,4 @@
-# 🌊 Fin.io — deep sea eel
+# 🌊 Eel Shock — deep sea eel
 
 A small, ad-free, single-file browser game in the spirit of *slither.io* / *snake.io*, but set in the deep sea. You're a young electric eel: eat fish, grow, bite chunks off rivals, dodge (or shock and devour) predators, and take down a boss every ten levels.
 
@@ -85,11 +85,13 @@ python3 -m http.server 8000
 
 ## Leaderboard
 
-Optional, opt-in, and anonymous. Your browser generates a random id the first
-time you join and turns it into a name like `AmberLantern-4721` — the same name
-every time you come back. There is no account, no sign-in, and nothing about
-your device or about you is collected. "Leave the board" deletes your row and
-forgets the id.
+Optional, opt-in, and anonymous. Your browser keeps a random id and turns it
+into a name like `AmberLantern-4721` — the same name every time you come
+back. The home screen shows that name so you know who you'd be before you
+ever join; nothing is sent anywhere until you actually press "Join the
+board". There is no account, no sign-in, and nothing about your device or
+about you is collected. "Leave the board" deletes your row, forgets the id,
+and gives you a new name next time.
 
 The game does not need it: with no server configured, or with no internet, it
 plays exactly the same and your best score is still kept on your own device.
