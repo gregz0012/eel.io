@@ -669,6 +669,19 @@
       return `${adjective}${noun}-${number}`;
     }
     
+    /**
+     * The same name without its number — "AmberLantern" rather than
+     * "AmberLantern-4721".
+     *
+     * For labels floating over a swimming eel, where the four digits are noise
+     * that costs a third of the width and nobody reads at speed. The leaderboard
+     * still uses the full tag: there the number is what keeps two AmberLanterns
+     * apart, and on a board that matters.
+     */
+    function shortTagFor(id) {
+      return tagFor(id).replace(/-\d+$/, "");
+    }
+    
     /** Shape check for a tag this code produced. */
     function isWellFormedTag(tag) {
       return typeof tag === "string" && /^[A-Z][a-z]+[A-Z][a-z]+-\d{4}$/.test(tag);
@@ -1043,7 +1056,7 @@
       return kind === "points" || kind === "starfish" || kind === "zap";
     }
 
-    return { CONFIG, seededRng, randInt, weightedPick, addScore, completeLevel, bossHits, deductLevel, predatorTarget, isBossLevel, levelSpeed, tagFor, isWellFormedTag, tagSpaceSize, validateSubmission, bestOf, rankOf, topRows, PHASES, nextPhase, canDo, isRunning, deposit, diveCost, payForDive, canAffordDive, SKINS, DEFAULT_SKIN_ID, TIERS, skinsByTier, levelFor, meetsLevel, skinById, isOwned, ownedSkins, canAfford, buySkin, wearableSkin, nextSkinToBuy, skinFromHue, skinStatus, PRESENT_KINDS, rollPresent, isKindGift };
+    return { CONFIG, seededRng, randInt, weightedPick, addScore, completeLevel, bossHits, deductLevel, predatorTarget, isBossLevel, levelSpeed, tagFor, shortTagFor, isWellFormedTag, tagSpaceSize, validateSubmission, bestOf, rankOf, topRows, PHASES, nextPhase, canDo, isRunning, deposit, diveCost, payForDive, canAffordDive, SKINS, DEFAULT_SKIN_ID, TIERS, skinsByTier, levelFor, meetsLevel, skinById, isOwned, ownedSkins, canAfford, buySkin, wearableSkin, nextSkinToBuy, skinFromHue, skinStatus, PRESENT_KINDS, rollPresent, isKindGift };
   })();
 
   const canvas = document.getElementById("game");
@@ -1134,6 +1147,9 @@
       body: [],                        // trail points
       isPlayer: !!isPlayer,
       hue: isPlayer ? Engine.wearableSkin(skinId, owned).hue : rand(150, 260),
+      // Rivals wear a name from the same generator the leaderboard uses, so the
+      // sea reads as full of other players rather than of scenery.
+      name: isPlayer ? null : Engine.shortTagFor(`${Math.random()}`),
       thinkT: 0, wanderA: rand(0, TAU),
       dead: false
     };
@@ -2286,7 +2302,32 @@
         for (let j=0;j<3;j++){ a+=rand(-.9,.9); x+=Math.cos(a)*9; y+=Math.sin(a)*9; ctx.lineTo(x,y); }
         ctx.stroke(); ctx.restore();
       }
+      drawRivalName(e, sx, sy);
     }
+  }
+
+  // A name tag over each rival. Faded by distance so a crowded shoal does not
+  // turn into a wall of text, and dropped entirely once one is far enough away
+  // to be scenery — at 14 rivals this runs every frame, so it stays cheap.
+  const NAME_FULL = 460, NAME_GONE = 900;   // world units: solid, then invisible
+  function drawRivalName(e, sx, sy){
+    if (e.dead || !e.name) return;
+    const d = Math.sqrt(dist2(e.x, e.y, player.x, player.y));
+    if (d > NAME_GONE) return;
+    const fade = d <= NAME_FULL ? 1 : 1 - (d - NAME_FULL) / (NAME_GONE - NAME_FULL);
+    ctx.save();
+    ctx.globalAlpha = fade * 0.7;
+    ctx.font = "700 11px Trebuchet MS,sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    // Outlined rather than shadowed: shadowBlur is the expensive way to do this
+    // and there are fourteen of these every frame on whatever tablet a kid has.
+    const ty = sy - radiusFor(e.len) - 12;
+    ctx.lineWidth = 3; ctx.lineJoin = "round";
+    ctx.strokeStyle = "rgba(2,14,22,0.85)";
+    ctx.strokeText(e.name, sx, ty);
+    ctx.fillStyle = "#cfeef7";
+    ctx.fillText(e.name, sx, ty);
+    ctx.restore();
   }
 
   function drawPredators(){

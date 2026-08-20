@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { tagFor, isWellFormedTag, tagSpaceSize } from "../src/engine/identity.js";
+import { tagFor, shortTagFor, isWellFormedTag, tagSpaceSize } from "../src/engine/identity.js";
 
 const uuid = (n) => `0000${n}`.slice(-4) + "0000-0000-4000-8000-000000000000";
 
@@ -40,5 +40,28 @@ describe("isWellFormedTag", () => {
     expect(isWellFormedTag("AmberLantern-42")).toBe(false);
     expect(isWellFormedTag("")).toBe(false);
     expect(isWellFormedTag(null)).toBe(false);
+  });
+});
+
+describe("shortTagFor", () => {
+  it("drops the number, keeping the name", () => {
+    expect(shortTagFor("abc")).toBe(tagFor("abc").replace(/-\d+$/, ""));
+    expect(shortTagFor("abc")).not.toMatch(/\d/);
+  });
+
+  it("is still deterministic — a rival keeps its name for the whole dive", () => {
+    expect(shortTagFor("rival-7")).toBe(shortTagFor("rival-7"));
+  });
+
+  it("stays short enough to float over a swimming eel", () => {
+    for (let i = 0; i < 300; i++) {
+      expect(shortTagFor("eel" + i).length).toBeLessThanOrEqual(22);
+    }
+  });
+
+  it("gives different rivals different names", () => {
+    const names = new Set();
+    for (let i = 0; i < 200; i++) names.add(shortTagFor("eel" + i));
+    expect(names.size).toBeGreaterThan(150);
   });
 });
