@@ -190,11 +190,27 @@
   #bankLine b{color:var(--volt);font-weight:700;}
 
   /* skin picker (its own screen) */
+  /* Sticky: what you are looking at, what it costs and the button that acts on
+     it must stay on screen while you scroll the shop. Having the buy button
+     below sixteen swatches meant scrolling away from the thing being bought. */
   #skinPreviewWrap{
+    position:sticky;top:0;z-index:2;
+    width:100%;max-width:560px;box-sizing:border-box;   /* nothing peeks out from behind it */
     display:flex;flex-direction:column;align-items:center;gap:4px;
-    background:rgba(4,26,38,.5);border:1px solid rgba(79,230,214,.2);border-radius:16px;
-    padding:14px 18px;
+    background:#04202c;border:1px solid rgba(79,230,214,.28);border-radius:16px;
+    padding:12px 18px 14px;box-shadow:0 10px 24px rgba(2,12,20,.55);
   }
+  #shopBank{
+    font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);
+  }
+  #shopBank b{color:var(--volt);font-variant-numeric:tabular-nums;}
+  #skinAction{display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap;min-height:34px;}
+  #skinAction button{padding:9px 20px;font-size:11px;letter-spacing:.12em;}
+  #skinAction button[disabled]{
+    background:none;color:var(--muted);border:1px solid rgba(120,160,175,.3);
+    box-shadow:none;cursor:not-allowed;
+  }
+  #skinAction button[disabled]:hover{transform:none;box-shadow:none;}
   #skinPreview{display:block;}
   #skinPreviewName{font-size:14px;font-weight:700;color:var(--ink);letter-spacing:.02em;}
   #skinPreviewStatus{font-size:11px;color:var(--muted);}
@@ -212,9 +228,19 @@
     transition:border-color .15s ease,transform .1s ease;
   }
   .skin:hover{transform:translateY(-2px);}
-  .skin.on{border-color:var(--volt);box-shadow:0 0 16px rgba(142,243,255,.35);}
-  .skin.locked{cursor:not-allowed;opacity:.6;}
+  /* Four states, each meant to be readable at a glance and from across a room:
+     worn is ringed in volt, owned is plain and full-colour, one you can afford
+     right now has a lit price, and one you cannot is dimmed and padlocked. The
+     old grid drew "owned" and "cannot afford" identically, so the only clue you
+     could buy something was a 9px price changing colour. */
+  .skin.worn{border-color:var(--volt);box-shadow:0 0 16px rgba(142,243,255,.35);}
+  .skin.affordable{border-color:rgba(79,230,214,.5);background:rgba(8,44,58,.6);}
+  .skin.affordable .cost{color:var(--volt);font-weight:700;}
+  .skin.locked{cursor:not-allowed;opacity:.42;filter:saturate(.3);}
   .skin.locked .swatch{box-shadow:inset 0 -4px 8px rgba(0,0,0,.45);}
+  .skin .tick{
+    font-size:9px;letter-spacing:.1em;color:var(--volt);font-weight:700;
+  }
   .skin .swatch{
     width:34px;height:34px;border-radius:50%;
     box-shadow:0 0 12px currentColor,inset 0 -4px 8px rgba(0,0,0,.35);
@@ -222,22 +248,22 @@
   .skin .name{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink);}
   .skin .cost{font-size:9px;letter-spacing:.06em;color:var(--muted);font-variant-numeric:tabular-nums;}
   .skin.locked .name{color:var(--muted);}
-  /* gems get a shimmer the plain metals don't — a hue-matched pulsing halo */
-  .skin.gem{
-    --gem-hue:200;
-    animation:gemPulse 2.6s ease-in-out infinite;
-  }
-  .skin.gem.on{animation:none;}
+  /* A gem shimmers once it is yours. It used to shimmer in the shop whatever
+     you owned, which put a bright animated ring around the three dearest skins
+     in the game and read as "selected" — the one thing a highlight must not
+     say about something you have not bought. Browsing still shows the shimmer:
+     the preview eel above has it. */
+  .skin.gem{--gem-hue:200;}
+  .skin.gem.owned{animation:gemPulse 2.6s ease-in-out infinite;}
   @keyframes gemPulse{
     0%,100%{ box-shadow:0 0 0 1px hsla(var(--gem-hue),75%,60%,.45), 0 0 10px hsla(var(--gem-hue),75%,55%,.35); }
     50%{ box-shadow:0 0 0 1px hsla(var(--gem-hue),85%,68%,.85), 0 0 22px hsla(var(--gem-hue),80%,58%,.65); }
   }
   @media (prefers-reduced-motion:reduce){ .skin.gem{ animation:none; } }
-  #skinNote{font-size:12px;color:var(--muted);margin-top:10px;letter-spacing:.03em;}
+  #skinNote{font-size:11px;color:var(--muted);margin-top:12px;letter-spacing:.03em;}
   #skinNote b{color:var(--volt);font-weight:700;}
   #skinNote .hint{font-size:11px;color:var(--muted);margin-top:3px;}
-  .buyrow{display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap;margin-top:8px;}
-  .buyrow span{color:var(--ink);font-size:13px;}
+  #skinAction span{color:var(--ink);font-size:12px;}
 
   /* pause */
   #pauseBtn{
@@ -326,9 +352,11 @@
 <div id="skinsScreen" class="overlay hidden">
   <h1>YOUR EEL<span class="sub">pick your look</span></h1>
   <div id="skinPreviewWrap">
+    <div id="shopBank">Bank <b id="shopBankAmount">0</b></div>
     <canvas id="skinPreview" width="260" height="100"></canvas>
     <div id="skinPreviewName">Volt</div>
     <div id="skinPreviewStatus">Wearing this</div>
+    <div id="skinAction"></div>
   </div>
   <div id="skins">
     <div id="skinGrid"></div>
@@ -2388,6 +2416,7 @@
     if (event === "surface") renderSkins();     // the run may have unlocked something
     if (event === "openSkins"){                 // always open showing what's worn
       previewSkinId = null;
+      pendingBuy = null;
       updatePreviewInfo();
       startPreviewLoop();
     }
@@ -2618,16 +2647,77 @@
     pctx.restore();
   }
 
+  /** Look at a skin. Moving on abandons any purchase you were part-way through. */
+  function browse(id){
+    if (pendingBuy && pendingBuy !== id) pendingBuy = null;
+    previewSkinId = id;
+    updatePreviewInfo();
+  }
+
   function updatePreviewInfo(){
     const skin = currentPreviewSkin();
     document.getElementById("skinPreviewName").textContent = skin.name;
     const status = Engine.skinStatus(skin, { wornId: skinId, owned, banked });
     document.getElementById("skinPreviewStatus").textContent = {
       worn: "Wearing this",
-      owned: "Tap to wear",
-      affordable: `Tap to buy — ${skin.price.toLocaleString()} points`,
-      locked: `${(skin.price - banked).toLocaleString()} more points needed`,
+      owned: "Yours",
+      affordable: `${skin.price.toLocaleString()} points`,
+      locked: `${skin.price.toLocaleString()} points`,
     }[status];
+    renderSkinAction(skin, status);
+  }
+
+  /**
+   * The one place a skin is bought or worn, kept beside the preview at the top
+   * of the shop rather than under the grid: the button belongs next to the eel
+   * it applies to, and it must not scroll away when you look further down.
+   */
+  function renderSkinAction(skin, status){
+    const wrap = document.getElementById("skinAction");
+    wrap.textContent = "";
+
+    const add = (id, text, onClick, disabled) => {
+      const b = document.createElement("button");
+      b.id = id; b.className = "quiet"; b.textContent = text;
+      if (disabled) b.disabled = true; else b.addEventListener("click", onClick);
+      wrap.appendChild(b);
+      return b;
+    };
+
+    if (pendingBuy === skin.id){            // a mis-tap must not spend a child's savings
+      const label = document.createElement("span");
+      label.textContent = `Spend ${skin.price.toLocaleString()}?`;
+      wrap.appendChild(label);
+      add("buyBtn", "Yes, buy it", () => {
+        const result = Engine.buySkin({ banked, owned }, pendingBuy);
+        if (result.bought){
+          banked = result.banked; owned = result.owned;
+          writeStore(STORE.banked, String(banked));
+          writeStore(STORE.owned, JSON.stringify(owned));
+          skinId = pendingBuy;                // wear it straight away
+          writeStore(STORE.skin, skinId);
+        }
+        pendingBuy = null;
+        renderSkins();
+      });
+      add("cancelBuyBtn", "Not yet", () => { pendingBuy = null; renderSkins(); });
+      return;
+    }
+
+    if (status === "worn") return;           // already wearing it: nothing to do
+    if (status === "owned"){
+      add("wearBtn", "Wear this", () => {
+        skinId = skin.id; writeStore(STORE.skin, skinId);
+        renderSkins();
+      });
+    } else if (status === "affordable"){
+      add("buyStartBtn", `Buy — ${skin.price.toLocaleString()}`, () => {
+        pendingBuy = skin.id;
+        renderSkins();
+      });
+    } else {
+      add("needMoreBtn", `${(skin.price - banked).toLocaleString()} more needed`, null, true);
+    }
   }
 
   // self-terminating: just stops rescheduling once the shop screen closes
@@ -2660,34 +2750,42 @@
       grid.appendChild(section);
 
       for (const skin of Engine.skinsByTier(tier.id)){
-        const mine = Engine.isOwned(skin.id, owned);
-        const affordable = Engine.canAfford(skin, banked);
+        const status = Engine.skinStatus(skin, { wornId: skinId, owned, banked });
+        const mine = status === "worn" || status === "owned";
         const el = document.createElement("div");
-        el.className = "skin" + (skin.gem ? " gem" : "") + (skin.id === worn.id ? " on" : "") + (mine ? "" : " locked");
+        el.className = `skin ${status}` + (skin.gem ? " gem" : "");
         if (skin.gem) el.style.setProperty("--gem-hue", skin.hue);
-        el.title = mine ? skin.name : `${skin.name} — ${skin.price.toLocaleString()} points`;
+        el.title = mine ? skin.name
+          : status === "affordable" ? `${skin.name} — ${skin.price.toLocaleString()} points, yours to buy`
+          : `${skin.name} — ${(skin.price - banked).toLocaleString()} more points needed`;
 
         const swatch = document.createElement("div");
         swatch.className = "swatch";
         const colour = `hsl(${skin.hue},${skin.sat}%,${skin.headLight}%)`;
         swatch.style.color = colour;
         swatch.style.background = colour;
-        if (!mine) swatch.style.filter = "grayscale(.45) brightness(.8)";
+        if (status === "locked") swatch.style.filter = "grayscale(.45) brightness(.8)";
 
         const name = document.createElement("div");
         name.className = "name"; name.textContent = skin.name;
 
         const cost = document.createElement("div");
-        cost.className = "cost";
-        cost.textContent = mine ? (skin.price ? "yours" : "") : skin.price.toLocaleString();
-        if (!mine && affordable) cost.style.color = "var(--volt)";
+        cost.className = status === "worn" ? "tick" : "cost";
+        cost.textContent = {
+          worn: "WEARING",
+          owned: "yours",
+          affordable: skin.price.toLocaleString(),
+          locked: `🔒 ${skin.price.toLocaleString()}`,
+        }[status];
 
         el.append(swatch, name, cost);
-        el.addEventListener("mouseenter", () => { previewSkinId = skin.id; updatePreviewInfo(); });
+        el.addEventListener("mouseenter", () => browse(skin.id));
         el.addEventListener("click", () => {
-          previewSkinId = skin.id;               // browsing always previews, buying or not
-          if (mine){ skinId = skin.id; writeStore(STORE.skin, skinId); pendingBuy = null; }
-          else pendingBuy = affordable ? skin.id : null;
+          // Tapping is browsing. Wearing something you already own is the one
+          // thing safe to do on a single tap; spending is not, so a purchase
+          // goes through the button above, where the eel you are buying is.
+          if (mine){ skinId = skin.id; writeStore(STORE.skin, skinId); }
+          browse(skin.id);
           renderSkins();
         });
         row.appendChild(el);
@@ -2709,52 +2807,18 @@
   }
 
   function renderBankNote(){
+    // The balance sits in the sticky panel, next to the price of whatever is
+    // being browsed — the two numbers are only useful side by side.
+    document.getElementById("shopBankAmount").textContent = banked.toLocaleString();
+
     const note = document.getElementById("skinNote");
     note.textContent = "";
-
-    const balance = document.createElement("div");
-    balance.append("Bank ");
-    const amount = document.createElement("b");
-    amount.textContent = banked.toLocaleString();
-    balance.append(amount, " points");
-    note.appendChild(balance);
-
-    if (pendingBuy){
-      const skin = Engine.skinById(pendingBuy);
-      const ask = document.createElement("div");
-      ask.className = "buyrow";
-      const label = document.createElement("span");
-      label.textContent = `Buy ${skin.name} for ${skin.price.toLocaleString()}?`;
-
-      const yes = document.createElement("button");
-      yes.className = "quiet"; yes.id = "buyBtn"; yes.textContent = "Buy";
-      yes.addEventListener("click", () => {
-        const result = Engine.buySkin({ banked, owned }, pendingBuy);
-        if (result.bought){
-          banked = result.banked; owned = result.owned;
-          writeStore(STORE.banked, String(banked));
-          writeStore(STORE.owned, JSON.stringify(owned));
-          skinId = pendingBuy;                     // wear it straight away
-          writeStore(STORE.skin, skinId);
-        }
-        pendingBuy = null;
-        renderSkins();
-      });
-
-      const no = document.createElement("button");
-      no.className = "quiet"; no.id = "cancelBuyBtn"; no.textContent = "Not yet";
-      no.addEventListener("click", () => { pendingBuy = null; renderSkins(); });
-
-      ask.append(label, yes, no);
-      note.appendChild(ask);
-      return;
-    }
 
     const next = Engine.nextSkinToBuy(banked, owned);
     const hint = document.createElement("div");
     hint.className = "hint";
     if (!next) hint.textContent = "Every skin is yours.";
-    else if (next.pointsToGo === 0) hint.textContent = `You can afford ${next.skin.name} — tap it.`;
+    else if (next.pointsToGo === 0) hint.textContent = `You can afford ${next.skin.name}.`;
     else hint.textContent = `${next.pointsToGo.toLocaleString()} more for ${next.skin.name}.`;
     note.appendChild(hint);
 
