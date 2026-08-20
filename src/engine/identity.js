@@ -58,6 +58,19 @@ export function tagFor(id) {
   return `${adjective}${noun}-${number}`;
 }
 
+/**
+ * The same name without its number — "AmberLantern" rather than
+ * "AmberLantern-4721".
+ *
+ * For labels floating over a swimming eel, where the four digits are noise
+ * that costs a third of the width and nobody reads at speed. The leaderboard
+ * still uses the full tag: there the number is what keeps two AmberLanterns
+ * apart, and on a board that matters.
+ */
+export function shortTagFor(id) {
+  return tagFor(id).replace(/-\d+$/, "");
+}
+
 /** Shape check for a tag this code produced. */
 export function isWellFormedTag(tag) {
   return typeof tag === "string" && /^[A-Z][a-z]+[A-Z][a-z]+-\d{4}$/.test(tag);
