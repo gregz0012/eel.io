@@ -29,6 +29,10 @@ yours from the start; after that:
 | Gemstone | Emerald, Ruby, Diamond | 7,500 |
 | Heroes | Spider, Eel-wolf, Eel-symbiote, Eel-pool | 10,000 |
 
+Anything you can afford right now is lit up with its price; anything you
+can't is dimmed and padlocked. Tap a skin to see it swimming, then buy or wear
+it with the button beside it.
+
 The metals catch the light — the dearer the metal, the harder it shines, so
 Platinum is a mirror where Copper is a soft glow. Gems shimmer. Heroes are
 banded in two colours and each carries its own flourish — Spider is webbed,
