@@ -51,12 +51,16 @@ describe("the catalogue", () => {
     expect(skinById("platinum").sheen).toBeGreaterThan(skinById("iron").sheen);
   });
 
-  it("gives every hero a second colour to band with", () => {
-    for (const id of ["spider", "eelwolf", "symbiote", "eelpool"]) {
+  it("gives every banded hero a second colour to band with", () => {
+    // Eel-symbiote is deliberately unbanded — banding colours whole
+    // cross-sections, so on a black skin it reads as white rings rather than
+    // markings, and its white is carried by the spider and the face instead
+    for (const id of ["spider", "eelwolf", "eelpool"]) {
       expect(skinById(id).accent).toMatchObject({
         hue: expect.any(Number), sat: expect.any(Number), light: expect.any(Number),
       });
     }
+    expect(skinById("symbiote").accent).toBeUndefined();
   });
 
   it("keeps the finishes separate — no skin is two things at once", () => {
@@ -68,7 +72,7 @@ describe("the catalogue", () => {
   it("only ever asks for a mark the renderer knows how to draw", () => {
     for (const s of SKINS) {
       for (const mark of [].concat(s.mark ?? [])) {
-        expect(["web", "ears", "patch", "swords"]).toContain(mark);
+        expect(["web", "ears", "patch", "swords", "emblem", "maw"]).toContain(mark);
       }
     }
   });
@@ -77,13 +81,15 @@ describe("the catalogue", () => {
     expect([].concat(skinById("eelpool").mark)).toEqual(["patch", "swords"]);
   });
 
-  it("keeps Symbiote mostly black rather than half white", () => {
-    // the accent is near-white, so the ratio is the only thing stopping it
-    // reading as a white eel with black stripes
+  it("keeps Eel-symbiote black, with nothing banded to lighten it", () => {
+    // it was once half white, from a near-white accent banded down the body.
+    // The white now comes from the spider and the face, so the body itself
+    // has to stay black — guard both the darkness and the absence of banding
     const symbiote = skinById("symbiote");
-    expect(symbiote.accent.light).toBeGreaterThan(80);
-    expect(symbiote.accentRatio).toBeLessThan(0.25);
     expect(symbiote.bodyLight).toBeLessThan(15);
+    expect(symbiote.headLight).toBeLessThan(20);
+    expect(symbiote.accent).toBeUndefined();
+    expect(symbiote.accentRatio).toBeUndefined();
   });
 
   it("keeps every accentRatio a sane fraction", () => {

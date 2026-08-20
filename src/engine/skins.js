@@ -26,7 +26,9 @@
 //   mark: "…"   a flourish drawn over the skin, or a list of them: "web" for
 //               crosshatched strands, "ears" for a pointed cowl masked through
 //               the eyes, "patch" for black mask panels with small eye holes,
-//               "swords" for crossed katanas on the back.
+//               "swords" for crossed katanas on the back, "emblem" for a
+//               spider spread across the back, "maw" for a toothy grin and a
+//               wide pupil-less stare.
 
 /**
  * Colours are HSL parts the renderer assembles, so a skin can be a metal
@@ -58,8 +60,10 @@ export const SKINS = [
     accent: { hue: 222, sat: 80, light: 31 }, accentRatio: 0.3, mark: "web" },
   { id: "eelwolf",  name: "Eel-wolf", hue: 47,  sat: 94, bodyLight: 48, headLight: 62, price: 10000,
     accent: { hue: 226, sat: 72, light: 20 }, accentRatio: 0.42, mark: "ears" },
-  { id: "symbiote", name: "Symbiote", hue: 265, sat: 26, bodyLight: 10, headLight: 15, price: 10000,
-    accent: { hue: 0,   sat: 0,  light: 95 }, accentRatio: 0.18, mark: "web" },
+  // no banding: its white is the spider, the grin and the stare, and a banded
+  // ring would only compete with them
+  { id: "symbiote", name: "Eel-symbiote", hue: 265, sat: 26, bodyLight: 9, headLight: 14, price: 10000,
+    mark: ["emblem", "maw"] },
   { id: "eelpool",  name: "Eel-pool", hue: 354, sat: 82, bodyLight: 38, headLight: 46, price: 10000,
     accent: { hue: 0,   sat: 0,  light: 9 },  accentRatio: 0.3, mark: ["patch", "swords"] },
 ];
