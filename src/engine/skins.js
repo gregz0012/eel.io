@@ -79,16 +79,40 @@ export const DEFAULT_SKIN_ID = "volt";
  * skin rather than worked out from its flags: Eel-symbiote carries `sheen` for
  * its wet gloss but belongs with the heroes, so inferring "metallic" from that
  * flag would file it in the wrong section.
+ *
+ * `minLevel` is the deepest level a player must have reached before the
+ * section opens for business. Points alone are no longer enough: the shop is a
+ * reason to go deeper, not just to grind fish in the shallows.
  */
 export const TIERS = [
-  { id: "standard", label: "Standard" },
-  { id: "metallic", label: "Metallic" },
-  { id: "gemstone", label: "Gemstone" },
-  { id: "hero",     label: "Heroes" },
+  { id: "standard", label: "Standard", minLevel: 2 },
+  { id: "metallic", label: "Metallic", minLevel: 5 },
+  { id: "gemstone", label: "Gemstone", minLevel: 10 },
+  { id: "hero",     label: "Heroes",   minLevel: 15 },
 ];
 
 export function skinsByTier(tier) {
   return SKINS.filter(s => s.tier === tier);
+}
+
+/** The deepest level a player needs before this skin can be bought. */
+export function levelFor(skin) {
+  return TIERS.find(t => t.id === skin?.tier)?.minLevel ?? 1;
+}
+
+/**
+ * Is this skin's section open to a player who has reached `bestLevel`?
+ *
+ * The free starting skin is exempt, and that exemption is the whole point:
+ * Volt sits in the "standard" section, so a level gate applied blindly would
+ * lock a brand-new player out of their own eel. The gate is on *buying*, never
+ * on wearing — see `wearableSkin`, which stays level-blind so nothing a player
+ * already owns can ever be taken away from them.
+ */
+export function meetsLevel(skin, bestLevel) {
+  if (!skin) return false;
+  if (skin.price === 0) return true;
+  return Math.max(1, bestLevel ?? 1) >= levelFor(skin);
 }
 
 export function skinById(id) {
@@ -112,21 +136,28 @@ export function canAfford(skin, banked) {
 
 /**
  * Buy a skin out of the bank.
- * @param {{banked:number, owned:string[]}} wallet
+ * @param {{banked:number, owned:string[], bestLevel?:number}} wallet
  * @returns {{banked:number, owned:string[], bought:boolean, reason?:string}}
  *          The wallet is returned unchanged when the purchase cannot happen.
  */
 export function buySkin(wallet, id) {
   const owned = [...(wallet?.owned ?? [])];
   const banked = Math.max(0, wallet?.banked ?? 0);
+  const bestLevel = Math.max(1, wallet?.bestLevel ?? 1);
   const skin = SKINS.find(s => s.id === id);
 
-  if (!skin) return { banked, owned, bought: false, reason: "no such skin" };
-  if (isOwned(skin.id, owned)) return { banked, owned, bought: false, reason: "already yours" };
-  if (!canAfford(skin, banked)) {
-    return { banked, owned, bought: false, reason: `${skin.price - banked} more points needed` };
-  }
-  return { banked: banked - skin.price, owned: [...owned, skin.id], bought: true };
+  // A wallet goes in and a wallet comes out, bestLevel included: the result is
+  // a legal input to the next call. Dropping the level here would mean a second
+  // buy chained off the first silently saw a level 1 player and sealed the shop.
+  const refuse = reason => ({ banked, owned, bestLevel, bought: false, reason });
+
+  if (!skin) return refuse("no such skin");
+  if (isOwned(skin.id, owned)) return refuse("already yours");
+  // Depth before money: the level is the slower half to fix, so say so first.
+  if (!meetsLevel(skin, bestLevel)) return refuse(`reach level ${levelFor(skin)} first`);
+  if (!canAfford(skin, banked)) return refuse(`${skin.price - banked} more points needed`);
+
+  return { banked: banked - skin.price, owned: [...owned, skin.id], bestLevel, bought: true };
 }
 
 /**
@@ -137,12 +168,25 @@ export function wearableSkin(id, owned) {
   return isOwned(id, owned) ? skinById(id) : skinById(DEFAULT_SKIN_ID);
 }
 
-/** The cheapest skin not yet owned, and what it still costs. */
-export function nextSkinToBuy(banked, owned) {
-  const skin = SKINS
-    .filter(s => !isOwned(s.id, owned))
+/**
+ * The cheapest skin the player could actually go and buy next, and what it
+ * still costs. Skins whose section is still shut are skipped: dangling
+ * "1,250 more for Emerald" in front of a level 3 player is a lie, because
+ * points are not what is stopping them.
+ */
+export function nextSkinToBuy(banked, owned, bestLevel) {
+  const affordableSoon = SKINS
+    .filter(s => !isOwned(s.id, owned) && meetsLevel(s, bestLevel))
     .sort((a, b) => a.price - b.price)[0];
-  return skin ? { skin, pointsToGo: Math.max(0, skin.price - Math.max(0, banked ?? 0)) } : null;
+  const skin = affordableSoon
+    ?? SKINS.filter(s => !isOwned(s.id, owned)).sort((a, b) => a.price - b.price)[0];
+  if (!skin) return null;
+  return {
+    skin,
+    pointsToGo: Math.max(0, skin.price - Math.max(0, banked ?? 0)),
+    locked: !meetsLevel(skin, bestLevel),
+    needsLevel: levelFor(skin),
+  };
 }
 
 /** Turn a bare hue (rival eels) into a skin the renderer can use. */
@@ -151,13 +195,20 @@ export function skinFromHue(hue) {
 }
 
 /**
- * Which of four states a skin is in for a given player — what the shop's
+ * Which of five states a skin is in for a given player — what the shop's
  * preview panel should say about whatever is currently being browsed:
  * "worn" (currently equipped), "owned" (bought, not worn), "affordable" (not
- * owned, but the bank covers it), or "locked" (not owned, not yet affordable).
+ * owned, but the bank covers it), "sealed" (the section has not opened yet) or
+ * "locked" (open, but not yet affordable).
+ *
+ * A skin can be both too deep and too dear at once. "sealed" wins, because
+ * points are the half a player can fix this afternoon — telling them the price
+ * when the real obstacle is the level would send them grinding at something
+ * that cannot work.
  */
-export function skinStatus(skin, { wornId, owned, banked } = {}) {
+export function skinStatus(skin, { wornId, owned, banked, bestLevel } = {}) {
   if (skin.id === wornId) return "worn";
   if (isOwned(skin.id, owned)) return "owned";
+  if (!meetsLevel(skin, bestLevel)) return "sealed";
   return canAfford(skin, banked) ? "affordable" : "locked";
 }

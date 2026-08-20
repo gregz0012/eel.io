@@ -241,6 +241,18 @@ would be a dead end they cannot get out of, and no amount of correct accounting
 is worth that. If you ever make the fare a hard requirement, you need a way back
 in — a daily allowance, a free dive, something.
 
+**Skins are gated on depth as well as money.** Each tier in `skins.js` carries a
+`minLevel` — standard 2, metallic 5, gemstone 10, hero 15 — checked against the
+deepest level the player has ever reached, so the shop is a reason to go down
+rather than to grind fish in the shallows. Two rules keep that from turning
+cruel: the gate is on *buying* only, and the free starting skin is exempt.
+`wearableSkin` stays deliberately level-blind, so nothing a player already owns
+can ever be taken back off them, and Volt — which sits in the "standard" tier —
+never locks a new player out of their own eel. When a skin is both too deep and
+too dear, `skinStatus` reports `"sealed"` rather than `"locked"`: points are the
+half a player can fix this afternoon, and quoting a price when the real obstacle
+is depth sends them grinding at something that cannot work.
+
 `wearableSkin(id, owned)` is the only way the shell should pick a skin. It falls
 back to the default for a skin that does not exist or was never bought, which is
 what stops a stored-value edit putting a player in platinum. `buySkin` returns

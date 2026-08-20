@@ -2,10 +2,14 @@ import { describe, it, expect } from "vitest";
 import {
   SKINS, DEFAULT_SKIN_ID, TIERS, skinsByTier, skinById, isOwned, ownedSkins,
   canAfford, buySkin, wearableSkin, nextSkinToBuy, skinFromHue, skinStatus,
+  levelFor, meetsLevel,
 } from "../src/engine/skins.js";
 
 const free = SKINS.filter(s => s.price === 0);
 const paid = SKINS.filter(s => s.price > 0);
+
+// Deep enough that the level gate never fires: these tests are about money.
+const DEEP = 99;
 
 describe("the catalogue", () => {
   it("gives everyone exactly one colour to start with", () => {
@@ -170,7 +174,7 @@ describe("ownership", () => {
 });
 
 describe("buySkin", () => {
-  const wallet = (banked, owned = []) => ({ banked, owned });
+  const wallet = (banked, owned = [], bestLevel = DEEP) => ({ banked, owned, bestLevel });
 
   it("deducts the price and hands over the skin", () => {
     const r = buySkin(wallet(5000), "gold");
@@ -216,7 +220,31 @@ describe("buySkin", () => {
   it("does not mutate the wallet it was given", () => {
     const w = wallet(5000, ["copper"]);
     buySkin(w, "gold");
-    expect(w).toEqual({ banked: 5000, owned: ["copper"] });
+    expect(w).toEqual({ banked: 5000, owned: ["copper"], bestLevel: DEEP });
+  });
+
+  it("refuses a skin from a section the player has not reached, and takes nothing", () => {
+    const r = buySkin(wallet(1e9, [], 1), "gold");
+    expect(r.bought).toBe(false);
+    expect(r.banked).toBe(1e9);
+    expect(r.owned).toEqual([]);
+    expect(r.reason).toContain(`level ${levelFor(skinById("gold"))}`);
+  });
+
+  it("names the level, not the price, when the player is short of both", () => {
+    const r = buySkin(wallet(0, [], 1), "diamond");
+    expect(r.reason).toContain("level");
+  });
+
+  it("sells once the player is deep enough", () => {
+    const gold = skinById("gold");
+    expect(buySkin(wallet(gold.price, [], levelFor(gold)), "gold").bought).toBe(true);
+  });
+
+  it("returns a wallet the next buy can chain off, level and all", () => {
+    const after = buySkin(wallet(5000), "gold");
+    expect(after.bestLevel).toBe(DEEP);
+    expect(buySkin(after, "copper").bought).toBe(true);
   });
 
   it("cannot spend a balance into the negative across many buys", () => {
@@ -246,24 +274,37 @@ describe("wearableSkin", () => {
 
 describe("nextSkinToBuy", () => {
   it("points at the cheapest skin not yet owned", () => {
-    expect(nextSkinToBuy(0, []).skin.id).toBe("coral");
+    expect(nextSkinToBuy(0, [], DEEP).skin.id).toBe("coral");
   });
 
   it("skips what is already owned", () => {
-    expect(nextSkinToBuy(0, ["coral", "orchid", "sky", "lime"]).skin.id).toBe("copper");
+    expect(nextSkinToBuy(0, ["coral", "orchid", "sky", "lime"], DEEP).skin.id).toBe("copper");
   });
 
   it("says how much more is needed", () => {
     const coral = skinById("coral");
-    expect(nextSkinToBuy(coral.price - 20, []).pointsToGo).toBe(20);
+    expect(nextSkinToBuy(coral.price - 20, [], DEEP).pointsToGo).toBe(20);
   });
 
   it("needs nothing more once affordable", () => {
-    expect(nextSkinToBuy(1e9, []).pointsToGo).toBe(0);
+    expect(nextSkinToBuy(1e9, [], DEEP).pointsToGo).toBe(0);
   });
 
   it("has nothing left to suggest once everything is owned", () => {
-    expect(nextSkinToBuy(1e9, paid.map(s => s.id))).toBeNull();
+    expect(nextSkinToBuy(1e9, paid.map(s => s.id), DEEP)).toBeNull();
+  });
+
+  it("points at a section the player can actually shop in", () => {
+    // rich but shallow: do not dangle a gem it cannot buy
+    const next = nextSkinToBuy(1e9, [], 2);
+    expect(next.skin.tier).toBe("standard");
+    expect(next.locked).toBe(false);
+  });
+
+  it("falls back to the cheapest locked skin when nothing is open yet, and says so", () => {
+    const next = nextSkinToBuy(1e9, [], 1);
+    expect(next.locked).toBe(true);
+    expect(next.needsLevel).toBe(levelFor(next.skin));
   });
 });
 
@@ -284,19 +325,19 @@ describe("skinStatus", () => {
   const gold = skinById("gold");
 
   it("is worn when it is the one currently equipped", () => {
-    expect(skinStatus(gold, { wornId: "gold", owned: [], banked: 0 })).toBe("worn");
+    expect(skinStatus(gold, { wornId: "gold", owned: [], banked: 0, bestLevel: DEEP })).toBe("worn");
   });
 
   it("is owned when bought but not currently worn", () => {
-    expect(skinStatus(gold, { wornId: "volt", owned: ["gold"], banked: 0 })).toBe("owned");
+    expect(skinStatus(gold, { wornId: "volt", owned: ["gold"], banked: 0, bestLevel: DEEP })).toBe("owned");
   });
 
   it("is affordable when not owned but the bank covers it", () => {
-    expect(skinStatus(gold, { wornId: "volt", owned: [], banked: gold.price })).toBe("affordable");
+    expect(skinStatus(gold, { wornId: "volt", owned: [], banked: gold.price, bestLevel: DEEP })).toBe("affordable");
   });
 
   it("is locked when not owned and not yet affordable", () => {
-    expect(skinStatus(gold, { wornId: "volt", owned: [], banked: gold.price - 1 })).toBe("locked");
+    expect(skinStatus(gold, { wornId: "volt", owned: [], banked: gold.price - 1, bestLevel: DEEP })).toBe("locked");
   });
 
   it("prefers worn over owned when they happen to coincide", () => {

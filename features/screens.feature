@@ -58,6 +58,12 @@ Feature: Screens, pausing and skins
     Then they do not own the gold skin
     And their bank holds 100 points
 
+  Scenario: All the points in the sea cannot buy a skin from a section you have not reached
+    Given a player with 999999 points banked who has only reached level 2
+    When they buy the gold skin
+    Then they do not own the gold skin
+    And their bank holds 999999 points
+
   Scenario: A bought skin is never lost, even when the bank empties
     Given a player with 2500 points banked
     When they buy the gold skin
