@@ -21,7 +21,11 @@ describe("built index.html", () => {
   it("ships no module syntax and no external resources", () => {
     expect(gameScript()).not.toMatch(/^\s*(?:import|export)\s/m);
     expect(html).not.toMatch(/<script[^>]+src=/);
-    expect(html).not.toMatch(/https?:\/\/(?!www\.w3\.org)/);
+    // LEADERBOARD_URL is the one intentional exception: an opt-in endpoint the
+    // shell only calls once a player presses "join", never on load. Strip
+    // that one assignment before checking nothing else points off the page.
+    const withoutLeaderboardUrl = html.replace(/const LEADERBOARD_URL = "[^"]*";/, "");
+    expect(withoutLeaderboardUrl).not.toMatch(/https?:\/\/(?!www\.w3\.org)/);
   });
 
   it("executes without throwing when loaded", () => {
