@@ -20,6 +20,26 @@ describe("phases", () => {
     expect(nextPhase("over", "dive")).toBe("over");
   });
 
+  it("offers a calming mini-game from the game over screen, optionally", () => {
+    expect(nextPhase("over", "playMiniGame")).toBe("minigame");
+    expect(nextPhase("minigame", "finishMiniGame")).toBe("home");
+  });
+
+  it("can still surface straight past the mini-game offer", () => {
+    expect(nextPhase("over", "surface")).toBe("home");
+  });
+
+  it("cannot offer a mini-game from anywhere but the game over screen", () => {
+    for (const phase of ["home", "playing", "paused", "skins", "howto", "board", "minigame"]) {
+      expect(nextPhase(phase, "playMiniGame")).toBe(phase);
+    }
+  });
+
+  it("a mini-game in progress cannot be dived into or paused", () => {
+    expect(nextPhase("minigame", "dive")).toBe("minigame");
+    expect(nextPhase("minigame", "pause")).toBe("minigame");
+  });
+
   it("lets a paused player give up and go home", () => {
     expect(nextPhase("paused", "surface")).toBe("home");
   });
@@ -91,7 +111,7 @@ describe("phases", () => {
     for (const phase of PHASES) {
       for (const event of ["dive", "pause", "resume", "die", "surface",
                            "openSkins", "closeSkins", "openHow", "closeHow",
-                           "openBoard", "closeBoard"]) {
+                           "openBoard", "closeBoard", "playMiniGame", "finishMiniGame"]) {
         expect(PHASES).toContain(nextPhase(phase, event));
       }
     }
@@ -112,6 +132,6 @@ describe("canDo", () => {
 describe("isRunning", () => {
   it("advances the world only while playing", () => {
     expect(isRunning("playing")).toBe(true);
-    for (const phase of ["home", "paused", "over", "skins", "howto", "board"]) expect(isRunning(phase)).toBe(false);
+    for (const phase of ["home", "paused", "over", "skins", "howto", "board", "minigame"]) expect(isRunning(phase)).toBe(false);
   });
 });

@@ -62,6 +62,8 @@ eel.io/
 │   │   ├── session.js    # which screen we are on: home/playing/paused/over (pure)
 │   │   ├── bank.js       # banking a dive's score, and the dive fare (pure)
 │   │   ├── skins.js      # the skin catalogue and buying them (pure)
+│   │   ├── minigames.js  # square breathing, the kind-words tap game (pure)
+│   │   ├── progress.js   # cumulative playtime; when a mini-game is due (pure)
 │   │   ├── collision.js  # geometry: head-vs-body, tail-bite index, self-cross detection
 │   │   ├── entities.js   # factories: makeEel, makeFish, makePredator, makeBoss, ...
 │   │   ├── spawn.js      # spawn rules (takes rng + config, returns entities)
@@ -93,7 +95,8 @@ eel.io/
 ```
 
 `config.js`, `rng.js`, `scoring.js`, `identity.js`, `leaderboard.js`, `session.js`,
-`bank.js`, `skins.js` and `presents.js` exist so far. The rest is the destination, not a description of today — see §9.
+`bank.js`, `skins.js`, `presents.js`, `minigames.js` and `progress.js` exist so far.
+The rest is the destination, not a description of today — see §9.
 
 ### Why a build step
 
@@ -423,9 +426,9 @@ Extraction order — each step only depends on earlier ones:
 
 `vector` → **`scoring` ✅ done** → `collision` → `entities` → `spawn` → `world.step`
 
-`identity`, `leaderboard`, `session`, `bank` and `skins` sit outside that chain: they were
-new behaviour rather than extracted monolith, so they went straight in as pure
-modules.
+`identity`, `leaderboard`, `session`, `bank`, `skins`, `minigames` and `progress` sit
+outside that chain: they were new behaviour rather than extracted monolith, so they
+went straight in as pure modules.
 
 leaving draw/input/loop as the thin side-effect shell. `entities` comes before `spawn` because spawn rules build entities.
 

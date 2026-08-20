@@ -69,4 +69,25 @@ export const CONFIG = {
     minRunMs: 3000,         // a run shorter than this cannot have earned anything
     submitCooldownMs: 5000, // per player, server-enforced
   },
+
+  // Calming mini-games, offered on death after a long stretch of play. The
+  // reward is banked, never added to the run's score, so it can never touch
+  // the leaderboard — see engine/progress.js and engine/minigames.js.
+  miniGames: {
+    everyMs: 15 * 60 * 1000, // offer once per this much cumulative play
+    reward: 250,             // banked points for finishing one
+    breathing: {
+      phaseMs: 4000,         // each of in / hold / out / hold lasts this long
+      rounds: 4,             // full in-hold-out-hold cycles before it's done
+    },
+    words: {
+      tapCooldownMs: 5000,   // gap enforced between taps, so it can't be rushed
+      needed: 5,             // distinct words to tap before the reward is earned
+      list: [
+        "kind", "brave", "calm", "patient", "gentle", "curious", "friendly",
+        "grateful", "hopeful", "steady", "warm", "bright", "caring",
+        "confident", "peaceful", "cheerful", "thoughtful", "generous",
+      ],
+    },
+  },
 };
