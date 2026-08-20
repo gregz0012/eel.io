@@ -94,17 +94,36 @@ forgets the id.
 The game does not need it: with no server configured, or with no internet, it
 plays exactly the same and your best score is still kept on your own device.
 
-To run one, deploy the Cloudflare Worker in [`worker/`](worker/) (free tier is
-plenty) and paste its URL into `LEADERBOARD_URL` in `src/index.html`, then
-rebuild:
+### Deploying it from GitHub (no laptop needed)
+
+The [`leaderboard`](.github/workflows/leaderboard.yml) workflow applies the D1
+schema and deploys the Worker in [`worker/`](worker/) for you. It runs when
+anything under `worker/` or `src/engine/` changes on `main`, and you can also
+start it by hand: **Actions → leaderboard → Run workflow**.
+
+It needs two repository secrets — **Settings → Secrets and variables → Actions
+→ New repository secret**:
+
+| Secret | Where it comes from |
+| --- | --- |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare dashboard → My Profile → API Tokens → Create Token. Use the **Edit Cloudflare Workers** template, and add **D1 → Edit** so it can create the table too. |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare dashboard → Workers & Pages → right-hand sidebar (or the hex string in the dashboard URL). |
+
+The workflow refuses to start if either is missing, and it runs the unit tests
+before it deploys, so a Worker with red rules never ships.
+
+When it finishes, open the run's summary — it prints the Worker's URL. Paste
+that into `LEADERBOARD_URL` in `src/index.html` and run `npm run build`. That
+URL isn't a secret; it ships in the HTML to every player, which is why it lives
+in the source rather than in a secret.
+
+### Or from a laptop
 
 ```bash
 cd worker
 npx wrangler d1 execute eelio --remote --file=./schema.sql   # create the table, once
 npx wrangler deploy                                          # prints the Worker's URL
 ```
-
-Paste that URL into `LEADERBOARD_URL` in `src/index.html`, then `npm run build`.
 
 ## Working on it
 
@@ -117,6 +136,9 @@ npm install      # dev-only tools (vitest, cucumber) — nothing ships to the br
 npm run build    # regenerate index.html from src/
 npm run check    # build freshness + acceptance scenarios + unit tests
 ```
+
+`npm run check` also runs on every push, via the
+[`check`](.github/workflows/check.yml) workflow.
 
 See [`CLAUDE.md`](CLAUDE.md) for the architecture and the BDD → TDD workflow.
 

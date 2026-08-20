@@ -349,13 +349,24 @@ npm run check        # build:check + bdd + unit         — run before every com
 npm start            # serve at http://localhost:8000 (or just open index.html)
 ```
 
-The leaderboard server is deployed separately and only when it changes:
+The leaderboard server is deployed separately and only when it changes. In CI
+that is the `leaderboard` workflow — it applies the schema and deploys on a
+push to `main` touching `worker/**` or `src/engine/**`, or on demand from the
+Actions tab. It needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` as
+repository secrets; the README says where they come from. By hand:
 
 ```bash
 cd worker
 npx wrangler d1 execute eelio --remote --file=./schema.sql   # create the table, once
 npx wrangler deploy                                          # prints the URL for LEADERBOARD_URL
 ```
+
+Two things that look like secrets and are not: the D1 database id and the
+Worker's URL. The URL ships in `index.html` to every player, so it belongs in
+`src/index.html` where the build can see it — putting it in a secret would only
+mean the committed `index.html` no longer matches its source, which is the one
+thing `npm run check` exists to prevent. The API token is the only real secret
+here, and nothing in the repo ever reads it.
 
 The D1 database is `eelio`; its binding and id are in `worker/wrangler.toml`.
 
@@ -429,7 +440,7 @@ Honest list of what this architecture does not yet cover:
 - **Leaderboard scores are not verifiable.** The caps in §4 stop casual forgery and nothing more. Replay verification is the fix and it waits on `world.step`.
 - **The leaderboard is unauthenticated by design.** Anyone who clears their storage becomes a new player. That is the privacy trade: no accounts means no way to tell a returning player from a new one, and no way to stop someone farming fresh ids.
 - **`/forget` trusts whoever holds the id.** The id is a random UUID that only that browser and the server ever see, so this is a capability, not a password. Good enough here; not a pattern to copy somewhere it matters.
-- **No CI.** `npm run check` runs only when someone remembers. A GitHub Actions workflow running it on push would be a cheap win.
+- **CI runs the suite, never the game.** `npm run check` now runs on every push, and the `leaderboard` workflow can deploy the Worker without a laptop. Neither can tell you the eel feels wrong or a skin looks bad — playtesting is still manual, and still required.
 - **No lint or formatter.** Fine for now; the codebase is small and consistent.
 - **The bank and owned skins are local-only.** Clearing site data loses them, and they do not follow a player to another device. Nothing validates a balance either — an edited store is an edited store. Syncing them would need an account, which §1 rules out — so this is a trade we accept, not a bug to fix.
 - **`src/index.html` is still a monolith** — everything except the extracted engine modules. That is expected; see §9.
