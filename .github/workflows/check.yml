@@ -1,0 +1,26 @@
+# Runs the suite on every push. CLAUDE.md listed "no CI" as a known gap: until
+# now `npm run check` only ran when someone remembered, and the one bug that
+# has ever shipped in this repo was a file that threw the instant it loaded.
+name: check
+
+on:
+  push:
+    branches: [main]     # pull_request covers the branches, so this is not a
+  pull_request:          # second run of the same commit on every PR
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # build freshness + Cucumber scenarios + Vitest units. A stale committed
+      # index.html fails here, which is the point: Pages serves that file.
+      - run: npm run check

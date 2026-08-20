@@ -1,0 +1,91 @@
+# Deploys the leaderboard Worker and its D1 schema from GitHub, so the server
+# can be shipped from a phone. Needs two repository secrets — see README.
+#
+# The game never needs this: with LEADERBOARD_URL empty, or this Worker down,
+# Fin.io plays exactly the same. Nothing here may become a dependency of the
+# game itself.
+name: leaderboard
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "worker/**"
+      - "src/engine/**"          # the Worker imports the engine's rules
+      - ".github/workflows/leaderboard.yml"
+  workflow_dispatch:             # "Run workflow" in the Actions tab
+
+permissions:
+  contents: read
+
+concurrency: leaderboard-deploy  # never two deploys at once
+
+env:
+  WRANGLER_SEND_METRICS: "false"   # design value #1: no telemetry we can turn off
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Check the deploy secrets are set
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          missing=""
+          if [ -z "$TOKEN" ]; then missing="$missing CLOUDFLARE_API_TOKEN"; fi
+          if [ -z "$ACCOUNT" ]; then missing="$missing CLOUDFLARE_ACCOUNT_ID"; fi
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secret(s):$missing — add them under Settings → Secrets and variables → Actions. See the README."
+            exit 1
+          fi
+
+      - run: npm ci
+
+      # Never deploy a Worker whose rules are red. worker.test.js exercises its
+      # decisions against a stubbed D1.
+      - name: Test first
+        run: npm test
+
+      # Idempotent: schema.sql is all CREATE ... IF NOT EXISTS, so re-running it
+      # on every deploy costs nothing and means a fresh database needs no
+      # separate manual step.
+      - name: Apply the D1 schema
+        working-directory: worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@4 d1 execute eelio --remote --yes --file=./schema.sql
+
+      - name: Deploy the Worker
+        working-directory: worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4 deploy 2>&1 | tee deploy.log
+          url=$(sed -r 's/\x1b\[[0-9;]*m//g' deploy.log \
+                | grep -oE 'https://[a-z0-9.-]+\.workers\.dev' | head -1 || true)
+          {
+            echo "## Leaderboard deployed"
+            if [ -n "$url" ]; then
+              echo ""
+              echo '```'
+              echo "$url"
+              echo '```'
+              echo ""
+              echo "The game only talks to it once that URL is in \`LEADERBOARD_URL\` in \`src/index.html\` and \`npm run build\` has been run."
+              echo "The URL is not a secret — it ships in the HTML to every player."
+            else
+              echo ""
+              echo "Deployed, but no workers.dev URL in the output — a custom route, probably. Check the log above."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
