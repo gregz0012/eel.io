@@ -1353,9 +1353,9 @@
       ctx.fillStyle = `hsl(${accent.hue},${accent.sat}%,${accent.light + 20}%)`;
       for (const s of [-1, 1]){
         ctx.beginPath();
-        ctx.moveTo(radius*0.35, s*radius*0.65);
-        ctx.lineTo(-radius*0.35, s*radius*2.5);   // tip, swept out and back
-        ctx.lineTo(-radius*0.9,  s*radius*0.45);
+        ctx.moveTo(radius*0.30, s*radius*0.60);
+        ctx.lineTo(-radius*1.3, s*radius*2.25);   // tip: swept back, but still clear of the body
+        ctx.lineTo(-radius*1.0,  s*radius*0.35);
         ctx.closePath(); ctx.fill();
       }
     }
@@ -1901,9 +1901,9 @@
       pctx.fillStyle = `hsl(${accent.hue},${accent.sat}%,${accent.light + 20}%)`;
       for (const s of [-1, 1]){
         pctx.beginPath();
-        pctx.moveTo(radius*0.35, s*radius*0.65);
-        pctx.lineTo(-radius*0.35, s*radius*2.5);   // tip, swept out and back
-        pctx.lineTo(-radius*0.9,  s*radius*0.45);
+        pctx.moveTo(radius*0.30, s*radius*0.60);
+        pctx.lineTo(-radius*1.3, s*radius*2.25);   // tip: swept back, but still clear of the body
+        pctx.lineTo(-radius*1.0,  s*radius*0.35);
         pctx.closePath(); pctx.fill();
       }
     }
