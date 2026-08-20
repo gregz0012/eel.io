@@ -50,7 +50,11 @@
     font-size:26px;font-weight:700;color:var(--volt);line-height:1.1;
     font-variant-numeric:tabular-nums;
   }
-  #right-stats{display:flex;gap:10px;align-items:flex-start;}
+  /* Clears the pause button, which floats at top:16;right:16 over this corner.
+     Without it the 44px disc sits squarely on top of the score digits — and
+     since #hud is pointer-events:none the button still worked, so the only
+     symptom was an unreadable score. */
+  #right-stats{display:flex;gap:10px;align-items:flex-start;margin-right:48px;}
 
   /* ---- power meter ---- */
   #powerbar{
@@ -101,6 +105,12 @@
   #zapBtn.ready:active{transform:scale(.9);}
   @keyframes zappulse{0%,100%{box-shadow:0 0 18px rgba(142,243,255,.5);}50%{box-shadow:0 0 36px rgba(142,243,255,.95);}}
   @media (max-width:520px){ #zapBtn{width:92px;height:92px;font-size:15px;} }
+  /* The charge bar is centred and the zap button is bottom-right, so below
+     ~588px they collide — on a phone the button covered the right end of the
+     bar, including its tappable area. Stack them instead: bar above button,
+     which is the more natural reading anyway (the meter belongs to the
+     button it charges). */
+  @media (max-width:588px){ #powerbar{bottom:142px;} }
 
   /* ---- overlays ---- */
   .overlay{
@@ -789,6 +799,30 @@
       return tagFor(id).replace(/-\d+$/, "");
     }
     
+    /**
+     * A short tag for a rival eel that is guaranteed not to be the player's own.
+     *
+     * There are only 64 adjectives x 63 nouns = 4,032 short tags, and the sea keeps
+     * fourteen rivals topped up for the whole dive, so a rival wearing the player's
+     * own name is not a freak event — it is a birthday-paradox certainty over a
+     * long session, and it happened in the first week of play. Seeing "yourself"
+     * swim past breaks the illusion these names exist to create.
+     *
+     * @param {() => number} rng      injected; the shell passes Math.random
+     * @param {string} excludedTag    the player's own short tag
+     */
+    function rivalTag(rng, excludedTag) {
+      // Bounded: the caller is an unconditional respawn loop, so this must always
+      // terminate even if the name pool were somehow exhausted. Ten tries makes a
+      // repeat collision vanishingly unlikely; the fallback is a suffixed name,
+      // which is still never equal to the excluded tag.
+      for (let i = 0; i < 10; i++) {
+        const tag = shortTagFor(String(rng()));
+        if (tag !== excludedTag) return tag;
+      }
+      return `${excludedTag}II`;
+    }
+    
     /** Shape check for a tag this code produced. */
     function isWellFormedTag(tag) {
       return typeof tag === "string" && /^[A-Z][a-z]+[A-Z][a-z]+-\d{4}$/.test(tag);
@@ -1291,7 +1325,7 @@
       return { playedMs: state?.playedMs ?? 0, lastRewardAtMs: state?.playedMs ?? 0 };
     }
 
-    return { CONFIG, seededRng, randInt, weightedPick, addScore, completeLevel, bossHits, deductLevel, predatorTarget, isBossLevel, levelSpeed, tagFor, shortTagFor, isWellFormedTag, tagSpaceSize, validateSubmission, bestOf, rankOf, topRows, clampTopLimit, PHASES, nextPhase, canDo, isRunning, deposit, diveCost, payForDive, canAffordDive, SKINS, DEFAULT_SKIN_ID, TIERS, skinsByTier, levelFor, meetsLevel, skinById, isOwned, ownedSkins, canAfford, buySkin, wearableSkin, nextSkinToBuy, skinFromHue, skinStatus, PRESENT_KINDS, rollPresent, isKindGift, pickMiniGame, breathPhaseAt, canTapAt, wordsNeeded, isWordGameComplete, wordList, addPlayTime, miniGameDue, recordMiniGameReward };
+    return { CONFIG, seededRng, randInt, weightedPick, addScore, completeLevel, bossHits, deductLevel, predatorTarget, isBossLevel, levelSpeed, tagFor, shortTagFor, rivalTag, isWellFormedTag, tagSpaceSize, validateSubmission, bestOf, rankOf, topRows, clampTopLimit, PHASES, nextPhase, canDo, isRunning, deposit, diveCost, payForDive, canAffordDive, SKINS, DEFAULT_SKIN_ID, TIERS, skinsByTier, levelFor, meetsLevel, skinById, isOwned, ownedSkins, canAfford, buySkin, wearableSkin, nextSkinToBuy, skinFromHue, skinStatus, PRESENT_KINDS, rollPresent, isKindGift, pickMiniGame, breathPhaseAt, canTapAt, wordsNeeded, isWordGameComplete, wordList, addPlayTime, miniGameDue, recordMiniGameReward };
   })();
 
   const canvas = document.getElementById("game");
@@ -1377,6 +1411,20 @@
   const FEAST_TARGET = 3;
   const PRESENT_TARGET = Engine.CONFIG.presents.target;
 
+  /**
+   * The player's own short name, for rivals to avoid colliding with.
+   *
+   * Deliberately reads the stored id rather than calling playerId(), which
+   * *creates* one when none exists. With no leaderboard configured a player
+   * has no id and must not be given one just so rival eels can be named —
+   * "no server, no id" is the promise (CLAUDE.md §4). No id simply means
+   * there is no name to avoid, and "" matches nothing.
+   */
+  function myShortTag(){
+    const id = readStore(STORE.id);
+    return id ? Engine.shortTagFor(id) : "";
+  }
+
   function makeEel(x, y, len, isPlayer){
     return {
       x, y, angle: rand(0, TAU),
@@ -1386,8 +1434,9 @@
       isPlayer: !!isPlayer,
       hue: isPlayer ? Engine.wearableSkin(skinId, owned).hue : rand(150, 260),
       // Rivals wear a name from the same generator the leaderboard uses, so the
-      // sea reads as full of other players rather than of scenery.
-      name: isPlayer ? null : Engine.shortTagFor(`${Math.random()}`),
+      // sea reads as full of other players rather than of scenery — but never
+      // the player's own name, which reads as seeing yourself swim past.
+      name: isPlayer ? null : Engine.rivalTag(Math.random, myShortTag()),
       thinkT: 0, wanderA: rand(0, TAU),
       dead: false
     };
@@ -3291,7 +3340,7 @@
       owned: "Yours",
       affordable: `${skin.price.toLocaleString()} points`,
       locked: `${skin.price.toLocaleString()} points`,
-      sealed: `Opens at level ${Engine.levelFor(skin)}`,
+      sealed: `\u{1F512} Opens at level ${Engine.levelFor(skin)}`,
     }[status];
     renderSkinAction(skin, status);
   }
@@ -3347,7 +3396,7 @@
     } else if (status === "sealed"){
       // no price shown: what is missing is depth, and quoting points here
       // would send a player grinding fish at something fish cannot buy
-      add("needLevelBtn", `Reach level ${Engine.levelFor(skin)}`, null, true);
+      add("needLevelBtn", `\u{1F512} Reach level ${Engine.levelFor(skin)}`, null, true);
     } else {
       add("needMoreBtn", `${(skin.price - banked).toLocaleString()} more needed`, null, true);
     }
@@ -3410,7 +3459,7 @@
           owned: "yours",
           affordable: skin.price.toLocaleString(),
           locked: `🔒 ${skin.price.toLocaleString()}`,
-          sealed: `LEVEL ${Engine.levelFor(skin)}`,
+          sealed: `\u{1F512} LVL ${Engine.levelFor(skin)}`,
         }[status];
 
         el.append(swatch, name, cost);
