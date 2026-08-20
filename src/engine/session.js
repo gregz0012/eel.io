@@ -5,11 +5,12 @@
 // not-started. That is how you get a resume button that revives a dead eel.
 // Every transition is named here and anything unnamed is ignored.
 
-export const PHASES = ["home", "skins", "playing", "paused", "over"];
+export const PHASES = ["home", "skins", "howto", "playing", "paused", "over"];
 
 const TRANSITIONS = {
-  home:    { dive: "playing", openSkins: "skins" },
+  home:    { dive: "playing", openSkins: "skins", openHow: "howto" },
   skins:   { closeSkins: "home" },                     // only ever leads back home
+  howto:   { closeHow: "home" },                       // likewise
   playing: { pause: "paused", die: "over" },
   paused:  { resume: "playing", surface: "home" },     // surface = give up the run
   over:    { surface: "home" },                        // death always goes home first

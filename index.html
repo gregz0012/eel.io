@@ -132,6 +132,9 @@
   }
   .card b{color:var(--volt);}
   .legend{display:grid;grid-template-columns:auto 1fr;gap:8px 12px;text-align:left;margin-top:6px;}
+  /* a whole page of prose, so it reads as prose rather than as a poster */
+  #howScreen h1{font-size:clamp(30px,8vw,62px);}
+  #howScreen .card{text-align:left;}
   .dot{width:16px;height:16px;border-radius:50%;align-self:center;box-shadow:0 0 10px currentColor;}
   button{
     font-family:inherit;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
@@ -196,7 +199,12 @@
   #skinPreviewName{font-size:14px;font-weight:700;color:var(--ink);letter-spacing:.02em;}
   #skinPreviewStatus{font-size:11px;color:var(--muted);}
   #skins{max-width:560px;width:100%;}
-  #skinGrid{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;}
+  #skinGrid{display:flex;flex-direction:column;gap:16px;}
+  .tierLabel{
+    font-size:11px;letter-spacing:.32em;text-transform:uppercase;
+    color:var(--biolume);font-weight:700;margin-bottom:9px;
+  }
+  .tierRow{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;}
   .skin{
     width:74px;padding:8px 4px 7px;border-radius:12px;cursor:pointer;
     background:rgba(4,26,38,.55);border:1px solid rgba(79,230,214,.18);
@@ -282,6 +290,18 @@
     <button id="openSkinsBtn" class="quiet">Change your eel</button>
   </div>
   <button id="startBtn">Dive in</button>
+  <button id="howBtn" class="quiet">How to play</button>
+</div>
+
+<div id="pause" class="overlay hidden">
+  <h1>PAUSED<span class="sub">the sea holds its breath</span></h1>
+  <div class="final">Score<b id="pauseScore">0</b></div>
+  <button id="resumeBtn">Keep swimming</button>
+  <button id="surfaceBtn" class="quiet">Back to the surface</button>
+</div>
+
+<div id="howScreen" class="overlay hidden">
+  <h1>HOW TO PLAY<span class="sub">learn the deep</span></h1>
   <div class="card">
     You're a young electric eel in the twilight zone. <b>Steer with your mouse or finger.</b>
     Eat little fish to grow. Bite chunks off rival eels — or swallow smaller ones whole. Grab a
@@ -300,17 +320,11 @@
     </div>
   </div>
   <div class="tip">Hold mouse / tap-hold to sprint · Space or tap the meter to unleash a shock that stuns everything nearby — then feast · <b>P</b> or <b>Esc</b> to pause</div>
-</div>
-
-<div id="pause" class="overlay hidden">
-  <h1>PAUSED<span class="sub">the sea holds its breath</span></h1>
-  <div class="final">Score<b id="pauseScore">0</b></div>
-  <button id="resumeBtn">Keep swimming</button>
-  <button id="surfaceBtn" class="quiet">Back to the surface</button>
+  <button id="closeHowBtn">Got it</button>
 </div>
 
 <div id="skinsScreen" class="overlay hidden">
-  <h1>YOUR EEL<span class="sub">pick a colour</span></h1>
+  <h1>YOUR EEL<span class="sub">pick your look</span></h1>
   <div id="skinPreviewWrap">
     <canvas id="skinPreview" width="260" height="100"></canvas>
     <div id="skinPreviewName">Volt</div>
@@ -636,11 +650,12 @@
     // not-started. That is how you get a resume button that revives a dead eel.
     // Every transition is named here and anything unnamed is ignored.
     
-    const PHASES = ["home", "skins", "playing", "paused", "over"];
+    const PHASES = ["home", "skins", "howto", "playing", "paused", "over"];
     
     const TRANSITIONS = {
-      home:    { dive: "playing", openSkins: "skins" },
+      home:    { dive: "playing", openSkins: "skins", openHow: "howto" },
       skins:   { closeSkins: "home" },                     // only ever leads back home
+      howto:   { closeHow: "home" },                       // likewise
       playing: { pause: "paused", die: "over" },
       paused:  { resume: "playing", surface: "home" },     // surface = give up the run
       over:    { surface: "home" },                        // death always goes home first
@@ -733,42 +748,59 @@
      */
     const SKINS = [
       // yours from the start
-      { id: "volt",     name: "Volt",     hue: 165, sat: 70, bodyLight: 38, headLight: 58, price: 0 },
+      { id: "volt", tier: "standard",     name: "Volt",     hue: 165, sat: 70, bodyLight: 38, headLight: 58, price: 0 },
     
       // plain colours — an early, easy first purchase, all one price
-      { id: "coral",    name: "Coral",    hue: 14,  sat: 78, bodyLight: 40, headLight: 60, price: 250 },
-      { id: "orchid",   name: "Orchid",   hue: 292, sat: 62, bodyLight: 40, headLight: 60, price: 250 },
-      { id: "sky",      name: "Sky",      hue: 205, sat: 74, bodyLight: 40, headLight: 60, price: 250 },
-      { id: "lime",     name: "Lime",     hue: 95,  sat: 62, bodyLight: 36, headLight: 56, price: 250 },
+      { id: "coral", tier: "standard",    name: "Coral",    hue: 14,  sat: 78, bodyLight: 40, headLight: 60, price: 250 },
+      { id: "orchid", tier: "standard",   name: "Orchid",   hue: 292, sat: 62, bodyLight: 40, headLight: 60, price: 250 },
+      { id: "sky", tier: "standard",      name: "Sky",      hue: 205, sat: 74, bodyLight: 40, headLight: 60, price: 250 },
+      { id: "lime", tier: "standard",     name: "Lime",     hue: 95,  sat: 62, bodyLight: 36, headLight: 56, price: 250 },
     
       // the metals — sheen climbs with price, so the ladder is visible at a glance
-      { id: "copper",   name: "Copper",   hue: 24,  sat: 62, bodyLight: 32, headLight: 54, price: 500,  sheen: 0.32 },
-      { id: "iron",     name: "Iron",     hue: 210, sat: 10, bodyLight: 38, headLight: 64, price: 1000, sheen: 0.52 },
-      { id: "gold",     name: "Gold",     hue: 45,  sat: 78, bodyLight: 40, headLight: 66, price: 2000, sheen: 0.78 },
-      { id: "platinum", name: "Platinum", hue: 205, sat: 14, bodyLight: 56, headLight: 90, price: 5000, sheen: 1 },
+      { id: "copper", tier: "metallic",   name: "Copper",   hue: 24,  sat: 62, bodyLight: 32, headLight: 54, price: 500,  sheen: 0.32 },
+      { id: "iron", tier: "metallic",     name: "Iron",     hue: 210, sat: 10, bodyLight: 38, headLight: 64, price: 1000, sheen: 0.52 },
+      { id: "gold", tier: "metallic",     name: "Gold",     hue: 45,  sat: 78, bodyLight: 40, headLight: 66, price: 2000, sheen: 0.78 },
+      { id: "platinum", tier: "metallic", name: "Platinum", hue: 205, sat: 14, bodyLight: 56, headLight: 90, price: 5000, sheen: 1 },
     
       // the gems — all one price, all shimmering
-      { id: "emerald",  name: "Emerald",  hue: 150, sat: 85, bodyLight: 34, headLight: 60, price: 7500, gem: true },
-      { id: "ruby",     name: "Ruby",     hue: 350, sat: 82, bodyLight: 36, headLight: 60, price: 7500, gem: true },
-      { id: "diamond",  name: "Diamond",  hue: 190, sat: 45, bodyLight: 58, headLight: 82, price: 7500, gem: true },
+      { id: "emerald", tier: "gemstone",  name: "Emerald",  hue: 150, sat: 85, bodyLight: 34, headLight: 60, price: 7500, gem: true },
+      { id: "ruby", tier: "gemstone",     name: "Ruby",     hue: 350, sat: 82, bodyLight: 36, headLight: 60, price: 7500, gem: true },
+      { id: "diamond", tier: "gemstone",  name: "Diamond",  hue: 190, sat: 45, bodyLight: 58, headLight: 82, price: 7500, gem: true },
     
       // two-tone heroes — the top of the shop
-      { id: "spider",   name: "Spider",   hue: 352, sat: 84, bodyLight: 41, headLight: 49, price: 10000,
+      { id: "spider", tier: "hero",   name: "Spider",   hue: 352, sat: 84, bodyLight: 41, headLight: 49, price: 10000,
         accent: { hue: 222, sat: 80, light: 31 }, accentRatio: 0.3, mark: "web" },
-      { id: "eelwolf",  name: "Eel-wolf", hue: 47,  sat: 94, bodyLight: 48, headLight: 62, price: 10000,
+      { id: "eelwolf", tier: "hero",  name: "Eel-wolf", hue: 47,  sat: 94, bodyLight: 48, headLight: 62, price: 10000,
         accent: { hue: 226, sat: 72, light: 20 }, accentRatio: 0.42, mark: "ears" },
       // no banding: its white is the spider, the grin and the stare, and a banded
       // ring would only compete with them. Barely any saturation either — the body
       // taper adds up to 18% lightness towards the head, so a saturated hue turns
       // visibly purple there instead of staying tar-black. A little sheen gives it
       // the wet gloss tar has.
-      { id: "symbiote", name: "Eel-symbiote", hue: 250, sat: 9, bodyLight: 5, headLight: 8, price: 10000,
+      { id: "symbiote", tier: "hero", name: "Eel-symbiote", hue: 250, sat: 9, bodyLight: 5, headLight: 8, price: 10000,
         sheen: 0.3, mark: ["emblem", "stare"] },
-      { id: "eelpool",  name: "Eel-pool", hue: 354, sat: 82, bodyLight: 38, headLight: 46, price: 10000,
+      { id: "eelpool", tier: "hero",  name: "Eel-pool", hue: 354, sat: 82, bodyLight: 38, headLight: 46, price: 10000,
         accent: { hue: 0,   sat: 0,  light: 9 },  accentRatio: 0.3, mark: ["patch", "swords"] },
     ];
     
     const DEFAULT_SKIN_ID = "volt";
+    
+    /**
+     * The shop's sections, in the order they are shown. `tier` is stored on each
+     * skin rather than worked out from its flags: Eel-symbiote carries `sheen` for
+     * its wet gloss but belongs with the heroes, so inferring "metallic" from that
+     * flag would file it in the wrong section.
+     */
+    const TIERS = [
+      { id: "standard", label: "Standard" },
+      { id: "metallic", label: "Metallic" },
+      { id: "gemstone", label: "Gemstone" },
+      { id: "hero",     label: "Heroes" },
+    ];
+    
+    function skinsByTier(tier) {
+      return SKINS.filter(s => s.tier === tier);
+    }
     
     function skinById(id) {
       return SKINS.find(s => s.id === id) ?? SKINS.find(s => s.id === DEFAULT_SKIN_ID);
@@ -867,7 +899,7 @@
       return kind === "points" || kind === "starfish" || kind === "zap";
     }
 
-    return { CONFIG, seededRng, randInt, weightedPick, addScore, deductLevel, predatorTarget, isBossLevel, levelSpeed, tagFor, isWellFormedTag, tagSpaceSize, validateSubmission, bestOf, rankOf, topRows, PHASES, nextPhase, canDo, isRunning, deposit, diveCost, payForDive, canAffordDive, SKINS, DEFAULT_SKIN_ID, skinById, isOwned, ownedSkins, canAfford, buySkin, wearableSkin, nextSkinToBuy, skinFromHue, skinStatus, PRESENT_KINDS, rollPresent, isKindGift };
+    return { CONFIG, seededRng, randInt, weightedPick, addScore, deductLevel, predatorTarget, isBossLevel, levelSpeed, tagFor, isWellFormedTag, tagSpaceSize, validateSubmission, bestOf, rankOf, topRows, PHASES, nextPhase, canDo, isRunning, deposit, diveCost, payForDive, canAffordDive, SKINS, DEFAULT_SKIN_ID, TIERS, skinsByTier, skinById, isOwned, ownedSkins, canAfford, buySkin, wearableSkin, nextSkinToBuy, skinFromHue, skinStatus, PRESENT_KINDS, rollPresent, isKindGift };
   })();
 
   const canvas = document.getElementById("game");
@@ -2364,6 +2396,7 @@
     const inDive = phase === "playing" || phase === "paused";
     show("start", phase === "home");
     show("skinsScreen", phase === "skins");
+    show("howScreen", phase === "howto");
     show("over", false);                        // die() reveals it on a short delay
     show("pause", phase === "paused");
     show("hud", inDive);
@@ -2609,43 +2642,56 @@
     previewLoop();
   }
 
+  // The shop is grouped into the sections engine/skins.js declares, so a
+  // player scanning for "the shiny ones" has somewhere to look. The engine
+  // owns both the order and which skin belongs where; this only draws it.
   function renderSkins(){
     const grid = document.getElementById("skinGrid");
     grid.textContent = "";
     const worn = Engine.wearableSkin(skinId, owned);
 
-    for (const skin of Engine.SKINS){
-      const mine = Engine.isOwned(skin.id, owned);
-      const affordable = Engine.canAfford(skin, banked);
-      const el = document.createElement("div");
-      el.className = "skin" + (skin.gem ? " gem" : "") + (skin.id === worn.id ? " on" : "") + (mine ? "" : " locked");
-      if (skin.gem) el.style.setProperty("--gem-hue", skin.hue);
-      el.title = mine ? skin.name : `${skin.name} — ${skin.price.toLocaleString()} points`;
+    for (const tier of Engine.TIERS){
+      const section = document.createElement("div");
+      const label = document.createElement("h2");
+      label.className = "tierLabel"; label.textContent = tier.label;
+      const row = document.createElement("div");
+      row.className = "tierRow";
+      section.append(label, row);
+      grid.appendChild(section);
 
-      const swatch = document.createElement("div");
-      swatch.className = "swatch";
-      const colour = `hsl(${skin.hue},${skin.sat}%,${skin.headLight}%)`;
-      swatch.style.color = colour;
-      swatch.style.background = colour;
-      if (!mine) swatch.style.filter = "grayscale(.45) brightness(.8)";
+      for (const skin of Engine.skinsByTier(tier.id)){
+        const mine = Engine.isOwned(skin.id, owned);
+        const affordable = Engine.canAfford(skin, banked);
+        const el = document.createElement("div");
+        el.className = "skin" + (skin.gem ? " gem" : "") + (skin.id === worn.id ? " on" : "") + (mine ? "" : " locked");
+        if (skin.gem) el.style.setProperty("--gem-hue", skin.hue);
+        el.title = mine ? skin.name : `${skin.name} — ${skin.price.toLocaleString()} points`;
 
-      const name = document.createElement("div");
-      name.className = "name"; name.textContent = skin.name;
+        const swatch = document.createElement("div");
+        swatch.className = "swatch";
+        const colour = `hsl(${skin.hue},${skin.sat}%,${skin.headLight}%)`;
+        swatch.style.color = colour;
+        swatch.style.background = colour;
+        if (!mine) swatch.style.filter = "grayscale(.45) brightness(.8)";
 
-      const cost = document.createElement("div");
-      cost.className = "cost";
-      cost.textContent = mine ? (skin.price ? "yours" : "") : skin.price.toLocaleString();
-      if (!mine && affordable) cost.style.color = "var(--volt)";
+        const name = document.createElement("div");
+        name.className = "name"; name.textContent = skin.name;
 
-      el.append(swatch, name, cost);
-      el.addEventListener("mouseenter", () => { previewSkinId = skin.id; updatePreviewInfo(); });
-      el.addEventListener("click", () => {
-        previewSkinId = skin.id;               // browsing always previews, buying or not
-        if (mine){ skinId = skin.id; writeStore(STORE.skin, skinId); pendingBuy = null; }
-        else pendingBuy = affordable ? skin.id : null;
-        renderSkins();
-      });
-      grid.appendChild(el);
+        const cost = document.createElement("div");
+        cost.className = "cost";
+        cost.textContent = mine ? (skin.price ? "yours" : "") : skin.price.toLocaleString();
+        if (!mine && affordable) cost.style.color = "var(--volt)";
+
+        el.append(swatch, name, cost);
+        el.addEventListener("mouseenter", () => { previewSkinId = skin.id; updatePreviewInfo(); });
+        el.addEventListener("click", () => {
+          previewSkinId = skin.id;               // browsing always previews, buying or not
+          if (mine){ skinId = skin.id; writeStore(STORE.skin, skinId); pendingBuy = null; }
+          else pendingBuy = affordable ? skin.id : null;
+          renderSkins();
+        });
+        row.appendChild(el);
+      }
     }
 
     renderBankNote();
@@ -2747,6 +2793,8 @@
   document.getElementById("pauseBtn").addEventListener("click", () => goTo("pause"));
   document.getElementById("openSkinsBtn").addEventListener("click", () => goTo("openSkins"));
   document.getElementById("closeSkinsBtn").addEventListener("click", () => goTo("closeSkins"));
+  document.getElementById("howBtn").addEventListener("click", () => goTo("openHow"));
+  document.getElementById("closeHowBtn").addEventListener("click", () => goTo("closeHow"));
 })();
 </script>
 </body>
