@@ -5,7 +5,8 @@ name: check
 
 on:
   push:
-  pull_request:
+    branches: [main]     # pull_request covers the branches, so this is not a
+  pull_request:          # second run of the same commit on every PR
 
 permissions:
   contents: read
