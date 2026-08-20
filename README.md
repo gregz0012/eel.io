@@ -22,16 +22,22 @@ Every dive's score is **banked**. Spend it in the skin shop — tap "Change
 your eel" on the home screen. The shop is grouped into four sections. Volt is
 yours from the start; after that:
 
-| Section | Skins | Price each |
-| --- | --- | --- |
-| Standard | Coral, Orchid, Sky, Lime | 250 |
-| Metallic | Copper, Iron, Gold, Platinum | 500 / 1,000 / 2,000 / 5,000 |
-| Gemstone | Emerald, Ruby, Diamond | 7,500 |
-| Heroes | Spider, Eel-wolf, Eel-symbiote, Eel-pool | 10,000 |
+| Section | Skins | Price each | Opens at |
+| --- | --- | --- | --- |
+| Standard | Coral, Orchid, Sky, Lime | 250 | level 2 |
+| Metallic | Copper, Iron, Gold, Platinum | 500 / 1,000 / 2,000 / 5,000 | level 5 |
+| Gemstone | Emerald, Ruby, Diamond | 7,500 | level 10 |
+| Heroes | Spider, Eel-wolf, Eel-symbiote, Eel-pool | 10,000 | level 15 |
 
-Anything you can afford right now is lit up with its price; anything you
-can't is dimmed and padlocked. Tap a skin to see it swimming, then buy or wear
-it with the button beside it.
+Points are only half of it: a section stays shut until you have been deep
+enough to reach it, however rich you are. Anything you can buy right now is lit
+up with its price; anything you can't afford is dimmed and padlocked; anything
+still out of your depth shows the level it opens at instead of a price. Tap a
+skin to see it swimming, then buy or wear it with the button beside it.
+
+Volt is the exception and always will be — the eel you start in is never
+locked, and a skin you have bought stays wearable forever whatever happens
+afterwards.
 
 The metals catch the light — the dearer the metal, the harder it shines, so
 Platinum is a mirror where Copper is a soft glow. Gems shimmer. Heroes are

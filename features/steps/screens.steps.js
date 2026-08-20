@@ -10,13 +10,22 @@ Given("a player on the home screen", function () {
   this.phase = "home";
 });
 
+// Depth is part of a wallet now. These scenarios are about money, so unless a
+// scenario says otherwise the player is deep enough for the shop to be open.
+const DEEP = 99;
+
 Given("a player with an empty bank", function () {
-  this.wallet = { banked: 0, owned: [] };
+  this.wallet = { banked: 0, owned: [], bestLevel: DEEP };
   this.wearing = "volt";
 });
 
 Given("a player with {int} points banked", function (points) {
-  this.wallet = { banked: points, owned: [] };
+  this.wallet = { banked: points, owned: [], bestLevel: DEEP };
+  this.wearing = "volt";
+});
+
+Given("a player with {int} points banked who has only reached level {int}", function (points, level) {
+  this.wallet = { banked: points, owned: [], bestLevel: level };
   this.wearing = "volt";
 });
 
@@ -34,7 +43,7 @@ When("they finish a dive worth {int} points", function (score) {
 
 When("they buy the {word} skin", function (id) {
   const result = buySkin(this.wallet, id);
-  this.wallet = { banked: result.banked, owned: result.owned };
+  this.wallet = { banked: result.banked, owned: result.owned, bestLevel: result.bestLevel };
 });
 
 When("they dive and pay for it", function () {
