@@ -14,11 +14,12 @@
 //
 //   gem: true   a rarer, showier finish — a travelling sparkle and a faceted
 //               glint on the head.
-//   sheen: n    0..1, how hard the light catches a metal. Drives a bright
+//   sheen: n    0..1, how hard the light catches the skin. Drives a bright
 //               specular streak down one flank and a dark rim down the other,
-//               which is what reads as curved metal rather than flat colour.
-//               This is the whole ladder from dull iron to mirror platinum,
-//               so it rises with price.
+//               which is what reads as a curved, lit surface rather than flat
+//               colour. Across the metals it is the whole ladder from dull
+//               iron to mirror platinum, so there it rises with price; a low
+//               value also serves as a wet gloss on something like tar.
 //   accent: {}  a second colour, banded along the body, for two-tone skins.
 //   accentRatio how much of each band cycle the accent takes, 0..1, default
 //               half. Low values give thin streaks on a dominant base — which
@@ -61,9 +62,12 @@ export const SKINS = [
   { id: "eelwolf",  name: "Eel-wolf", hue: 47,  sat: 94, bodyLight: 48, headLight: 62, price: 10000,
     accent: { hue: 226, sat: 72, light: 20 }, accentRatio: 0.42, mark: "ears" },
   // no banding: its white is the spider, the grin and the stare, and a banded
-  // ring would only compete with them
-  { id: "symbiote", name: "Eel-symbiote", hue: 265, sat: 26, bodyLight: 9, headLight: 14, price: 10000,
-    mark: ["emblem", "maw"] },
+  // ring would only compete with them. Barely any saturation either — the body
+  // taper adds up to 18% lightness towards the head, so a saturated hue turns
+  // visibly purple there instead of staying tar-black. A little sheen gives it
+  // the wet gloss tar has.
+  { id: "symbiote", name: "Eel-symbiote", hue: 250, sat: 9, bodyLight: 5, headLight: 8, price: 10000,
+    sheen: 0.3, mark: ["emblem", "maw"] },
   { id: "eelpool",  name: "Eel-pool", hue: 354, sat: 82, bodyLight: 38, headLight: 46, price: 10000,
     accent: { hue: 0,   sat: 0,  light: 9 },  accentRatio: 0.3, mark: ["patch", "swords"] },
 ];

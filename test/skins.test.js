@@ -42,8 +42,10 @@ describe("the catalogue", () => {
     // sheen is what makes a metal read as metal rather than flat colour, so
     // the dearer metal must always be the shinier one — platinum has to look
     // visibly better than iron, not merely cost more.
-    const metals = SKINS.filter(s => s.sheen > 0);
-    expect(metals.map(s => s.id)).toEqual(["copper", "iron", "gold", "platinum"]);
+    // sheen is not metal-only any more — Eel-symbiote uses a little of it as a
+    // wet gloss — so name the metals rather than inferring them from the flag
+    const metals = ["copper", "iron", "gold", "platinum"].map(skinById);
+    for (const m of metals) expect(m.sheen).toBeGreaterThan(0);
 
     const byPrice = [...metals].sort((a, b) => a.price - b.price);
     const sheens = byPrice.map(s => s.sheen);

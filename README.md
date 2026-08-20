@@ -29,8 +29,8 @@ The metals catch the light — the dearer the metal, the harder it shines, so
 Platinum is a mirror where Copper is a soft glow. Gems shimmer. Heroes are
 banded in two colours and each carries its own flourish — Spider is webbed,
 Eel-wolf has a horned cowl masked through the eyes, Eel-pool wears a masked
-stare and a pair of crossed swords on its back, and Eel-symbiote is black with
-a white spider spread across its back and a toothy grin. Buying deducts the points — but a skin you have bought is yours
+stare and a pair of crossed swords on its back, and Eel-symbiote is tar-black with
+a white spider across its back, a toothy grin and a pale stare. Buying deducts the points — but a skin you have bought is yours
 forever, however empty the bank gets afterwards.
 
 Diving costs a few points too. If you can't cover it, the dive is free: you can
