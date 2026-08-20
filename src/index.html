@@ -1447,28 +1447,6 @@
       ctx.restore();
     }
 
-    // "maw": a dark grin split by white teeth. Drawn this way round on
-    // purpose — a white mouth with a dark line through it reads as a painted
-    // stripe, whereas dark with white teeth biting into it reads as a mouth
-    if (marks.includes("maw")){
-      ctx.fillStyle = "#07070c";
-      ctx.beginPath(); ctx.ellipse(radius*0.95, 0, radius*0.46, radius*0.76, 0, 0, TAU); ctx.fill();
-      ctx.fillStyle = "#f4f8fa";
-      const teeth = 5, y0 = -radius*0.66, span = radius*1.32, stepY = span/teeth;
-      for (let i = 0; i < teeth; i++){
-        const ya = y0 + stepY*i;
-        ctx.beginPath();                                  // upper jaw, biting back
-        ctx.moveTo(radius*1.30, ya);
-        ctx.lineTo(radius*1.30, ya + stepY);
-        ctx.lineTo(radius*0.96, ya + stepY*0.5);
-        ctx.closePath(); ctx.fill();
-        ctx.beginPath();                                  // lower jaw, offset to interlock
-        ctx.moveTo(radius*0.62, ya + stepY*0.5);
-        ctx.lineTo(radius*0.62, ya + stepY*1.5);
-        ctx.lineTo(radius*0.96, ya + stepY);
-        ctx.closePath(); ctx.fill();
-      }
-    }
     // "patch": a dark mask panel behind each eye, so the whites read as the
     // cut-outs of a mask rather than as plain eyes
     if (marks.includes("patch") && accent){
@@ -1486,15 +1464,21 @@
         ctx.ellipse(radius*0.56, s*radius*0.56, radius*0.30, radius*0.18, s*-0.35, 0, TAU);
         ctx.fill();
       }
-    } else if (marks.includes("maw")){
-      // long tapered slashes that come to a point near the snout and sweep
-      // back — an ellipse just reads as a googly eye
+    } else if (marks.includes("stare")){
+      // Venom's eye, mapped onto a head seen from above: wide and flared at
+      // the snout end, sweeping back and inward to a fine point near the
+      // centreline, so the dark between the pair opens out into a V towards
+      // the front. These are the whole face — the logo is nothing else.
       ctx.fillStyle = "#f4f8fa";
       for (const s of [-1, 1]){
         ctx.beginPath();
-        ctx.moveTo(radius*0.62, s*radius*0.06);
-        ctx.quadraticCurveTo(radius*0.30, s*radius*0.86, -radius*0.62, s*radius*0.46);
-        ctx.quadraticCurveTo(-radius*0.05, s*radius*0.30, radius*0.62, s*radius*0.06);
+        ctx.moveTo(-radius*1.02, s*radius*0.10);                   // fine point, at the back
+        ctx.quadraticCurveTo(-radius*0.20, s*radius*0.72,
+                            radius*0.58, s*radius*0.92);          // outer edge, bowed out
+        ctx.quadraticCurveTo(radius*0.94, s*radius*0.88,
+                            radius*1.00, s*radius*0.46);          // flared cap at the snout
+        ctx.quadraticCurveTo(radius*0.15, s*radius*0.48,
+                           -radius*1.02, s*radius*0.10);          // inner edge, held close to slim it
         ctx.closePath(); ctx.fill();
       }
     } else if (marks.includes("ears") && accent){
@@ -2033,27 +2017,6 @@
       pctx.restore();
     }
 
-    // "maw": a wide grin across the snout, with the head colour struck back
-    // through it as a jagged bite line so it reads as teeth
-    if (marks.includes("maw")){
-      pctx.fillStyle = "#07070c";
-      pctx.beginPath(); pctx.ellipse(radius*0.95, 0, radius*0.46, radius*0.76, 0, 0, TAU); pctx.fill();
-      pctx.fillStyle = "#f4f8fa";
-      const teeth = 5, y0 = -radius*0.66, span = radius*1.32, stepY = span/teeth;
-      for (let i = 0; i < teeth; i++){
-        const ya = y0 + stepY*i;
-        pctx.beginPath();                                  // upper jaw, biting back
-        pctx.moveTo(radius*1.30, ya);
-        pctx.lineTo(radius*1.30, ya + stepY);
-        pctx.lineTo(radius*0.96, ya + stepY*0.5);
-        pctx.closePath(); pctx.fill();
-        pctx.beginPath();                                  // lower jaw, offset to interlock
-        pctx.moveTo(radius*0.62, ya + stepY*0.5);
-        pctx.lineTo(radius*0.62, ya + stepY*1.5);
-        pctx.lineTo(radius*0.96, ya + stepY);
-        pctx.closePath(); pctx.fill();
-      }
-    }
     if (marks.includes("patch") && accent){
       pctx.fillStyle = `hsl(${accent.hue},${accent.sat}%,${accent.light}%)`;
       for (const s of [-1, 1]){
@@ -2067,13 +2030,17 @@
         pctx.ellipse(radius*0.56, s*radius*0.56, radius*0.30, radius*0.18, s*-0.35, 0, TAU);
         pctx.fill();
       }
-    } else if (marks.includes("maw")){
+    } else if (marks.includes("stare")){
       pctx.fillStyle = "#f4f8fa";
       for (const s of [-1, 1]){
         pctx.beginPath();
-        pctx.moveTo(radius*0.62, s*radius*0.06);
-        pctx.quadraticCurveTo(radius*0.30, s*radius*0.86, -radius*0.62, s*radius*0.46);
-        pctx.quadraticCurveTo(-radius*0.05, s*radius*0.30, radius*0.62, s*radius*0.06);
+        pctx.moveTo(-radius*1.02, s*radius*0.10);                   // fine point, at the back
+        pctx.quadraticCurveTo(-radius*0.20, s*radius*0.72,
+                            radius*0.58, s*radius*0.92);          // outer edge, bowed out
+        pctx.quadraticCurveTo(radius*0.94, s*radius*0.88,
+                            radius*1.00, s*radius*0.46);          // flared cap at the snout
+        pctx.quadraticCurveTo(radius*0.15, s*radius*0.48,
+                           -radius*1.02, s*radius*0.10);          // inner edge, held close to slim it
         pctx.closePath(); pctx.fill();
       }
     } else if (marks.includes("ears") && accent){

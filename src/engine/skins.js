@@ -28,8 +28,8 @@
 //               crosshatched strands, "ears" for a pointed cowl masked through
 //               the eyes, "patch" for black mask panels with small eye holes,
 //               "swords" for crossed katanas on the back, "emblem" for a
-//               spider spread across the back, "maw" for a toothy grin and a
-//               wide pupil-less stare.
+//               spider spread across the back, "stare" for a pair of wide
+//               pupil-less eyes.
 
 /**
  * Colours are HSL parts the renderer assembles, so a skin can be a metal
@@ -67,7 +67,7 @@ export const SKINS = [
   // visibly purple there instead of staying tar-black. A little sheen gives it
   // the wet gloss tar has.
   { id: "symbiote", name: "Eel-symbiote", hue: 250, sat: 9, bodyLight: 5, headLight: 8, price: 10000,
-    sheen: 0.3, mark: ["emblem", "maw"] },
+    sheen: 0.3, mark: ["emblem", "stare"] },
   { id: "eelpool",  name: "Eel-pool", hue: 354, sat: 82, bodyLight: 38, headLight: 46, price: 10000,
     accent: { hue: 0,   sat: 0,  light: 9 },  accentRatio: 0.3, mark: ["patch", "swords"] },
 ];
