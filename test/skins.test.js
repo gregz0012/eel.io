@@ -18,7 +18,7 @@ describe("the catalogue", () => {
       "coral", "orchid", "sky", "lime",
       "copper", "iron", "gold", "platinum",
       "emerald", "ruby", "diamond",
-      "spider", "wolfey", "symbiote", "deadeye",
+      "spider", "wolfey", "symbiote", "eelpool",
     ]);
   });
 
@@ -30,7 +30,7 @@ describe("the catalogue", () => {
     const priceOf = id => skinById(id).price;
     for (const id of ["coral", "orchid", "sky", "lime"]) expect(priceOf(id)).toBe(250);
     for (const id of ["emerald", "ruby", "diamond"]) expect(priceOf(id)).toBe(7500);
-    for (const id of ["spider", "wolfey", "symbiote", "deadeye"]) expect(priceOf(id)).toBe(10000);
+    for (const id of ["spider", "wolfey", "symbiote", "eelpool"]) expect(priceOf(id)).toBe(10000);
   });
 
   it("climbs the metals in price", () => {
@@ -52,7 +52,7 @@ describe("the catalogue", () => {
   });
 
   it("gives every hero a second colour to band with", () => {
-    for (const id of ["spider", "wolfey", "symbiote", "deadeye"]) {
+    for (const id of ["spider", "wolfey", "symbiote", "eelpool"]) {
       expect(skinById(id).accent).toMatchObject({
         hue: expect.any(Number), sat: expect.any(Number), light: expect.any(Number),
       });
@@ -67,8 +67,14 @@ describe("the catalogue", () => {
 
   it("only ever asks for a mark the renderer knows how to draw", () => {
     for (const s of SKINS) {
-      if (s.mark) expect(["web", "ears", "patch"]).toContain(s.mark);
+      for (const mark of [].concat(s.mark ?? [])) {
+        expect(["web", "ears", "patch", "swords"]).toContain(mark);
+      }
     }
+  });
+
+  it("gives Eel-pool both its mask and its swords", () => {
+    expect([].concat(skinById("eelpool").mark)).toEqual(["patch", "swords"]);
   });
 
   it("keeps Symbiote mostly black rather than half white", () => {

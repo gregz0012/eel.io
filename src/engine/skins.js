@@ -23,8 +23,10 @@
 //   accentRatio how much of each band cycle the accent takes, 0..1, default
 //               half. Low values give thin streaks on a dominant base — which
 //               is what keeps Symbiote mostly black rather than half white.
-//   mark: "…"   one extra flourish drawn over the skin: "web" for crosshatched
-//               strands, "ears" for a pointed cowl, "patch" for masked eyes.
+//   mark: "…"   a flourish drawn over the skin, or a list of them: "web" for
+//               crosshatched strands, "ears" for a pointed cowl, "patch" for
+//               black mask panels with small eye holes, "swords" for crossed
+//               katanas on the back.
 
 /**
  * Colours are HSL parts the renderer assembles, so a skin can be a metal
@@ -58,8 +60,8 @@ export const SKINS = [
     accent: { hue: 226, sat: 72, light: 20 }, accentRatio: 0.42, mark: "ears" },
   { id: "symbiote", name: "Symbiote", hue: 265, sat: 26, bodyLight: 10, headLight: 15, price: 10000,
     accent: { hue: 0,   sat: 0,  light: 95 }, accentRatio: 0.18, mark: "web" },
-  { id: "deadeye",  name: "Deadeye",  hue: 354, sat: 82, bodyLight: 38, headLight: 46, price: 10000,
-    accent: { hue: 0,   sat: 0,  light: 9 },  accentRatio: 0.3, mark: "patch" },
+  { id: "eelpool",  name: "Eel-pool", hue: 354, sat: 82, bodyLight: 38, headLight: 46, price: 10000,
+    accent: { hue: 0,   sat: 0,  light: 9 },  accentRatio: 0.3, mark: ["patch", "swords"] },
 ];
 
 export const DEFAULT_SKIN_ID = "volt";

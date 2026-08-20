@@ -1186,9 +1186,35 @@
     }
   }
 
+  // Two katanas crossed in an X, drawn in the local frame of a point on the
+  // eel's back. Takes its context and coordinates explicitly, so unlike the
+  // body drawing it is not tied to the game camera — which is why the game
+  // and the shop preview can share this one rather than each keeping a copy.
+  function drawCrossedSwords(c, x, y, ang, size){
+    c.save();
+    c.translate(x, y); c.rotate(ang);
+    for (const s of [-1, 1]){
+      c.save();
+      c.rotate(s * 0.62);
+      c.lineCap = "butt";
+      c.strokeStyle = "#dfe9ef";                    // blade
+      c.lineWidth = Math.max(1, size*0.15);
+      c.beginPath(); c.moveTo(-size*0.18, 0); c.lineTo(size*1.0, 0); c.stroke();
+      c.strokeStyle = "#f6c453";                    // guard
+      c.lineWidth = Math.max(1, size*0.14);
+      c.beginPath(); c.moveTo(-size*0.2, -size*0.2); c.lineTo(-size*0.2, size*0.2); c.stroke();
+      c.strokeStyle = "#17171d";                    // grip
+      c.lineWidth = Math.max(1, size*0.17);
+      c.beginPath(); c.moveTo(-size*0.66, 0); c.lineTo(-size*0.2, 0); c.stroke();
+      c.restore();
+    }
+    c.restore();
+  }
+
   function drawEelBody(body, radius, skin, glow, isPlayer){
-    const { hue, sat, bodyLight, headLight, gem, sheen = 0, accent, accentRatio = 0.5, mark } = skin;
+    const { hue, sat, bodyLight, headLight, gem, sheen = 0, accent, accentRatio = 0.5 } = skin;
     if (body.length < 2) return;
+    const marks = [].concat(skin.mark ?? []);      // one flourish or several
     const BAND = 52;                               // body points per light/dark cycle
     // sample every few points for smooth ribbon
     const step = 3;
@@ -1224,7 +1250,7 @@
 
     // "web": a strand down the spine crossed by ribs, which is as much of a
     // web as reads at this size — the crosshatch is the recognisable part
-    if (mark === "web"){
+    if (marks.includes("web")){
       const ink = `hsla(${hue},${Math.round(sat*0.4)}%,7%,0.6)`;
       ctx.strokeStyle = ink;
       ctx.lineWidth = Math.max(0.7, radius*0.12);
@@ -1296,6 +1322,21 @@
       ctx.restore();
     }
 
+    // "swords": crossed on the back, a little way behind the head. Walk the
+    // body by distance rather than by index so they sit in the same place on
+    // a stubby new eel and a long one alike.
+    if (marks.includes("swords")){
+      let travelled = 0, si = 0;
+      while (si < body.length - 2 && travelled < radius*3.1){
+        travelled += Math.hypot(body[si+1].x - body[si].x, body[si+1].y - body[si].y);
+        si++;
+      }
+      const tail = body[Math.min(body.length - 1, si + 5)];
+      const [sx,sy] = worldToScreen(body[si].x, body[si].y);
+      drawCrossedSwords(ctx, sx, sy,
+        Math.atan2(body[si].y - tail.y, body[si].x - tail.x), radius*2.1);
+    }
+
     // head
     const [hx,hy] = worldToScreen(body[0].x, body[0].y);
     const ang = Math.atan2(body[0].y - body[Math.min(6,body.length-1)].y,
@@ -1304,7 +1345,7 @@
     ctx.translate(hx,hy); ctx.rotate(ang);
     // "ears": a pointed cowl swept back off the head, drawn under it so the
     // head reads as sitting inside the mask
-    if (mark === "ears" && accent){
+    if (marks.includes("ears") && accent){
       ctx.fillStyle = `hsl(${accent.hue},${accent.sat}%,${accent.light + 20}%)`;
       for (const s of [-1, 1]){
         ctx.beginPath();
@@ -1330,21 +1371,30 @@
     }
     // "patch": a dark mask panel behind each eye, so the whites read as the
     // cut-outs of a mask rather than as plain eyes
-    if (mark === "patch" && accent){
+    if (marks.includes("patch") && accent){
+      // a mask, not eyes: black panels with small angled eye holes and no
+      // pupils, which is what reads as a masked stare rather than a face
       ctx.fillStyle = `hsl(${accent.hue},${accent.sat}%,${accent.light}%)`;
       for (const s of [-1, 1]){
         ctx.beginPath();
-        ctx.ellipse(radius*0.52, s*radius*0.55, radius*0.72, radius*0.58, 0, 0, TAU);
+        ctx.ellipse(radius*0.52, s*radius*0.56, radius*0.80, radius*0.66, 0, 0, TAU);
         ctx.fill();
       }
+      ctx.fillStyle = "#eaffff";
+      for (const s of [-1, 1]){
+        ctx.beginPath();
+        ctx.ellipse(radius*0.56, s*radius*0.56, radius*0.30, radius*0.18, s*-0.35, 0, TAU);
+        ctx.fill();
+      }
+    } else {
+      // eyes
+      ctx.fillStyle = "#eaffff";
+      ctx.beginPath(); ctx.arc(radius*0.5,-radius*0.55,radius*0.42,0,TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(radius*0.5, radius*0.55,radius*0.42,0,TAU); ctx.fill();
+      ctx.fillStyle = "#04202c";
+      ctx.beginPath(); ctx.arc(radius*0.65,-radius*0.55,radius*0.2,0,TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(radius*0.65, radius*0.55,radius*0.2,0,TAU); ctx.fill();
     }
-    // eyes
-    ctx.fillStyle = "#eaffff";
-    ctx.beginPath(); ctx.arc(radius*0.5,-radius*0.55,radius*0.42,0,TAU); ctx.fill();
-    ctx.beginPath(); ctx.arc(radius*0.5, radius*0.55,radius*0.42,0,TAU); ctx.fill();
-    ctx.fillStyle = "#04202c";
-    ctx.beginPath(); ctx.arc(radius*0.65,-radius*0.55,radius*0.2,0,TAU); ctx.fill();
-    ctx.beginPath(); ctx.arc(radius*0.65, radius*0.55,radius*0.2,0,TAU); ctx.fill();
     ctx.restore();
   }
 
@@ -1729,8 +1779,9 @@
   }
 
   function drawPreviewEel(skin){
-    const { hue, sat, bodyLight, headLight, gem, sheen = 0, accent, accentRatio = 0.5, mark } = skin;
+    const { hue, sat, bodyLight, headLight, gem, sheen = 0, accent, accentRatio = 0.5 } = skin;
     const w = previewCanvas.width, h = previewCanvas.height, body = PREVIEW_BODY;
+    const marks = [].concat(skin.mark ?? []);      // one flourish or several
     const BAND = 10;                               // preview body is shorter, so a tighter cycle
     const radius = h * 0.16;
     pctx.clearRect(0, 0, w, h);
@@ -1757,7 +1808,7 @@
       pctx.beginPath(); pctx.moveTo(body[i].x, body[i].y); pctx.lineTo(body[i-1].x, body[i-1].y); pctx.stroke();
     }
 
-    if (mark === "web"){
+    if (marks.includes("web")){
       pctx.strokeStyle = `hsla(${hue},${Math.round(sat*0.4)}%,7%,0.6)`;
       pctx.lineWidth = Math.max(0.7, radius*0.12);
       pctx.beginPath();
@@ -1815,11 +1866,17 @@
       pctx.restore();
     }
 
+    if (marks.includes("swords")){
+      const at = body[7], back = body[12];
+      drawCrossedSwords(pctx, at.x, at.y,
+        Math.atan2(at.y - back.y, at.x - back.x), radius*2.1);
+    }
+
     const head = body[0], neck = body[3];
     const ang = Math.atan2(head.y - neck.y, head.x - neck.x);
     pctx.save();
     pctx.translate(head.x, head.y); pctx.rotate(ang);
-    if (mark === "ears" && accent){
+    if (marks.includes("ears") && accent){
       pctx.fillStyle = `hsl(${accent.hue},${accent.sat}%,${accent.light + 20}%)`;
       for (const s of [-1, 1]){
         pctx.beginPath();
@@ -1841,20 +1898,27 @@
       pctx.closePath(); pctx.fill();
       pctx.restore();
     }
-    if (mark === "patch" && accent){
+    if (marks.includes("patch") && accent){
       pctx.fillStyle = `hsl(${accent.hue},${accent.sat}%,${accent.light}%)`;
       for (const s of [-1, 1]){
         pctx.beginPath();
-        pctx.ellipse(radius*0.52, s*radius*0.55, radius*0.72, radius*0.58, 0, 0, TAU);
+        pctx.ellipse(radius*0.52, s*radius*0.56, radius*0.80, radius*0.66, 0, 0, TAU);
         pctx.fill();
       }
+      pctx.fillStyle = "#eaffff";
+      for (const s of [-1, 1]){
+        pctx.beginPath();
+        pctx.ellipse(radius*0.56, s*radius*0.56, radius*0.30, radius*0.18, s*-0.35, 0, TAU);
+        pctx.fill();
+      }
+    } else {
+      pctx.fillStyle = "#eaffff";
+      pctx.beginPath(); pctx.arc(radius*0.5,-radius*0.55,radius*0.42,0,TAU); pctx.fill();
+      pctx.beginPath(); pctx.arc(radius*0.5, radius*0.55,radius*0.42,0,TAU); pctx.fill();
+      pctx.fillStyle = "#04202c";
+      pctx.beginPath(); pctx.arc(radius*0.65,-radius*0.55,radius*0.2,0,TAU); pctx.fill();
+      pctx.beginPath(); pctx.arc(radius*0.65, radius*0.55,radius*0.2,0,TAU); pctx.fill();
     }
-    pctx.fillStyle = "#eaffff";
-    pctx.beginPath(); pctx.arc(radius*0.5,-radius*0.55,radius*0.42,0,TAU); pctx.fill();
-    pctx.beginPath(); pctx.arc(radius*0.5, radius*0.55,radius*0.42,0,TAU); pctx.fill();
-    pctx.fillStyle = "#04202c";
-    pctx.beginPath(); pctx.arc(radius*0.65,-radius*0.55,radius*0.2,0,TAU); pctx.fill();
-    pctx.beginPath(); pctx.arc(radius*0.65, radius*0.55,radius*0.2,0,TAU); pctx.fill();
     pctx.restore();
   }
 
