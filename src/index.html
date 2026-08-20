@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-<title>Fin.io — deep sea eel</title>
+<title>Eel Shock — deep sea eel</title>
 <style>
   :root{
     --abyss:#031521;
@@ -188,6 +188,7 @@
   #wornName{font-size:13px;font-weight:700;color:var(--ink);letter-spacing:.02em;}
   #bankLine{font-size:11px;color:var(--muted);}
   #bankLine b{color:var(--volt);font-weight:700;}
+  #tagLine{font-size:11px;color:var(--muted);margin-top:2px;}
 
   /* skin picker (its own screen) */
   /* Sticky: what you are looking at, what it costs and the button that acts on
@@ -306,12 +307,13 @@
 
 <!-- Start screen -->
 <div id="start" class="overlay">
-  <h1>FIN.IO<span class="sub">deep sea eel</span></h1>
+  <h1>EEL SHOCK<span class="sub">deep sea eel</span></h1>
   <div id="eelSummary">
     <div id="wornSwatch"></div>
     <div id="wornInfo">
       <div id="wornName">Volt</div>
       <div id="bankLine">Bank <b id="bankAmount">0</b> points</div>
+      <div id="tagLine" class="hidden"></div>
     </div>
     <button id="openSkinsBtn" class="quiet">Change your eel</button>
   </div>
@@ -821,6 +823,7 @@
   document.getElementById("joinBtn").addEventListener("click", () => {
     joined = true; writeStore(STORE.joined, "yes");
     updateBoard(best, Math.max(Engine.CONFIG.leaderboard.minRunMs, lastRunMs));
+    renderHomeSummary(Engine.wearableSkin(skinId, owned));   // home screen picks up "on the board" too
   });
 
   document.getElementById("leaveBtn").addEventListener("click", async () => {
@@ -831,6 +834,8 @@
     }); } catch {}
     dropStore(STORE.id);                 // a new id next time: the old one is gone for good
     updateBoard(0, 0);
+    // after dropStore, so this reads the fresh id rather than the forgotten one
+    renderHomeSummary(Engine.wearableSkin(skinId, owned));
   });
 
   function die(reason){
@@ -2262,6 +2267,18 @@
     swatch.style.background = colour;
     document.getElementById("wornName").textContent = worn.name;
     document.getElementById("bankAmount").textContent = banked.toLocaleString();
+
+    // So a player knows who they'll appear as before they've ever played or
+    // joined — the tag itself is free to show, since tagFor is pure and the
+    // id never leaves the browser until "Join the board" is pressed.
+    const tagLine = document.getElementById("tagLine");
+    if (!LEADERBOARD_URL){
+      tagLine.classList.add("hidden");
+    } else {
+      tagLine.classList.remove("hidden");
+      const tag = Engine.tagFor(playerId());
+      tagLine.textContent = joined ? `On the board as ${tag}` : `You'd appear as ${tag}`;
+    }
   }
 
   function renderBankNote(){
