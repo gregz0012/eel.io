@@ -174,6 +174,48 @@
   #boardNote, #homeBoardNote, #fullBoardNote{color:var(--muted);font-size:12px;line-height:1.5;}
   #boardNote b, #homeBoardNote b, #fullBoardNote b{color:var(--ink);font-weight:600;}
   #homeBoard #openBoardBtn{margin-top:12px;}
+
+  /* calming mini-games */
+  #minigameScreen .final{margin-bottom:8px;}
+  #minigameScreen .final b::before{content:"+";}
+  #breathSquare{
+    width:min(48vw,190px);height:min(48vw,190px);margin:18px auto 6px;
+    border:2px solid rgba(79,230,214,.4);border-radius:28px;
+    display:flex;align-items:center;justify-content:center;
+  }
+  #breathDot{
+    width:70%;height:70%;border-radius:50%;
+    background:radial-gradient(circle at 35% 30%,var(--volt-hot),var(--volt) 60%,var(--biolume));
+    box-shadow:0 0 40px rgba(142,243,255,.55);
+    transition:transform .12s linear;
+  }
+  #breathLabel{
+    font-size:14px;letter-spacing:.1em;color:var(--ink);text-transform:uppercase;
+    font-weight:700;margin-bottom:6px;
+  }
+  #wordCloud{
+    display:flex;flex-wrap:wrap;gap:10px;justify-content:center;
+    max-width:480px;margin:10px auto 14px;
+  }
+  .wordChip{
+    font-family:inherit;font-weight:700;letter-spacing:.06em;text-transform:lowercase;
+    font-size:14px;color:var(--ink);
+    background:rgba(4,26,38,.55);border:1px solid rgba(79,230,214,.3);
+    border-radius:999px;padding:9px 18px;cursor:pointer;
+    animation:wordSettle .5s ease-out both;   /* drifts to rest once, then stays put —
+      a calming exercise should not keep jiggling at you the whole time */
+    transition:opacity .2s ease,border-color .2s ease;
+  }
+  .wordChip:hover{border-color:rgba(79,230,214,.7);}
+  .wordChip.tapped{opacity:.35;cursor:default;border-color:rgba(79,230,214,.15);}
+  /* between taps, everything not yet tapped dims — the wait is part of the
+     calm, not a loading state to be impatient about */
+  #wordCloud.waiting .wordChip:not(.tapped){opacity:.4;cursor:default;}
+  @keyframes wordSettle{
+    from{opacity:0;transform:translateY(8px);} to{opacity:1;transform:translateY(0);}
+  }
+  @media (prefers-reduced-motion:reduce){ .wordChip{animation:none;} }
+  #wordProgress{font-size:12px;color:var(--muted);letter-spacing:.05em;}
   button.quiet{
     background:none;color:var(--biolume);border:1px solid rgba(79,230,214,.35);
     box-shadow:none;padding:9px 18px;font-size:11px;letter-spacing:.12em;
@@ -412,7 +454,28 @@
       <button id="leaveBtn" class="quiet hidden">Leave the board</button>
     </div>
   </div>
+  <button id="miniGameOfferBtn" class="quiet hidden">Take a breather — earn 250</button>
   <button id="againBtn">Back to the surface</button>
+</div>
+
+<div id="minigameScreen" class="overlay hidden">
+  <h1 id="miniGameTitle">TAKE A BREATH<span class="sub" id="miniGameSub">a short, calm break</span></h1>
+
+  <div id="breathingGame" class="hidden">
+    <div id="breathSquare"><div id="breathDot"></div></div>
+    <div id="breathLabel">Breathe in</div>
+  </div>
+
+  <div id="wordsGame" class="hidden">
+    <div id="wordCloud"></div>
+    <div id="wordProgress"></div>
+  </div>
+
+  <div id="miniGameDone" class="hidden">
+    <div class="final">You earned<b id="miniGameReward">250</b></div>
+  </div>
+
+  <button id="skipMiniGameBtn" class="quiet">Skip</button>
 </div>
 
 <script>
@@ -492,6 +555,27 @@
         maxPointsPerSecond: 60, // generous: a great run stays under it, score=9e9 does not
         minRunMs: 3000,         // a run shorter than this cannot have earned anything
         submitCooldownMs: 5000, // per player, server-enforced
+      },
+    
+      // Calming mini-games, offered on death after a long stretch of play. The
+      // reward is banked, never added to the run's score, so it can never touch
+      // the leaderboard — see engine/progress.js and engine/minigames.js.
+      miniGames: {
+        everyMs: 15 * 60 * 1000, // offer once per this much cumulative play
+        reward: 250,             // banked points for finishing one
+        breathing: {
+          phaseMs: 4000,         // each of in / hold / out / hold lasts this long
+          rounds: 4,             // full in-hold-out-hold cycles before it's done
+        },
+        words: {
+          tapCooldownMs: 5000,   // gap enforced between taps, so it can't be rushed
+          needed: 5,             // distinct words to tap before the reward is earned
+          list: [
+            "kind", "brave", "calm", "patient", "gentle", "curious", "friendly",
+            "grateful", "hopeful", "steady", "warm", "bright", "caring",
+            "confident", "peaceful", "cheerful", "thoughtful", "generous",
+          ],
+        },
       },
     };
 
@@ -793,7 +877,7 @@
     // not-started. That is how you get a resume button that revives a dead eel.
     // Every transition is named here and anything unnamed is ignored.
     
-    const PHASES = ["home", "skins", "howto", "board", "playing", "paused", "over"];
+    const PHASES = ["home", "skins", "howto", "board", "playing", "paused", "over", "minigame"];
     
     const TRANSITIONS = {
       home:    { dive: "playing", openSkins: "skins", openHow: "howto", openBoard: "board" },
@@ -802,7 +886,9 @@
       board:   { closeBoard: "home" },                     // likewise
       playing: { pause: "paused", die: "over" },
       paused:  { resume: "playing", surface: "home" },     // surface = give up the run
-      over:    { surface: "home" },                        // death always goes home first
+      // the offer is optional — surface still skips straight home, same as ever
+      over:    { surface: "home", playMiniGame: "minigame" },
+      minigame:{ finishMiniGame: "home" },                 // death still always goes home first
     };
     
     /** The phase this event leads to, or the current phase if it does not apply. */
@@ -1094,7 +1180,118 @@
       return kind === "points" || kind === "starfish" || kind === "zap";
     }
 
-    return { CONFIG, seededRng, randInt, weightedPick, addScore, completeLevel, bossHits, deductLevel, predatorTarget, isBossLevel, levelSpeed, tagFor, shortTagFor, isWellFormedTag, tagSpaceSize, validateSubmission, bestOf, rankOf, topRows, clampTopLimit, PHASES, nextPhase, canDo, isRunning, deposit, diveCost, payForDive, canAffordDive, SKINS, DEFAULT_SKIN_ID, TIERS, skinsByTier, levelFor, meetsLevel, skinById, isOwned, ownedSkins, canAfford, buySkin, wearableSkin, nextSkinToBuy, skinFromHue, skinStatus, PRESENT_KINDS, rollPresent, isKindGift };
+    // ---- src/engine/minigames.js ----
+    // Two short, screen-only calming exercises, offered after a long stretch of
+    // play — see engine/progress.js for when one is due. Pure: every timing
+    // question here takes elapsed time as an argument and never touches a clock
+    // or Math.random directly, same rule as the rest of engine/.
+    //
+    // The reward for finishing one is banked points (CONFIG.miniGames.reward),
+    // spendable on skins like any other points. It is never added to a run's
+    // score, so it can never reach the leaderboard and the anti-cheat caps in
+    // leaderboard.js need no loosening for it to exist.
+    
+    const B = CONFIG.miniGames.breathing;
+    const W = CONFIG.miniGames.words;
+    
+    /** Which exercise to offer this time. */
+    function pickMiniGame(rng) {
+      return rng() < 0.5 ? "breathing" : "words";
+    }
+    
+    // Named so the shell never has to infer which hold it's in from context —
+    // "hold after breathing in" and "hold after breathing out" look different
+    // (a full square held, versus an empty one held) and need different labels.
+    const BREATH_PHASES = ["in", "holdIn", "out", "holdOut"];
+    const ROUND_MS = B.phaseMs * BREATH_PHASES.length;
+    
+    /**
+     * Square breathing as a pure function of elapsed time: breathe in, hold in,
+     * breathe out, hold out, each `phaseMs` long, repeated `rounds` times.
+     * @param {number} elapsedMs
+     * @returns {{phase:string, secondsLeft:number, progress:number, round:number, done:boolean}}
+     *          `progress` is how far through the current phase, 0..1.
+     */
+    function breathPhaseAt(elapsedMs) {
+      const total = ROUND_MS * B.rounds;
+      if (elapsedMs >= total) {
+        return { phase: "done", secondsLeft: 0, progress: 1, round: B.rounds, done: true };
+      }
+      const clamped = Math.max(0, elapsedMs);
+      const round = Math.floor(clamped / ROUND_MS);
+      const intoRound = clamped % ROUND_MS;
+      const phaseIndex = Math.floor(intoRound / B.phaseMs);
+      const intoPhase = intoRound % B.phaseMs;
+      return {
+        phase: BREATH_PHASES[phaseIndex],
+        secondsLeft: Math.ceil((B.phaseMs - intoPhase) / 1000),
+        progress: intoPhase / B.phaseMs,
+        round: round + 1,
+        done: false,
+      };
+    }
+    
+    /**
+     * May another word be tapped yet? The cooldown is the whole point — without
+     * it the exercise is five taps in one second, which is not calming anyone.
+     */
+    function canTapAt(lastTapMs, nowMs) {
+      if (lastTapMs == null) return true;
+      return nowMs - lastTapMs >= W.tapCooldownMs;
+    }
+    
+    /** How many distinct words complete the exercise. */
+    function wordsNeeded() {
+      return W.needed;
+    }
+    
+    /** Has enough been tapped? */
+    function isWordGameComplete(tapCount) {
+      return (tapCount ?? 0) >= W.needed;
+    }
+    
+    /** The words on offer. Content lives in config.js so it stays one tunable list. */
+    function wordList() {
+      return W.list;
+    }
+
+    // ---- src/engine/progress.js ----
+    // Cumulative playtime, and the rule for when a calming mini-game is due.
+    // Pure: playtime enters as milliseconds already elapsed (the shell computes
+    // that from its own clock), never read from a clock in here.
+    
+    const M = CONFIG.miniGames;
+    
+    /**
+     * Add a dive's duration to the running total.
+     * @param {{playedMs:number, lastRewardAtMs:number}} state
+     * @param {number} ms
+     */
+    function addPlayTime(state, ms) {
+      return {
+        playedMs: Math.max(0, (state?.playedMs ?? 0) + Math.max(0, ms ?? 0)),
+        lastRewardAtMs: state?.lastRewardAtMs ?? 0,
+      };
+    }
+    
+    /**
+     * Is a mini-game due? True once CONFIG.miniGames.everyMs of cumulative play
+     * has passed since the last one was actually completed. Merely opening and
+     * skipping one does not reset this — only finishing it does, so the offer
+     * keeps coming back until a player actually takes the break.
+     */
+    function miniGameDue(state) {
+      const playedMs = state?.playedMs ?? 0;
+      const lastRewardAtMs = state?.lastRewardAtMs ?? 0;
+      return playedMs - lastRewardAtMs >= M.everyMs;
+    }
+    
+    /** Record that a mini-game was completed just now, resetting the timer. */
+    function recordMiniGameReward(state) {
+      return { playedMs: state?.playedMs ?? 0, lastRewardAtMs: state?.playedMs ?? 0 };
+    }
+
+    return { CONFIG, seededRng, randInt, weightedPick, addScore, completeLevel, bossHits, deductLevel, predatorTarget, isBossLevel, levelSpeed, tagFor, shortTagFor, isWellFormedTag, tagSpaceSize, validateSubmission, bestOf, rankOf, topRows, clampTopLimit, PHASES, nextPhase, canDo, isRunning, deposit, diveCost, payForDive, canAffordDive, SKINS, DEFAULT_SKIN_ID, TIERS, skinsByTier, levelFor, meetsLevel, skinById, isOwned, ownedSkins, canAfford, buySkin, wearableSkin, nextSkinToBuy, skinFromHue, skinStatus, PRESENT_KINDS, rollPresent, isKindGift, pickMiniGame, breathPhaseAt, canTapAt, wordsNeeded, isWordGameComplete, wordList, addPlayTime, miniGameDue, recordMiniGameReward };
   })();
 
   const canvas = document.getElementById("game");
@@ -1163,6 +1360,9 @@
   let bossPending = 0;
   let levelBanner = 0;                 // countdown on the "LEVEL N CLEARED" flash
   let bestLevel = 1;                   // deepest level ever reached; unlocks skins
+  let playProgress = { playedMs: 0, lastRewardAtMs: 0 };   // cumulative play; see engine/progress.js
+  let miniGame = null;                 // "breathing" | "words" while phase === "minigame"
+  let miniGameStartedAt = 0, wordTaps = [], lastWordTapAt = null, miniGameLoopRunning = false;
   let zap = 0;             // 0..1 charge
   const ZAP_COST = 1;      // full meter to fire
   let shieldOn = false;
@@ -1465,6 +1665,7 @@
   const STORE = { id: "voltfin.playerId", best: "voltfin.best", joined: "voltfin.joined",
                   banked: "voltfin.banked", owned: "voltfin.owned", skin: "voltfin.skin",
                   bestLevel: "voltfin.bestLevel",
+                  playedMs: "voltfin.playedMs", rewardAtMs: "voltfin.miniGameRewardAtMs",
                   lifetime: "voltfin.lifetime" };   // lifetime: retired, read once to migrate
 
   // Storage throws in private browsing and wherever it is blocked. Never let
@@ -1604,6 +1805,104 @@
     }
   }
 
+  // ---------- calming mini-games ----------
+  // Offered on death after a long stretch of play (see die()). Optional the
+  // whole way through: "Skip" always works, and skipping leaves the offer
+  // due next time — see engine/progress.js. The reward is banked points,
+  // never added to a run's score, so it can never reach the leaderboard.
+  let miniGameEarned = false;
+
+  function startMiniGame(){
+    miniGame = Engine.pickMiniGame(Math.random);
+    miniGameStartedAt = Date.now();
+    wordTaps = []; lastWordTapAt = null; miniGameEarned = false;
+
+    show("breathingGame", miniGame === "breathing");
+    show("wordsGame", miniGame === "words");
+    show("miniGameDone", false);
+    document.getElementById("skipMiniGameBtn").textContent = "Skip";
+    document.getElementById("miniGameSub").textContent =
+      miniGame === "breathing" ? "a short, calm break" : "gather a few kind words";
+
+    if (miniGame === "words") renderWordCloud();
+    startMiniGameLoop();
+  }
+
+  function renderWordCloud(){
+    const cloud = document.getElementById("wordCloud");
+    cloud.textContent = ""; cloud.classList.remove("waiting");
+    // A fresh, varied handful each time — real randomness, since this is
+    // display variety in the shell, not a rule the engine needs to own.
+    const words = [...Engine.wordList()].sort(() => Math.random() - 0.5).slice(0, 10);
+    for (const word of words){
+      const chip = document.createElement("button");
+      chip.type = "button"; chip.className = "wordChip"; chip.textContent = word;
+      chip.style.animationDelay = `${Math.random() * 0.5}s`;   // a quick, gentle cascade, not a wait
+      chip.addEventListener("click", () => tapWord(chip));
+      cloud.appendChild(chip);
+    }
+    updateWordProgress();
+  }
+
+  function tapWord(chip){
+    if (miniGameEarned || chip.classList.contains("tapped")) return;
+    if (!Engine.canTapAt(lastWordTapAt, Date.now())) return;   // mid-cooldown: ignored
+    chip.classList.add("tapped");
+    wordTaps.push(chip.textContent);
+    lastWordTapAt = Date.now();
+    updateWordProgress();
+    if (Engine.isWordGameComplete(wordTaps.length)) completeMiniGame();
+  }
+
+  function updateWordProgress(){
+    document.getElementById("wordProgress").textContent =
+      `${wordTaps.length} of ${Engine.wordsNeeded()} tapped`;
+  }
+
+  function completeMiniGame(){
+    miniGameEarned = true;
+    show("breathingGame", false); show("wordsGame", false); show("miniGameDone", true);
+    document.getElementById("miniGameReward").textContent = Engine.CONFIG.miniGames.reward;
+    document.getElementById("skipMiniGameBtn").textContent = "Done";
+  }
+
+  function finishMiniGame(){
+    if (miniGameEarned){
+      banked = Engine.deposit(banked, Engine.CONFIG.miniGames.reward);
+      writeStore(STORE.banked, String(banked));
+      playProgress = Engine.recordMiniGameReward(playProgress);
+      writeStore(STORE.rewardAtMs, String(playProgress.lastRewardAtMs));
+      renderHomeSummary(Engine.wearableSkin(skinId, owned));
+    }
+    goTo("finishMiniGame");
+  }
+
+  // Self-terminating, same pattern as previewLoop: it just stops rescheduling
+  // once the mini-game screen closes, rather than needing to be told to stop.
+  function miniGameLoop(){
+    if (phase !== "minigame"){ miniGameLoopRunning = false; return; }
+
+    if (miniGame === "breathing" && !miniGameEarned){
+      const b = Engine.breathPhaseAt(Date.now() - miniGameStartedAt);
+      const scale = { in: 0.35 + 0.65 * b.progress, holdIn: 1, out: 1 - 0.65 * b.progress, holdOut: 0.35 }[b.phase];
+      document.getElementById("breathDot").style.transform = `scale(${scale ?? 1})`;
+      document.getElementById("breathLabel").textContent = {
+        in: "Breathe in", holdIn: "Hold", out: "Breathe out", holdOut: "Hold",
+      }[b.phase] ?? "Breathe in";
+      if (b.done) completeMiniGame();
+    } else if (miniGame === "words" && !miniGameEarned){
+      const waiting = !Engine.canTapAt(lastWordTapAt, Date.now());
+      document.getElementById("wordCloud").classList.toggle("waiting", waiting);
+    }
+
+    requestAnimationFrame(miniGameLoop);
+  }
+  function startMiniGameLoop(){
+    if (miniGameLoopRunning) return;
+    miniGameLoopRunning = true;
+    miniGameLoop();
+  }
+
   document.getElementById("joinBtn").addEventListener("click", () => {
     joined = true; writeStore(STORE.joined, "yes");
     updateBoard(best, Math.max(Engine.CONFIG.leaderboard.minRunMs, lastRunMs));
@@ -1642,6 +1941,13 @@
     document.getElementById("oversub").textContent = Math.round(score) > 0
       ? `${reason} — ${Math.round(score).toLocaleString()} points banked`
       : reason;
+
+    // A calming break, offered after a long stretch of play — never forced,
+    // and skipping it (via "Back to the surface") leaves it due next time.
+    playProgress = Engine.addPlayTime(playProgress, lastRunMs);
+    writeStore(STORE.playedMs, String(playProgress.playedMs));
+    show("miniGameOfferBtn", Engine.miniGameDue(playProgress));
+
     show("hud", false); show("powerbar", false); show("zapBtn", false); show("pauseBtn", false);
     setTimeout(() => show("over", true), 550);
   }
@@ -2739,6 +3045,7 @@
       updatePreviewInfo();
       startPreviewLoop();
     }
+    if (event === "playMiniGame") startMiniGame();
 
     running = Engine.isRunning(phase);
     const inDive = phase === "playing" || phase === "paused";
@@ -2746,6 +3053,7 @@
     show("skinsScreen", phase === "skins");
     show("howScreen", phase === "howto");
     show("boardScreen", phase === "board");
+    show("minigameScreen", phase === "minigame");
     show("over", false);                        // die() reveals it on a short delay
     show("pause", phase === "paused");
     show("hud", inDive);
@@ -3175,6 +3483,10 @@
 
   best = Number(readStore(STORE.best)) || 0;
   bestLevel = Math.max(1, Number(readStore(STORE.bestLevel)) || 1);
+  playProgress = {
+    playedMs: Number(readStore(STORE.playedMs)) || 0,
+    lastRewardAtMs: Number(readStore(STORE.rewardAtMs)) || 0,
+  };
   banked = Number(readStore(STORE.banked)) || 0;
   try { owned = JSON.parse(readStore(STORE.owned)) ?? []; } catch { owned = []; }
   if (!Array.isArray(owned)) owned = [];
@@ -3206,6 +3518,8 @@
   document.getElementById("closeHowBtn").addEventListener("click", () => goTo("closeHow"));
   document.getElementById("openBoardBtn").addEventListener("click", () => { goTo("openBoard"); refreshFullBoard(); });
   document.getElementById("closeBoardBtn").addEventListener("click", () => goTo("closeBoard"));
+  document.getElementById("miniGameOfferBtn").addEventListener("click", () => goTo("playMiniGame"));
+  document.getElementById("skipMiniGameBtn").addEventListener("click", finishMiniGame);
 })();
 </script>
 </body>

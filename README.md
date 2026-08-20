@@ -79,6 +79,7 @@ sent anywhere.
 - **Presents are a gamble.** Most are a treat. Some are not — and one of them is the only thing in the game that can take a level off you.
 - **Mind your own tail.** Cross over yourself and you'll bite your own tail off, losing length and points.
 - **Getting eaten takes you back to the surface**, not straight into another dive — so you can change your eel before you go again.
+- **A calming break, every so often.** After about fifteen minutes of play, dying offers a short exercise — square breathing, or gathering a few kind words — worth 250 banked points. It's optional, never added to a run's score, and skipping it just leaves it waiting for next time.
 
 ## Run it locally
 

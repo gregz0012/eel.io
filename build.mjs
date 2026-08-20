@@ -27,6 +27,8 @@ const ENGINE_MODULES = [
   "bank.js",
   "skins.js",
   "presents.js",
+  "minigames.js",
+  "progress.js",
 ];
 
 const MARKER = "/* @inject:engine */";

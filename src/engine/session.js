@@ -5,7 +5,7 @@
 // not-started. That is how you get a resume button that revives a dead eel.
 // Every transition is named here and anything unnamed is ignored.
 
-export const PHASES = ["home", "skins", "howto", "board", "playing", "paused", "over"];
+export const PHASES = ["home", "skins", "howto", "board", "playing", "paused", "over", "minigame"];
 
 const TRANSITIONS = {
   home:    { dive: "playing", openSkins: "skins", openHow: "howto", openBoard: "board" },
@@ -14,7 +14,9 @@ const TRANSITIONS = {
   board:   { closeBoard: "home" },                     // likewise
   playing: { pause: "paused", die: "over" },
   paused:  { resume: "playing", surface: "home" },     // surface = give up the run
-  over:    { surface: "home" },                        // death always goes home first
+  // the offer is optional — surface still skips straight home, same as ever
+  over:    { surface: "home", playMiniGame: "minigame" },
+  minigame:{ finishMiniGame: "home" },                 // death still always goes home first
 };
 
 /** The phase this event leads to, or the current phase if it does not apply. */
