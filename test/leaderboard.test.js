@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validateSubmission, bestOf, rankOf, topRows } from "../src/engine/leaderboard.js";
+import { validateSubmission, bestOf, rankOf, topRows, clampTopLimit } from "../src/engine/leaderboard.js";
 import { CONFIG } from "../src/engine/config.js";
 
 const L = CONFIG.leaderboard;
@@ -99,5 +99,31 @@ describe("topRows", () => {
     const before = rows.map(r => r.tag);
     topRows(rows);
     expect(rows.map(r => r.tag)).toEqual(before);
+  });
+});
+
+describe("clampTopLimit", () => {
+  it("defaults to topLimit when nothing is requested", () => {
+    expect(clampTopLimit(undefined)).toBe(L.topLimit);
+  });
+
+  it("passes through a reasonable request", () => {
+    expect(clampTopLimit(25)).toBe(25);
+  });
+
+  it("never exceeds maxTopLimit, however much is requested", () => {
+    expect(clampTopLimit(999999)).toBe(L.maxTopLimit);
+  });
+
+  it("falls back to the default for zero, negative or non-numeric junk", () => {
+    expect(clampTopLimit(0)).toBe(L.topLimit);
+    expect(clampTopLimit(-5)).toBe(L.topLimit);
+    expect(clampTopLimit("banana")).toBe(L.topLimit);
+    expect(clampTopLimit(null)).toBe(L.topLimit);
+    expect(clampTopLimit(undefined)).toBe(L.topLimit);
+  });
+
+  it("floors a fractional request rather than rejecting it", () => {
+    expect(clampTopLimit(5.9)).toBe(5);
   });
 });

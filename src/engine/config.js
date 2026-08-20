@@ -62,7 +62,8 @@ export const CONFIG = {
   // leaderboard limits. The game client and the Worker both import these, so a
   // cap only has to be changed in one place to hold on both sides.
   leaderboard: {
-    topLimit: 10,           // rows shown on the board
+    topLimit: 10,           // rows shown on the board by default
+    maxTopLimit: 25,        // the most a caller may ever ask for, e.g. /top?limit=
     maxScore: 1000000,      // nothing above this is a real run
     maxPointsPerSecond: 60, // generous: a great run stays under it, score=9e9 does not
     minRunMs: 3000,         // a run shorter than this cannot have earned anything

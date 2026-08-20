@@ -152,21 +152,28 @@
   .tip{font-size:12px;color:var(--muted);letter-spacing:.04em;max-width:420px;}
 
   /* leaderboard */
-  #board{
+  /* Shared by the game-over board, the home screen's top-5 preview, and the
+     full Top 25 screen — one look for "here is the leaderboard", wherever it
+     shows up, tuned once. */
+  #board, #homeBoard, #fullBoard{
     max-width:360px;width:100%;background:rgba(4,26,38,.5);
     border:1px solid rgba(79,230,214,.2);border-radius:16px;
     padding:14px 16px;font-size:13px;
   }
-  #board h2{
+  #homeBoard{max-width:420px;}   /* matches #eelSummary's width above it */
+  #board h2, #homeBoard h2{
     font-size:11px;letter-spacing:.32em;text-transform:uppercase;
     color:var(--biolume);font-weight:700;margin-bottom:10px;
   }
-  #boardRows{display:grid;grid-template-columns:auto 1fr auto;gap:5px 10px;text-align:left;}
-  #boardRows .rank{color:var(--muted);font-variant-numeric:tabular-nums;}
-  #boardRows .pts{color:var(--volt);font-variant-numeric:tabular-nums;}
-  #boardRows .me{color:var(--volt-hot);font-weight:700;}
-  #boardNote{color:var(--muted);font-size:12px;line-height:1.5;}
-  #boardNote b{color:var(--ink);font-weight:600;}
+  #boardRows, #homeBoardRows, #fullBoardRows{
+    display:grid;grid-template-columns:auto 1fr auto;gap:5px 10px;text-align:left;
+  }
+  #boardRows .rank, #homeBoardRows .rank, #fullBoardRows .rank{color:var(--muted);font-variant-numeric:tabular-nums;}
+  #boardRows .pts, #homeBoardRows .pts, #fullBoardRows .pts{color:var(--volt);font-variant-numeric:tabular-nums;}
+  #boardRows .me, #homeBoardRows .me, #fullBoardRows .me{color:var(--volt-hot);font-weight:700;}
+  #boardNote, #homeBoardNote, #fullBoardNote{color:var(--muted);font-size:12px;line-height:1.5;}
+  #boardNote b, #homeBoardNote b, #fullBoardNote b{color:var(--ink);font-weight:600;}
+  #homeBoard #openBoardBtn{margin-top:12px;}
   button.quiet{
     background:none;color:var(--biolume);border:1px solid rgba(79,230,214,.35);
     box-shadow:none;padding:9px 18px;font-size:11px;letter-spacing:.12em;
@@ -326,6 +333,21 @@
   </div>
   <button id="startBtn">Dive in</button>
   <button id="howBtn" class="quiet">How to play</button>
+  <div id="homeBoard" class="hidden">
+    <h2>Top divers</h2>
+    <div id="homeBoardRows"></div>
+    <div id="homeBoardNote"></div>
+    <button id="openBoardBtn" class="quiet">See top 25</button>
+  </div>
+</div>
+
+<div id="boardScreen" class="overlay hidden">
+  <h1>LEADERBOARD<span class="sub">top 25 divers</span></h1>
+  <div id="fullBoard">
+    <div id="fullBoardRows"></div>
+    <div id="fullBoardNote"></div>
+  </div>
+  <button id="closeBoardBtn">Done</button>
 </div>
 
 <div id="pause" class="overlay hidden">
@@ -811,8 +833,10 @@
     });
   }
 
-  function renderBoardRows(rows, myTag){
-    const el = document.getElementById("boardRows");
+  // One renderer for every place the board shows up: the game-over screen,
+  // the home screen's top-5 preview, and the full Top 25 screen.
+  function renderBoardRows(rows, myTag, targetId = "boardRows"){
+    const el = document.getElementById(targetId);
     el.textContent = "";
     rows.forEach((row, i) => {
       const mine = row.tag === myTag;
@@ -861,10 +885,54 @@
     }
   }
 
+  // A small preview on the home screen, so a player sees where they stand
+  // before they even dive. Purely a preview: it never submits a run (only
+  // updateBoard does that, on death) and it must never make the home screen
+  // wait on the network — the game plays exactly the same with no leaderboard
+  // at all, so the button above it is already usable before this resolves.
+  async function refreshHomeBoard(){
+    const wrap = document.getElementById("homeBoard");
+    if (!LEADERBOARD_URL){ wrap.classList.add("hidden"); return; }
+    wrap.classList.remove("hidden");
+    try {
+      const myTag = joined ? Engine.tagFor(playerId()) : null;
+      const rows = await api("/top?limit=5");
+      renderBoardRows(rows, myTag, "homeBoardRows");
+
+      let note = "";
+      // Only a joined player has a row in D1 at all (submitRun only ever runs
+      // when joined), so asking /rank for anyone else would be a wasted trip.
+      if (joined && !rows.some(r => r.tag === myTag)){
+        const mine = await api(`/rank?id=${encodeURIComponent(playerId())}`);
+        if (mine) note = `You're #${mine.rank} — best ${mine.best}.`;
+      }
+      document.getElementById("homeBoardNote").textContent = note;
+    } catch {
+      wrap.classList.add("hidden");   // offline or down: disappear, never block play
+    }
+  }
+
+  async function refreshFullBoard(){
+    if (!LEADERBOARD_URL) return;
+    try {
+      const myTag = joined ? Engine.tagFor(playerId()) : null;
+      const rows = await api("/top?limit=25");
+      renderBoardRows(rows, myTag, "fullBoardRows");
+      document.getElementById("fullBoardNote").textContent = joined
+        ? `You're ${myTag}.`
+        : "Join from a dive's end screen to appear here.";
+    } catch {
+      renderBoardRows([], null, "fullBoardRows");
+      document.getElementById("fullBoardNote").textContent =
+        "Leaderboard unavailable right now — your score is still saved on this device.";
+    }
+  }
+
   document.getElementById("joinBtn").addEventListener("click", () => {
     joined = true; writeStore(STORE.joined, "yes");
     updateBoard(best, Math.max(Engine.CONFIG.leaderboard.minRunMs, lastRunMs));
     renderHomeSummary(Engine.wearableSkin(skinId, owned));   // home screen picks up "on the board" too
+    refreshHomeBoard();
   });
 
   document.getElementById("leaveBtn").addEventListener("click", async () => {
@@ -877,6 +945,7 @@
     updateBoard(0, 0);
     // after dropStore, so this reads the fresh id rather than the forgotten one
     renderHomeSummary(Engine.wearableSkin(skinId, owned));
+    refreshHomeBoard();
   });
 
   function die(reason){
@@ -1987,7 +2056,7 @@
     // paused time is not dive time, so a pause cannot flatter the leaderboard's
     // points-per-second check
     if (from === "paused") pausedMs += Date.now() - pausedAt;
-    if (event === "surface") renderSkins();     // the run may have unlocked something
+    if (event === "surface"){ renderSkins(); refreshHomeBoard(); }   // the run may have unlocked or ranked something
     if (event === "openSkins"){                 // always open showing what's worn
       previewSkinId = null;
       pendingBuy = null;
@@ -2000,6 +2069,7 @@
     show("start", phase === "home");
     show("skinsScreen", phase === "skins");
     show("howScreen", phase === "howto");
+    show("boardScreen", phase === "board");
     show("over", false);                        // die() reveals it on a short delay
     show("pause", phase === "paused");
     show("hud", inDive);
@@ -2447,6 +2517,7 @@
   skinId = Engine.wearableSkin(readStore(STORE.skin), owned).id;
   document.getElementById("best").textContent = best;
   renderSkins();
+  refreshHomeBoard();
 
   document.getElementById("startBtn").addEventListener("click", () => goTo("dive"));
   document.getElementById("againBtn").addEventListener("click", () => goTo("surface"));
@@ -2457,6 +2528,8 @@
   document.getElementById("closeSkinsBtn").addEventListener("click", () => goTo("closeSkins"));
   document.getElementById("howBtn").addEventListener("click", () => goTo("openHow"));
   document.getElementById("closeHowBtn").addEventListener("click", () => goTo("closeHow"));
+  document.getElementById("openBoardBtn").addEventListener("click", () => { goTo("openBoard"); refreshFullBoard(); });
+  document.getElementById("closeBoardBtn").addEventListener("click", () => goTo("closeBoard"));
 })();
 </script>
 </body>

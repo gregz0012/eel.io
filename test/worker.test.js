@@ -157,6 +157,74 @@ describe("GET /top", () => {
   });
 });
 
+describe("GET /top?limit=", () => {
+  beforeEach(async () => {
+    for (let i = 0; i < 30; i++) {
+      env.DB.rows.push({ id: uuid(i), score: 1000 - i, duration_ms: 120000, created_at: 0, updated_at: 0 });
+    }
+  });
+
+  it("defaults to topLimit with no query string", async () => {
+    const rows = await (await worker.fetch(get("/top"), env)).json();
+    expect(rows).toHaveLength(L.topLimit);
+  });
+
+  it("honours a requested limit", async () => {
+    const rows = await (await worker.fetch(get("/top?limit=25"), env)).json();
+    expect(rows).toHaveLength(25);
+  });
+
+  it("never returns more than maxTopLimit, however much is asked for", async () => {
+    const rows = await (await worker.fetch(get("/top?limit=999"), env)).json();
+    expect(rows).toHaveLength(L.maxTopLimit);
+  });
+
+  it("falls back to the default for junk", async () => {
+    const rows = await (await worker.fetch(get("/top?limit=banana"), env)).json();
+    expect(rows).toHaveLength(L.topLimit);
+  });
+});
+
+describe("GET /rank", () => {
+  it("is null for a player who has never joined", async () => {
+    const res = await worker.fetch(get(`/rank?id=${uuid(1)}`), env);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toBeNull();
+  });
+
+  it("reports a joined player's own rank and best, without them submitting again", async () => {
+    await worker.fetch(post("/scores", goodRun(uuid(1), 500)), env);
+    const res = await worker.fetch(get(`/rank?id=${uuid(1)}`), env);
+    expect(await res.json()).toEqual({ rank: 1, best: 500 });
+  });
+
+  it("agrees with the rank a submission reports, ties included", async () => {
+    for (const [i, score] of [900, 700, 700].entries()) {
+      env.DB.rows.push({ id: uuid(90 + i), score, duration_ms: 120000, created_at: 0, updated_at: 0 });
+    }
+    const submitRank = (await (await worker.fetch(post("/scores", goodRun(uuid(1), 700)), env)).json()).rank;
+    const res = await worker.fetch(get(`/rank?id=${uuid(1)}`), env);
+    expect((await res.json()).rank).toBe(submitRank);
+    expect(submitRank).toBe(rankOf([900, 700, 700, 700], 700));   // shared definition
+  });
+
+  it("rejects an id that is not a UUID", async () => {
+    const res = await worker.fetch(get("/rank?id=steve"), env);
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects a missing id", async () => {
+    const res = await worker.fetch(get("/rank"), env);
+    expect(res.status).toBe(400);
+  });
+
+  it("never leaks the id back", async () => {
+    await worker.fetch(post("/scores", goodRun(uuid(1))), env);
+    const body = await (await worker.fetch(get(`/rank?id=${uuid(1)}`), env)).text();
+    expect(body).not.toContain(uuid(1));
+  });
+});
+
 describe("POST /forget", () => {
   it("deletes everything held for a player", async () => {
     await worker.fetch(post("/scores", goodRun(uuid(1))), env);
