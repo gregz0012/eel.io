@@ -1,6 +1,7 @@
 // Eel Shock leaderboard Worker (Cloudflare Workers + D1).
 //
-//   GET  /top          -> [{ tag, score }]  the board, highest first
+//   GET  /top?limit=   -> [{ tag, score }]  the board, highest first (limit is clamped)
+//   GET  /rank?id=     -> { rank, best } | null   a player's own standing, without joining
 //   POST /scores       -> { rank, best }    submit a run: { id, score, durationMs }
 //   POST /forget       -> { forgotten }     delete everything for { id }
 //
@@ -12,7 +13,7 @@
 // Deploy:  npx wrangler deploy      (from this directory)
 
 import { CONFIG } from "../src/engine/config.js";
-import { validateSubmission, topRows } from "../src/engine/leaderboard.js";
+import { validateSubmission, topRows, clampTopLimit } from "../src/engine/leaderboard.js";
 import { tagFor } from "../src/engine/identity.js";
 
 const L = CONFIG.leaderboard;
@@ -39,16 +40,43 @@ function json(body, status, headers) {
   });
 }
 
-async function handleTop(env, cors) {
+async function handleTop(request, env, cors) {
+  // clampTopLimit is the same function the client uses, so a "Top 25" screen
+  // and this endpoint can never disagree about what "25" is allowed to mean.
+  const limit = clampTopLimit(new URL(request.url).searchParams.get("limit"));
   const { results } = await env.DB
     .prepare("SELECT id, score FROM scores ORDER BY score DESC LIMIT ?")
-    .bind(L.topLimit)
+    .bind(limit)
     .all();
 
   // The tag is derived here, from the id, so a client cannot choose the words
   // that appear on a board children read. Ids are never sent back.
-  const rows = topRows((results ?? []).map(r => ({ tag: tagFor(r.id), score: r.score })));
+  const rows = topRows((results ?? []).map(r => ({ tag: tagFor(r.id), score: r.score })), limit);
   return json(rows, 200, cors);
+}
+
+/** How many rows beat this score. Shared by /rank and a fresh /scores submission. */
+async function rankFor(env, score) {
+  const higher = await env.DB
+    .prepare("SELECT COUNT(*) AS n FROM scores WHERE score > ?")
+    .bind(score)
+    .first();
+  return (higher?.n ?? 0) + 1;
+}
+
+/**
+ * A player's own standing, without submitting anything or joining the board.
+ * `null` for a player who has never joined — there is nothing to rank, and
+ * that is not an error.
+ */
+async function handleRank(request, env, cors) {
+  const id = new URL(request.url).searchParams.get("id");
+  if (typeof id !== "string" || !UUID.test(id)) {
+    return json({ error: "id must be a UUID" }, 400, cors);
+  }
+  const row = await env.DB.prepare("SELECT score FROM scores WHERE id = ?").bind(id).first();
+  if (!row) return json(null, 200, cors);
+  return json({ rank: await rankFor(env, row.score), best: row.score }, 200, cors);
 }
 
 async function handleSubmit(request, env, cors) {
@@ -95,12 +123,7 @@ async function handleSubmit(request, env, cors) {
   // Counting the scores above this one is the same answer rankOf() gives — ties
   // share a rank — without reading every row in the table on every submission.
   const best = Math.max(score, existing?.score ?? 0);
-  const higher = await env.DB
-    .prepare("SELECT COUNT(*) AS n FROM scores WHERE score > ?")
-    .bind(best)
-    .first();
-
-  return json({ best, rank: (higher?.n ?? 0) + 1 }, 200, cors);
+  return json({ best, rank: await rankFor(env, best) }, 200, cors);
 }
 
 async function handleForget(request, env, cors) {
@@ -126,7 +149,8 @@ export default {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
 
     try {
-      if (request.method === "GET" && url.pathname === "/top") return await handleTop(env, cors);
+      if (request.method === "GET" && url.pathname === "/top") return await handleTop(request, env, cors);
+      if (request.method === "GET" && url.pathname === "/rank") return await handleRank(request, env, cors);
       if (request.method === "POST" && url.pathname === "/scores") return await handleSubmit(request, env, cors);
       if (request.method === "POST" && url.pathname === "/forget") return await handleForget(request, env, cors);
     } catch (err) {

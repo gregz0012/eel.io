@@ -66,16 +66,32 @@ describe("phases", () => {
     }
   });
 
-  it("keeps the two home screens apart", () => {
-    // neither side door leads to the other, only back to home
+  it("opens and closes the leaderboard from home", () => {
+    expect(nextPhase("home", "openBoard")).toBe("board");
+    expect(nextPhase("board", "closeBoard")).toBe("home");
+  });
+
+  it("cannot open the leaderboard except from home", () => {
+    for (const phase of ["playing", "paused", "over", "skins", "howto"]) {
+      expect(nextPhase(phase, "openBoard")).toBe(phase);
+    }
+  });
+
+  it("keeps the three home screens apart", () => {
+    // no side door leads to another side door, only back to home
     expect(nextPhase("skins", "openHow")).toBe("skins");
+    expect(nextPhase("skins", "openBoard")).toBe("skins");
     expect(nextPhase("howto", "openSkins")).toBe("howto");
+    expect(nextPhase("howto", "openBoard")).toBe("howto");
+    expect(nextPhase("board", "openSkins")).toBe("board");
+    expect(nextPhase("board", "openHow")).toBe("board");
   });
 
   it("only ever lands on a known phase", () => {
     for (const phase of PHASES) {
       for (const event of ["dive", "pause", "resume", "die", "surface",
-                           "openSkins", "closeSkins", "openHow", "closeHow"]) {
+                           "openSkins", "closeSkins", "openHow", "closeHow",
+                           "openBoard", "closeBoard"]) {
         expect(PHASES).toContain(nextPhase(phase, event));
       }
     }
@@ -96,6 +112,6 @@ describe("canDo", () => {
 describe("isRunning", () => {
   it("advances the world only while playing", () => {
     expect(isRunning("playing")).toBe(true);
-    for (const phase of ["home", "paused", "over", "skins", "howto"]) expect(isRunning(phase)).toBe(false);
+    for (const phase of ["home", "paused", "over", "skins", "howto", "board"]) expect(isRunning(phase)).toBe(false);
   });
 });

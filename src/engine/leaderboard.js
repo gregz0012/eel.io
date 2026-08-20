@@ -54,3 +54,17 @@ export function topRows(rows, limit = L.topLimit) {
     .sort((a, b) => b.score - a.score || String(a.tag).localeCompare(String(b.tag)))
     .slice(0, limit);
 }
+
+/**
+ * A safe row count for /top, from whatever a caller asked for.
+ *
+ * Shared by the client (a "Top 25" screen wants more rows than the home
+ * screen's preview) and the Worker (which must never trust a query string
+ * outright) — one cap, so the two cannot drift apart. Garbage in gets the
+ * default, not an error: a malformed `?limit=` is not worth a 400 over.
+ */
+export function clampTopLimit(requested) {
+  const n = Math.floor(Number(requested));
+  if (!Number.isFinite(n) || n <= 0) return L.topLimit;
+  return Math.min(n, L.maxTopLimit);
+}

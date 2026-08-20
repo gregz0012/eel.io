@@ -101,6 +101,12 @@ board". There is no account, no sign-in, and nothing about your device or
 about you is collected. "Leave the board" deletes your row, forgets the id,
 and gives you a new name next time.
 
+The home screen carries a top-5 preview of the board, with your own row picked
+out if you're on it — or a quiet "you're #N" if you're close but not quite in
+the top five. "See top 25" opens the full board. Both load in the background:
+the home screen is fully usable — you can dive straight away — before either
+has a chance to answer.
+
 The game does not need it: with no server configured, or with no internet, it
 plays exactly the same and your best score is still kept on your own device.
 
