@@ -1707,21 +1707,25 @@
   // body drawing it is not tied to the game camera — which is why the game
   // and the shop preview can share this one rather than each keeping a copy.
   function drawCrossedSwords(c, x, y, ang, size){
+    // `ang` points towards the head, and the swords are worn the way a person
+    // wears them: hilts up at the shoulders within reach, blades sweeping back
+    // down the body. So the grip sits forward of the guard and the blade runs
+    // away towards the tail.
     c.save();
     c.translate(x, y); c.rotate(ang);
     for (const s of [-1, 1]){
       c.save();
       c.rotate(s * 0.62);
       c.lineCap = "butt";
-      c.strokeStyle = "#dfe9ef";                    // blade
+      c.strokeStyle = "#dfe9ef";                    // blade, swept back
       c.lineWidth = Math.max(1, size*0.15);
-      c.beginPath(); c.moveTo(-size*0.18, 0); c.lineTo(size*1.0, 0); c.stroke();
+      c.beginPath(); c.moveTo(size*0.18, 0); c.lineTo(-size*1.0, 0); c.stroke();
       c.strokeStyle = "#f6c453";                    // guard
       c.lineWidth = Math.max(1, size*0.14);
-      c.beginPath(); c.moveTo(-size*0.2, -size*0.2); c.lineTo(-size*0.2, size*0.2); c.stroke();
-      c.strokeStyle = "#17171d";                    // grip
+      c.beginPath(); c.moveTo(size*0.2, -size*0.2); c.lineTo(size*0.2, size*0.2); c.stroke();
+      c.strokeStyle = "#17171d";                    // grip, up by the shoulder
       c.lineWidth = Math.max(1, size*0.17);
-      c.beginPath(); c.moveTo(-size*0.66, 0); c.lineTo(-size*0.2, 0); c.stroke();
+      c.beginPath(); c.moveTo(size*0.66, 0); c.lineTo(size*0.2, 0); c.stroke();
       c.restore();
     }
     c.restore();
