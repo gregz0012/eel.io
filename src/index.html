@@ -1447,31 +1447,6 @@
       ctx.restore();
     }
 
-    // "maw": a dark grin split by white teeth. Drawn this way round on
-    // purpose — a white mouth with a dark line through it reads as a painted
-    // stripe, whereas dark with white teeth biting into it reads as a mouth
-    if (marks.includes("maw")){
-      // Teeth run right across the snout, each narrower than its slot so dark
-      // shows between them; without those gaps the two rows merge into what
-      // reads as a barcode rather than a grin.
-      const teeth = 6, halfW = radius*0.82, stepY = (halfW*2)/teeth;
-      ctx.fillStyle = "#07070c";
-      ctx.beginPath(); ctx.ellipse(radius*0.98, 0, radius*0.48, halfW, 0, 0, TAU); ctx.fill();
-      ctx.fillStyle = "#f4f8fa";
-      for (let i = 0; i < teeth; i++){
-        const ya = -halfW + stepY*i;
-        ctx.beginPath();                                  // front row, biting back
-        ctx.moveTo(radius*1.30, ya + stepY*0.12);
-        ctx.lineTo(radius*1.30, ya + stepY*0.76);
-        ctx.lineTo(radius*0.84, ya + stepY*0.44);
-        ctx.closePath(); ctx.fill();
-        ctx.beginPath();                                  // rear row, half a step over
-        ctx.moveTo(radius*0.58, ya + stepY*0.60);
-        ctx.lineTo(radius*0.58, ya + stepY*1.24);
-        ctx.lineTo(radius*1.14, ya + stepY*0.92);
-        ctx.closePath(); ctx.fill();
-      }
-    }
     // "patch": a dark mask panel behind each eye, so the whites read as the
     // cut-outs of a mask rather than as plain eyes
     if (marks.includes("patch") && accent){
@@ -1489,21 +1464,21 @@
         ctx.ellipse(radius*0.56, s*radius*0.56, radius*0.30, radius*0.18, s*-0.35, 0, TAU);
         ctx.fill();
       }
-    } else if (marks.includes("maw")){
-      // Venom's eye: a big hooked crescent, blunt and wide at the outer end,
-      // curving to a fine point that leans in towards the snout, with a
-      // concave inner edge. These carry the whole face — the reference logo is
-      // nothing but the eyes — so they run most of the length of the head.
+    } else if (marks.includes("stare")){
+      // Venom's eye, mapped onto a head seen from above: wide and flared at
+      // the snout end, sweeping back and inward to a fine point near the
+      // centreline, so the dark between the pair opens out into a V towards
+      // the front. These are the whole face — the logo is nothing else.
       ctx.fillStyle = "#f4f8fa";
       for (const s of [-1, 1]){
         ctx.beginPath();
-        ctx.moveTo(radius*0.52, s*radius*0.09);                    // fine point, towards the snout
-        ctx.quadraticCurveTo(radius*0.34, s*radius*0.64,
-                           -radius*0.30, s*radius*0.92);          // outer edge, bowed wide
-        ctx.quadraticCurveTo(-radius*0.98, s*radius*1.04,
-                           -radius*1.08, s*radius*0.54);          // blunt outer end
-        ctx.quadraticCurveTo(-radius*0.50, s*radius*0.58,
-                            radius*0.52, s*radius*0.09);          // inner edge, bowed out to slim it
+        ctx.moveTo(-radius*1.02, s*radius*0.10);                   // fine point, at the back
+        ctx.quadraticCurveTo(-radius*0.20, s*radius*0.72,
+                            radius*0.58, s*radius*0.92);          // outer edge, bowed out
+        ctx.quadraticCurveTo(radius*0.94, s*radius*0.88,
+                            radius*1.00, s*radius*0.46);          // flared cap at the snout
+        ctx.quadraticCurveTo(radius*0.15, s*radius*0.48,
+                           -radius*1.02, s*radius*0.10);          // inner edge, held close to slim it
         ctx.closePath(); ctx.fill();
       }
     } else if (marks.includes("ears") && accent){
@@ -2042,30 +2017,6 @@
       pctx.restore();
     }
 
-    // "maw": a wide grin across the snout, with the head colour struck back
-    // through it as a jagged bite line so it reads as teeth
-    if (marks.includes("maw")){
-      // Teeth run right across the snout, each narrower than its slot so dark
-      // shows between them; without those gaps the two rows merge into what
-      // reads as a barcode rather than a grin.
-      const teeth = 6, halfW = radius*0.82, stepY = (halfW*2)/teeth;
-      pctx.fillStyle = "#07070c";
-      pctx.beginPath(); pctx.ellipse(radius*0.98, 0, radius*0.48, halfW, 0, 0, TAU); pctx.fill();
-      pctx.fillStyle = "#f4f8fa";
-      for (let i = 0; i < teeth; i++){
-        const ya = -halfW + stepY*i;
-        pctx.beginPath();                                  // front row, biting back
-        pctx.moveTo(radius*1.30, ya + stepY*0.12);
-        pctx.lineTo(radius*1.30, ya + stepY*0.76);
-        pctx.lineTo(radius*0.84, ya + stepY*0.44);
-        pctx.closePath(); pctx.fill();
-        pctx.beginPath();                                  // rear row, half a step over
-        pctx.moveTo(radius*0.58, ya + stepY*0.60);
-        pctx.lineTo(radius*0.58, ya + stepY*1.24);
-        pctx.lineTo(radius*1.14, ya + stepY*0.92);
-        pctx.closePath(); pctx.fill();
-      }
-    }
     if (marks.includes("patch") && accent){
       pctx.fillStyle = `hsl(${accent.hue},${accent.sat}%,${accent.light}%)`;
       for (const s of [-1, 1]){
@@ -2079,17 +2030,17 @@
         pctx.ellipse(radius*0.56, s*radius*0.56, radius*0.30, radius*0.18, s*-0.35, 0, TAU);
         pctx.fill();
       }
-    } else if (marks.includes("maw")){
+    } else if (marks.includes("stare")){
       pctx.fillStyle = "#f4f8fa";
       for (const s of [-1, 1]){
         pctx.beginPath();
-        pctx.moveTo(radius*0.52, s*radius*0.09);                    // fine point, towards the snout
-        pctx.quadraticCurveTo(radius*0.34, s*radius*0.64,
-                           -radius*0.30, s*radius*0.92);          // outer edge, bowed wide
-        pctx.quadraticCurveTo(-radius*0.98, s*radius*1.04,
-                           -radius*1.08, s*radius*0.54);          // blunt outer end
-        pctx.quadraticCurveTo(-radius*0.50, s*radius*0.58,
-                            radius*0.52, s*radius*0.09);          // inner edge, bowed out to slim it
+        pctx.moveTo(-radius*1.02, s*radius*0.10);                   // fine point, at the back
+        pctx.quadraticCurveTo(-radius*0.20, s*radius*0.72,
+                            radius*0.58, s*radius*0.92);          // outer edge, bowed out
+        pctx.quadraticCurveTo(radius*0.94, s*radius*0.88,
+                            radius*1.00, s*radius*0.46);          // flared cap at the snout
+        pctx.quadraticCurveTo(radius*0.15, s*radius*0.48,
+                           -radius*1.02, s*radius*0.10);          // inner edge, held close to slim it
         pctx.closePath(); pctx.fill();
       }
     } else if (marks.includes("ears") && accent){

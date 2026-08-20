@@ -74,7 +74,7 @@ describe("the catalogue", () => {
   it("only ever asks for a mark the renderer knows how to draw", () => {
     for (const s of SKINS) {
       for (const mark of [].concat(s.mark ?? [])) {
-        expect(["web", "ears", "patch", "swords", "emblem", "maw"]).toContain(mark);
+        expect(["web", "ears", "patch", "swords", "emblem", "stare"]).toContain(mark);
       }
     }
   });
