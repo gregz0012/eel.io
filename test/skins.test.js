@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
-  SKINS, DEFAULT_SKIN_ID, skinById, isOwned, ownedSkins, canAfford,
-  buySkin, wearableSkin, nextSkinToBuy, skinFromHue, skinStatus,
+  SKINS, DEFAULT_SKIN_ID, TIERS, skinsByTier, skinById, isOwned, ownedSkins,
+  canAfford, buySkin, wearableSkin, nextSkinToBuy, skinFromHue, skinStatus,
 } from "../src/engine/skins.js";
 
 const free = SKINS.filter(s => s.price === 0);
@@ -69,6 +69,31 @@ describe("the catalogue", () => {
     for (const s of SKINS) {
       expect([s.gem, s.sheen > 0, !!s.accent].filter(Boolean).length).toBeLessThanOrEqual(1);
     }
+  });
+
+  it("files every skin under exactly one section of the shop", () => {
+    const ids = TIERS.map(t => t.id);
+    for (const s of SKINS) expect(ids).toContain(s.tier);
+    const listed = TIERS.flatMap(t => skinsByTier(t.id));
+    expect(listed).toHaveLength(SKINS.length);          // none missed, none twice
+  });
+
+  it("puts each skin in the section a player would look for it in", () => {
+    expect(skinsByTier("standard").map(s => s.id))
+      .toEqual(["volt", "coral", "orchid", "sky", "lime"]);
+    expect(skinsByTier("metallic").map(s => s.id))
+      .toEqual(["copper", "iron", "gold", "platinum"]);
+    expect(skinsByTier("gemstone").map(s => s.id))
+      .toEqual(["emerald", "ruby", "diamond"]);
+    expect(skinsByTier("hero").map(s => s.id))
+      .toEqual(["spider", "eelwolf", "symbiote", "eelpool"]);
+  });
+
+  it("keeps Eel-symbiote with the heroes despite its sheen", () => {
+    // it carries sheen for a wet gloss, so a tier inferred from that flag
+    // would file it under metallic
+    expect(skinById("symbiote").sheen).toBeGreaterThan(0);
+    expect(skinById("symbiote").tier).toBe("hero");
   });
 
   it("only ever asks for a mark the renderer knows how to draw", () => {

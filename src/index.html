@@ -132,6 +132,9 @@
   }
   .card b{color:var(--volt);}
   .legend{display:grid;grid-template-columns:auto 1fr;gap:8px 12px;text-align:left;margin-top:6px;}
+  /* a whole page of prose, so it reads as prose rather than as a poster */
+  #howScreen h1{font-size:clamp(30px,8vw,62px);}
+  #howScreen .card{text-align:left;}
   .dot{width:16px;height:16px;border-radius:50%;align-self:center;box-shadow:0 0 10px currentColor;}
   button{
     font-family:inherit;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
@@ -196,7 +199,12 @@
   #skinPreviewName{font-size:14px;font-weight:700;color:var(--ink);letter-spacing:.02em;}
   #skinPreviewStatus{font-size:11px;color:var(--muted);}
   #skins{max-width:560px;width:100%;}
-  #skinGrid{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;}
+  #skinGrid{display:flex;flex-direction:column;gap:16px;}
+  .tierLabel{
+    font-size:11px;letter-spacing:.32em;text-transform:uppercase;
+    color:var(--biolume);font-weight:700;margin-bottom:9px;
+  }
+  .tierRow{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;}
   .skin{
     width:74px;padding:8px 4px 7px;border-radius:12px;cursor:pointer;
     background:rgba(4,26,38,.55);border:1px solid rgba(79,230,214,.18);
@@ -282,6 +290,18 @@
     <button id="openSkinsBtn" class="quiet">Change your eel</button>
   </div>
   <button id="startBtn">Dive in</button>
+  <button id="howBtn" class="quiet">How to play</button>
+</div>
+
+<div id="pause" class="overlay hidden">
+  <h1>PAUSED<span class="sub">the sea holds its breath</span></h1>
+  <div class="final">Score<b id="pauseScore">0</b></div>
+  <button id="resumeBtn">Keep swimming</button>
+  <button id="surfaceBtn" class="quiet">Back to the surface</button>
+</div>
+
+<div id="howScreen" class="overlay hidden">
+  <h1>HOW TO PLAY<span class="sub">learn the deep</span></h1>
   <div class="card">
     You're a young electric eel in the twilight zone. <b>Steer with your mouse or finger.</b>
     Eat little fish to grow. Bite chunks off rival eels — or swallow smaller ones whole. Grab a
@@ -300,17 +320,11 @@
     </div>
   </div>
   <div class="tip">Hold mouse / tap-hold to sprint · Space or tap the meter to unleash a shock that stuns everything nearby — then feast · <b>P</b> or <b>Esc</b> to pause</div>
-</div>
-
-<div id="pause" class="overlay hidden">
-  <h1>PAUSED<span class="sub">the sea holds its breath</span></h1>
-  <div class="final">Score<b id="pauseScore">0</b></div>
-  <button id="resumeBtn">Keep swimming</button>
-  <button id="surfaceBtn" class="quiet">Back to the surface</button>
+  <button id="closeHowBtn">Got it</button>
 </div>
 
 <div id="skinsScreen" class="overlay hidden">
-  <h1>YOUR EEL<span class="sub">pick a colour</span></h1>
+  <h1>YOUR EEL<span class="sub">pick your look</span></h1>
   <div id="skinPreviewWrap">
     <canvas id="skinPreview" width="260" height="100"></canvas>
     <div id="skinPreviewName">Volt</div>
@@ -1840,6 +1854,7 @@
     const inDive = phase === "playing" || phase === "paused";
     show("start", phase === "home");
     show("skinsScreen", phase === "skins");
+    show("howScreen", phase === "howto");
     show("over", false);                        // die() reveals it on a short delay
     show("pause", phase === "paused");
     show("hud", inDive);
@@ -2085,43 +2100,56 @@
     previewLoop();
   }
 
+  // The shop is grouped into the sections engine/skins.js declares, so a
+  // player scanning for "the shiny ones" has somewhere to look. The engine
+  // owns both the order and which skin belongs where; this only draws it.
   function renderSkins(){
     const grid = document.getElementById("skinGrid");
     grid.textContent = "";
     const worn = Engine.wearableSkin(skinId, owned);
 
-    for (const skin of Engine.SKINS){
-      const mine = Engine.isOwned(skin.id, owned);
-      const affordable = Engine.canAfford(skin, banked);
-      const el = document.createElement("div");
-      el.className = "skin" + (skin.gem ? " gem" : "") + (skin.id === worn.id ? " on" : "") + (mine ? "" : " locked");
-      if (skin.gem) el.style.setProperty("--gem-hue", skin.hue);
-      el.title = mine ? skin.name : `${skin.name} — ${skin.price.toLocaleString()} points`;
+    for (const tier of Engine.TIERS){
+      const section = document.createElement("div");
+      const label = document.createElement("h2");
+      label.className = "tierLabel"; label.textContent = tier.label;
+      const row = document.createElement("div");
+      row.className = "tierRow";
+      section.append(label, row);
+      grid.appendChild(section);
 
-      const swatch = document.createElement("div");
-      swatch.className = "swatch";
-      const colour = `hsl(${skin.hue},${skin.sat}%,${skin.headLight}%)`;
-      swatch.style.color = colour;
-      swatch.style.background = colour;
-      if (!mine) swatch.style.filter = "grayscale(.45) brightness(.8)";
+      for (const skin of Engine.skinsByTier(tier.id)){
+        const mine = Engine.isOwned(skin.id, owned);
+        const affordable = Engine.canAfford(skin, banked);
+        const el = document.createElement("div");
+        el.className = "skin" + (skin.gem ? " gem" : "") + (skin.id === worn.id ? " on" : "") + (mine ? "" : " locked");
+        if (skin.gem) el.style.setProperty("--gem-hue", skin.hue);
+        el.title = mine ? skin.name : `${skin.name} — ${skin.price.toLocaleString()} points`;
 
-      const name = document.createElement("div");
-      name.className = "name"; name.textContent = skin.name;
+        const swatch = document.createElement("div");
+        swatch.className = "swatch";
+        const colour = `hsl(${skin.hue},${skin.sat}%,${skin.headLight}%)`;
+        swatch.style.color = colour;
+        swatch.style.background = colour;
+        if (!mine) swatch.style.filter = "grayscale(.45) brightness(.8)";
 
-      const cost = document.createElement("div");
-      cost.className = "cost";
-      cost.textContent = mine ? (skin.price ? "yours" : "") : skin.price.toLocaleString();
-      if (!mine && affordable) cost.style.color = "var(--volt)";
+        const name = document.createElement("div");
+        name.className = "name"; name.textContent = skin.name;
 
-      el.append(swatch, name, cost);
-      el.addEventListener("mouseenter", () => { previewSkinId = skin.id; updatePreviewInfo(); });
-      el.addEventListener("click", () => {
-        previewSkinId = skin.id;               // browsing always previews, buying or not
-        if (mine){ skinId = skin.id; writeStore(STORE.skin, skinId); pendingBuy = null; }
-        else pendingBuy = affordable ? skin.id : null;
-        renderSkins();
-      });
-      grid.appendChild(el);
+        const cost = document.createElement("div");
+        cost.className = "cost";
+        cost.textContent = mine ? (skin.price ? "yours" : "") : skin.price.toLocaleString();
+        if (!mine && affordable) cost.style.color = "var(--volt)";
+
+        el.append(swatch, name, cost);
+        el.addEventListener("mouseenter", () => { previewSkinId = skin.id; updatePreviewInfo(); });
+        el.addEventListener("click", () => {
+          previewSkinId = skin.id;               // browsing always previews, buying or not
+          if (mine){ skinId = skin.id; writeStore(STORE.skin, skinId); pendingBuy = null; }
+          else pendingBuy = affordable ? skin.id : null;
+          renderSkins();
+        });
+        row.appendChild(el);
+      }
     }
 
     renderBankNote();
@@ -2223,6 +2251,8 @@
   document.getElementById("pauseBtn").addEventListener("click", () => goTo("pause"));
   document.getElementById("openSkinsBtn").addEventListener("click", () => goTo("openSkins"));
   document.getElementById("closeSkinsBtn").addEventListener("click", () => goTo("closeSkins"));
+  document.getElementById("howBtn").addEventListener("click", () => goTo("openHow"));
+  document.getElementById("closeHowBtn").addEventListener("click", () => goTo("closeHow"));
 })();
 </script>
 </body>

@@ -55,9 +55,27 @@ describe("phases", () => {
     }
   });
 
+  it("opens and closes the instructions from home", () => {
+    expect(nextPhase("home", "openHow")).toBe("howto");
+    expect(nextPhase("howto", "closeHow")).toBe("home");
+  });
+
+  it("cannot open the instructions except from home", () => {
+    for (const phase of ["playing", "paused", "over", "skins"]) {
+      expect(nextPhase(phase, "openHow")).toBe(phase);
+    }
+  });
+
+  it("keeps the two home screens apart", () => {
+    // neither side door leads to the other, only back to home
+    expect(nextPhase("skins", "openHow")).toBe("skins");
+    expect(nextPhase("howto", "openSkins")).toBe("howto");
+  });
+
   it("only ever lands on a known phase", () => {
     for (const phase of PHASES) {
-      for (const event of ["dive", "pause", "resume", "die", "surface", "openSkins", "closeSkins"]) {
+      for (const event of ["dive", "pause", "resume", "die", "surface",
+                           "openSkins", "closeSkins", "openHow", "closeHow"]) {
         expect(PHASES).toContain(nextPhase(phase, event));
       }
     }
@@ -78,6 +96,6 @@ describe("canDo", () => {
 describe("isRunning", () => {
   it("advances the world only while playing", () => {
     expect(isRunning("playing")).toBe(true);
-    for (const phase of ["home", "paused", "over", "skins"]) expect(isRunning(phase)).toBe(false);
+    for (const phase of ["home", "paused", "over", "skins", "howto"]) expect(isRunning(phase)).toBe(false);
   });
 });

@@ -13,16 +13,20 @@ No accounts, no ads, no tracking, no runtime dependencies. The game ships as one
 - **Shock** with the big **ZAP** button (bottom-right) or the **Space** bar once the meter is charged.
 - **Pause** with **P** or **Esc**, or the button in the top-right corner.
 
+The full rules — what everything in the sea does — are on the **How to play**
+page, behind the button on the home screen.
+
 ## Your eel
 
 Every dive's score is **banked**. Spend it in the skin shop — tap "Change
-your eel" on the home screen. Volt is yours from the start; after that:
+your eel" on the home screen. The shop is grouped into four sections. Volt is
+yours from the start; after that:
 
-| Tier | Skins | Price each |
+| Section | Skins | Price each |
 | --- | --- | --- |
-| Colours | Coral, Orchid, Sky, Lime | 250 |
-| Metals | Copper, Iron, Gold, Platinum | 500 / 1,000 / 2,000 / 5,000 |
-| Gems | Emerald, Ruby, Diamond | 7,500 |
+| Standard | Coral, Orchid, Sky, Lime | 250 |
+| Metallic | Copper, Iron, Gold, Platinum | 500 / 1,000 / 2,000 / 5,000 |
+| Gemstone | Emerald, Ruby, Diamond | 7,500 |
 | Heroes | Spider, Eel-wolf, Eel-symbiote, Eel-pool | 10,000 |
 
 The metals catch the light — the dearer the metal, the harder it shines, so
