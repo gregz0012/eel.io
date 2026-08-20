@@ -21,7 +21,7 @@ permissions:
 concurrency: leaderboard-deploy  # never two deploys at once
 
 env:
-  WRANGLER_SEND_METRICS: false   # design value #1: no telemetry we can turn off
+  WRANGLER_SEND_METRICS: "false"   # design value #1: no telemetry we can turn off
 
 jobs:
   deploy:
