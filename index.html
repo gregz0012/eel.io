@@ -312,7 +312,7 @@
     <div id="wornSwatch"></div>
     <div id="wornInfo">
       <div id="wornName">Volt</div>
-      <div id="bankLine">Bank <b id="bankAmount">0</b> points</div>
+      <div id="bankLine">Bank <b id="bankAmount">0</b> points · deepest <b id="bestLevelAmount">1</b></div>
       <div id="tagLine" class="hidden"></div>
     </div>
     <button id="openSkinsBtn" class="quiet">Change your eel</button>
@@ -335,8 +335,10 @@
     Eat little fish to grow. Bite chunks off rival eels — or swallow smaller ones whole. Grab a
     <b>starfish</b> for a shield, and gulp a glowing <b>baby electric eel</b> to charge your zap.
     Anything that dies leaves <b>energy</b> behind — hoover it up to grow.
-    Don't cross your own tail, or you'll bite yourself and shrink. Every 10 levels a
-    <b>boss</b> is unleashed: shock it, then ram it twice.
+    Don't cross your own tail, or you'll bite yourself and shrink.
+    Fish get you to <b>level 2</b>. After that a <b>boss</b> guards every level and killing it
+    is the only way on — shock it, then ram it, once for every level you're on. A level 5 boss
+    takes five hits. You get a breather after each one, so go and find a starfish.
     <div class="legend">
       <span class="dot" style="color:#ff9e6d;background:#ff9e6d"></span><span>Small fish — food. Bite rival eels' tails, or eat smaller ones whole</span>
       <span class="dot" style="color:#6dffb0;background:#6dffb0"></span><span>Feast orb — a whole shoal at once, worth 10×</span>
@@ -398,12 +400,27 @@
     // entity tunables still live in the shell and move here with their own slice.
     const CONFIG = {
       // scoring & levels
-      pointsPerLevel: 120,      // score needed per level; levels are sticky (never fall)
+      //
+      // Score gets a player as far as the first boss and no further: from
+      // `boss.firstLevel` on, the only way up is killing the boss guarding the
+      // level you are on. Points keep accruing — they are the bank and the
+      // leaderboard — they just stop buying levels.
+      pointsPerLevel: 120,      // score needed for the one level score can win
+      scoreLevelCap: 2,         // the highest level score alone can reach
     
       // difficulty ramp
       predatorsBase: 3,         // predators in the sea at level 1
       levelsPerPredator: 2,     // +1 predator every N levels
-      bossEveryLevels: 10,      // a boss is unleashed every N levels
+    
+      // The boss guarding each level. It takes as many hits as the level number,
+      // so it is the pacing of the whole game: level 2 is two hits, level 15 is
+      // fifteen. That only works because it is slow enough to swim away from —
+      // a boss you cannot escape and cannot out-damage is just a wall.
+      boss: {
+        firstLevel: 2,          // levels below this are unguarded
+        breatherMs: 6000,       // calm after a level-up before the next boss shows
+        speedFactor: 0.72,      // slower than a predator: you can always disengage
+      },
     
       // per-level speed reward, capped so the eel stays controllable
       levelSpeedPerLevel: 0.015,
@@ -497,10 +514,16 @@
     // ---- src/engine/scoring.js ----
     // Scoring and levelling. Pure: no globals, no clock, no randomness.
     //
-    // A level-up has consequences elsewhere in the world (more predators, a boss on
-    // every tenth level). A pure function cannot spawn those, so addScore reports
-    // the levels crossed and the caller applies them. That keeps the boss rule
-    // testable instead of hiding it in a side effect.
+    // Two ways up, and only two. Score carries a player as far as
+    // CONFIG.scoreLevelCap — one level, enough to grow a little and learn the
+    // controls. Past that the only way up is killing the boss guarding the level
+    // you are on, which is `completeLevel`. Points never stop mattering (they are
+    // the bank and the leaderboard); they just stop buying levels.
+    //
+    // A level-up has consequences elsewhere in the world — more predators, the next
+    // boss. A pure function cannot spawn those, so both routes report the levels
+    // crossed in the same `levelsGained` shape and the caller applies them. That
+    // keeps the boss rule testable instead of hiding it in a side effect.
     
     /**
      * @param {{score:number, level:number}} state
@@ -509,25 +532,58 @@
      */
     function addScore(state, n) {
       const score = Math.max(0, state.score + n);
-      const level = Math.max(state.level, 1 + Math.floor(score / CONFIG.pointsPerLevel));
+      const earned = 1 + Math.floor(score / CONFIG.pointsPerLevel);
+      // Never past the cap, and never downwards: a level, once reached, is kept.
+      const level = Math.max(state.level, Math.min(earned, CONFIG.scoreLevelCap));
       const levelsGained = [];
       for (let L = state.level + 1; L <= level; L++) levelsGained.push(L);
       return { score, level, levelsGained };
     }
     
     /**
+     * The boss guarding this level is dead: pass through to the next one.
+     *
+     * Deliberately the same return shape as addScore, so the shell applies a level
+     * won by combat through exactly the same path as one won by points — one set
+     * of side effects, not two that can drift apart.
+     *
+     * @param {{score:number, level:number}} state
+     * @returns {{score:number, level:number, levelsGained:number[]}}
+     */
+    function completeLevel(state) {
+      const level = state.level + 1;
+      return { score: state.score, level, levelsGained: [level] };
+    }
+    
+    /**
+     * How many hits the boss guarding a level takes: the level number itself.
+     * Level 2 is two hits, level 15 is fifteen — the whole difficulty curve.
+     */
+    function bossHits(level) {
+      return Math.max(1, level);
+    }
+    
+    /**
      * Take a level away — the one thing that can lower it.
      *
-     * Levels are sticky against *losing points*, so dropping the level alone would
-     * be undone by the next fish the player ate: addScore would recompute the level
-     * from the score and put it straight back. So a deduction drops the score to
-     * the floor of the level below, keeping the two consistent. This is only
-     * reachable from a present (see engine/presents.js); nothing else may call it.
+     * Below the cap, dropping the level alone would be undone by the next fish
+     * eaten: addScore recomputes the level from the score and would put it straight
+     * back. So down there a deduction also drops the score to the floor of the
+     * level below, keeping the two consistent. At or above the cap the score no
+     * longer feeds the level at all, so a plain decrement already sticks and there
+     * is no reason to take a player's points as well.
+     *
+     * Losing a level means its boss must be beaten again — the shell re-arms it on
+     * the level-up path like any other. Only a present can reach this (see
+     * engine/presents.js); nothing else may call it.
      */
     function deductLevel(state) {
       const level = Math.max(1, state.level - 1);
       if (level === state.level) return { score: state.score, level };
-      return { score: Math.min(state.score, (level - 1) * CONFIG.pointsPerLevel), level };
+      const score = level < CONFIG.scoreLevelCap
+        ? Math.min(state.score, (level - 1) * CONFIG.pointsPerLevel)
+        : state.score;
+      return { score, level };
     }
     
     /** How many predators should be hunting at this level. */
@@ -535,9 +591,9 @@
       return CONFIG.predatorsBase + Math.floor(level / CONFIG.levelsPerPredator);
     }
     
-    /** Does reaching this level unleash a boss? */
+    /** Is this level guarded by a boss? Every level from the first one on. */
     function isBossLevel(level) {
-      return level > 0 && level % CONFIG.bossEveryLevels === 0;
+      return level >= CONFIG.boss.firstLevel;
     }
     
     /** Speed multiplier earned by reaching this level. */
@@ -929,7 +985,7 @@
       return kind === "points" || kind === "starfish" || kind === "zap";
     }
 
-    return { CONFIG, seededRng, randInt, weightedPick, addScore, deductLevel, predatorTarget, isBossLevel, levelSpeed, tagFor, isWellFormedTag, tagSpaceSize, validateSubmission, bestOf, rankOf, topRows, PHASES, nextPhase, canDo, isRunning, deposit, diveCost, payForDive, canAffordDive, SKINS, DEFAULT_SKIN_ID, TIERS, skinsByTier, skinById, isOwned, ownedSkins, canAfford, buySkin, wearableSkin, nextSkinToBuy, skinFromHue, skinStatus, PRESENT_KINDS, rollPresent, isKindGift };
+    return { CONFIG, seededRng, randInt, weightedPick, addScore, completeLevel, bossHits, deductLevel, predatorTarget, isBossLevel, levelSpeed, tagFor, isWellFormedTag, tagSpaceSize, validateSubmission, bestOf, rankOf, topRows, PHASES, nextPhase, canDo, isRunning, deposit, diveCost, payForDive, canAffordDive, SKINS, DEFAULT_SKIN_ID, TIERS, skinsByTier, skinById, isOwned, ownedSkins, canAfford, buySkin, wearableSkin, nextSkinToBuy, skinFromHue, skinStatus, PRESENT_KINDS, rollPresent, isKindGift };
   })();
 
   const canvas = document.getElementById("game");
@@ -992,6 +1048,12 @@
   let phase = "home";                  // home | playing | paused | over — see engine/session.js
   let banked = 0, owned = [], skinId = "volt";   // the bank: earned, spent on skins
   let predTarget = Engine.CONFIG.predatorsBase, bossAlert = 0;
+  // Seconds of calm still owed before this level's boss turns up, or 0 for
+  // "none coming". The breather is the whole reason the ramp is survivable:
+  // it is when you go and find a starfish and charge the zap.
+  let bossPending = 0;
+  let levelBanner = 0;                 // countdown on the "LEVEL N CLEARED" flash
+  let bestLevel = 1;                   // deepest level ever reached; unlocks skins
   let zap = 0;             // 0..1 charge
   const ZAP_COST = 1;      // full meter to fire
   let shieldOn = false;
@@ -1071,6 +1133,7 @@
     particles = []; bubbles = [];
     score = 0; level = 1; zap = 0.35; shieldOn = false; shakeT = 0; flashT = 0;
     predTarget = PRED_BASE; bossAlert = 0; toast = null;
+    bossPending = 0; levelBanner = 0;   // every dive starts at level 1, unguarded
     player = makeEel(WORLD.w/2, WORLD.h/2, 14, true);
     player.body = [];
     player.biteCd = 0;
@@ -1200,13 +1263,34 @@
   }
   function onLevelUp(L){
     predTarget = Engine.predatorTarget(L);
-    if (Engine.isBossLevel(L)) spawnBoss();
+    levelBanner = 2.2;
+    if (L > bestLevel){ bestLevel = L; writeStore(STORE.bestLevel, String(bestLevel)); }
+    // The boss does not pounce the instant you level up — you get a breather to
+    // find a starfish and charge the zap, because that is what the fight needs.
+    if (Engine.isBossLevel(L)) bossPending = Engine.CONFIG.boss.breatherMs / 1000;
   }
-  function spawnBoss(){
+
+  /** The boss guarding this level is dead: through to the next one. */
+  function onBossKilled(){
+    const next = Engine.completeLevel({ score, level });
+    score = next.score;
+    for (const L of next.levelsGained) onLevelUp(L);
+    level = next.level;
+    flashT = .35;
+  }
+
+  function spawnBoss(L){
+    // Only ever one at a time — but wait and retry rather than dropping the
+    // spawn. A present can take a level while its boss is still swimming, and
+    // silently skipping the spawn would strand the player on a level with no
+    // boss left to kill and therefore no way up, forever.
+    if (predators.some(p => p.boss && !p.dead)){ bossPending = 1; return; }
     const p = spawnAwayFromPlayer(950);
-    predators.push({ x:p.x, y:p.y, a:rand(0,TAU), v:rand(.85,1.05),  // slower than a normal predator
+    const hp = Engine.bossHits(L);
+    predators.push({ x:p.x, y:p.y, a:rand(0,TAU),
+                     v:rand(.85,1.05) * Engine.CONFIG.boss.speedFactor,  // outrunnable, always
                      r:rand(52,66), wanderA:rand(0,TAU), thinkT:0, stun:0,
-                     tail:0, hue:rand(335,352), dead:false, boss:true, hp:2, hitCd:0 });
+                     tail:0, hue:rand(335,352), dead:false, boss:true, hp, maxHp:hp, hitCd:0 });
     bossAlert = 2.6;
   }
   // small speed reward per level, capped so it stays controllable
@@ -1268,6 +1352,7 @@
 
   const STORE = { id: "voltfin.playerId", best: "voltfin.best", joined: "voltfin.joined",
                   banked: "voltfin.banked", owned: "voltfin.owned", skin: "voltfin.skin",
+                  bestLevel: "voltfin.bestLevel",
                   lifetime: "voltfin.lifetime" };   // lifetime: retired, read once to migrate
 
   // Storage throws in private browsing and wherever it is blocked. Never let
@@ -1569,7 +1654,8 @@
               p.x += Math.cos(a)*55; p.y += Math.sin(a)*55;
               burst(p.x, p.y, "#ffd166", 22, 6); shakeT = .25;
               grow(4); addScore(10);
-              if (p.hp <= 0) killPredator(p, true);   // boss down after 2 hits
+              // as many hits as the level number, then the way opens
+              if (p.hp <= 0){ killPredator(p, true); onBossKilled(); }
             }
           } else {
             killPredator(p, true);                    // devour a stunned predator
@@ -1681,6 +1767,16 @@
     if (flashT > 0) flashT -= dt;
     if (toast) { toast.t -= dt; if (toast.t <= 0) toast = null; }
     if (bossAlert > 0) bossAlert -= dt;
+    if (levelBanner > 0) levelBanner -= dt;
+    if (bossPending > 0){
+      bossPending -= dt;
+      if (bossPending <= 0){
+        bossPending = 0;
+        // check the level again on arrival: a present may have dropped the
+        // player back below the first guarded level while this was counting down
+        if (Engine.isBossLevel(level)) spawnBoss(level);
+      }
+    }
 
     // HUD
     document.getElementById("len").textContent = Math.round(player.len);
@@ -2175,14 +2271,31 @@
         ctx.strokeStyle="rgba(230,80,200,0.55)"; ctx.lineWidth=2;
         ctx.beginPath(); ctx.arc(sx,sy,p.r*1.75,0,TAU); ctx.stroke();
         ctx.restore();
-        for (let h=0;h<2;h++){
-          ctx.beginPath();
-          ctx.fillStyle = h < p.hp ? "#ff5d6c" : "rgba(255,93,108,0.25)";
-          ctx.arc(sx - 11 + h*22, sy - p.r*1.75, 5.5, 0, TAU); ctx.fill();
+        // A boss takes as many hits as its level, so by level 10 a row of pips
+        // would be wider than the boss. Pips while they still read at a glance,
+        // a bar with a count after that.
+        const maxHp = p.maxHp ?? p.hp;
+        const pipY = sy - p.r*1.75;
+        if (maxHp <= 6){
+          const step = 22, x0 = sx - (maxHp - 1) * step / 2;
+          for (let h=0; h<maxHp; h++){
+            ctx.beginPath();
+            ctx.fillStyle = h < p.hp ? "#ff5d6c" : "rgba(255,93,108,0.25)";
+            ctx.arc(x0 + h*step, pipY, 5.5, 0, TAU); ctx.fill();
+          }
+        } else {
+          const w = 88, h = 7, x0 = sx - w/2;
+          ctx.fillStyle = "rgba(255,93,108,0.25)";
+          ctx.fillRect(x0, pipY - h/2, w, h);
+          ctx.fillStyle = "#ff5d6c";
+          ctx.fillRect(x0, pipY - h/2, w * (p.hp / maxHp), h);
+          ctx.fillStyle = "rgba(255,170,220,0.95)"; ctx.font = "800 11px Trebuchet MS,sans-serif";
+          ctx.textAlign = "center"; ctx.textBaseline = "middle";
+          ctx.fillText(`${p.hp} left`, sx, pipY + 14);
         }
         ctx.fillStyle="rgba(255,170,220,0.95)"; ctx.font="800 12px Trebuchet MS,sans-serif";
         ctx.textAlign="center"; ctx.textBaseline="middle";
-        ctx.fillText("BOSS", sx, sy - p.r*1.75 - 15);
+        ctx.fillText("BOSS", sx, pipY - 15);
       }
     }
   }
@@ -2376,6 +2489,23 @@
       ctx.font = "800 clamp(26px,7vw,52px) Trebuchet MS,sans-serif";
       ctx.shadowColor = "rgba(230,80,200,0.8)"; ctx.shadowBlur = 24;
       ctx.fillText("⚡ BOSS UNLEASHED ⚡", W/2, H*0.2);
+      ctx.restore();
+    }
+
+    // Reaching a level is the moment worth celebrating now that it costs a
+    // boss fight rather than a handful of fish.
+    if (levelBanner > 0){
+      ctx.save();
+      ctx.globalAlpha = clamp(levelBanner, 0, 1);
+      ctx.fillStyle = "#8ef3ff";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.font = "800 clamp(28px,8vw,58px) Trebuchet MS,sans-serif";
+      ctx.shadowColor = "rgba(142,243,255,0.85)"; ctx.shadowBlur = 26;
+      ctx.fillText(`LEVEL ${level}`, W/2, H*0.34);
+      ctx.font = "700 clamp(11px,3vw,15px) Trebuchet MS,sans-serif";
+      ctx.fillStyle = "#4fe6d6";
+      ctx.fillText(Engine.isBossLevel(level) ? "a boss guards the way on" : "swim on",
+                   W/2, H*0.34 + 38);
       ctx.restore();
     }
   }
@@ -2809,6 +2939,7 @@
     swatch.style.background = colour;
     document.getElementById("wornName").textContent = worn.name;
     document.getElementById("bankAmount").textContent = banked.toLocaleString();
+    document.getElementById("bestLevelAmount").textContent = `level ${bestLevel}`;
 
     // So a player knows who they'll appear as before they've ever played or
     // joined — the tag itself is free to show, since tagFor is pure and the
@@ -2848,6 +2979,7 @@
   }
 
   best = Number(readStore(STORE.best)) || 0;
+  bestLevel = Math.max(1, Number(readStore(STORE.bestLevel)) || 1);
   banked = Number(readStore(STORE.banked)) || 0;
   try { owned = JSON.parse(readStore(STORE.owned)) ?? []; } catch { owned = []; }
   if (!Array.isArray(owned)) owned = [];

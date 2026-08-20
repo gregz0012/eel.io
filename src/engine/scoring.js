@@ -2,10 +2,16 @@ import { CONFIG } from "./config.js";
 
 // Scoring and levelling. Pure: no globals, no clock, no randomness.
 //
-// A level-up has consequences elsewhere in the world (more predators, a boss on
-// every tenth level). A pure function cannot spawn those, so addScore reports
-// the levels crossed and the caller applies them. That keeps the boss rule
-// testable instead of hiding it in a side effect.
+// Two ways up, and only two. Score carries a player as far as
+// CONFIG.scoreLevelCap — one level, enough to grow a little and learn the
+// controls. Past that the only way up is killing the boss guarding the level
+// you are on, which is `completeLevel`. Points never stop mattering (they are
+// the bank and the leaderboard); they just stop buying levels.
+//
+// A level-up has consequences elsewhere in the world — more predators, the next
+// boss. A pure function cannot spawn those, so both routes report the levels
+// crossed in the same `levelsGained` shape and the caller applies them. That
+// keeps the boss rule testable instead of hiding it in a side effect.
 
 /**
  * @param {{score:number, level:number}} state
@@ -14,25 +20,58 @@ import { CONFIG } from "./config.js";
  */
 export function addScore(state, n) {
   const score = Math.max(0, state.score + n);
-  const level = Math.max(state.level, 1 + Math.floor(score / CONFIG.pointsPerLevel));
+  const earned = 1 + Math.floor(score / CONFIG.pointsPerLevel);
+  // Never past the cap, and never downwards: a level, once reached, is kept.
+  const level = Math.max(state.level, Math.min(earned, CONFIG.scoreLevelCap));
   const levelsGained = [];
   for (let L = state.level + 1; L <= level; L++) levelsGained.push(L);
   return { score, level, levelsGained };
 }
 
 /**
+ * The boss guarding this level is dead: pass through to the next one.
+ *
+ * Deliberately the same return shape as addScore, so the shell applies a level
+ * won by combat through exactly the same path as one won by points — one set
+ * of side effects, not two that can drift apart.
+ *
+ * @param {{score:number, level:number}} state
+ * @returns {{score:number, level:number, levelsGained:number[]}}
+ */
+export function completeLevel(state) {
+  const level = state.level + 1;
+  return { score: state.score, level, levelsGained: [level] };
+}
+
+/**
+ * How many hits the boss guarding a level takes: the level number itself.
+ * Level 2 is two hits, level 15 is fifteen — the whole difficulty curve.
+ */
+export function bossHits(level) {
+  return Math.max(1, level);
+}
+
+/**
  * Take a level away — the one thing that can lower it.
  *
- * Levels are sticky against *losing points*, so dropping the level alone would
- * be undone by the next fish the player ate: addScore would recompute the level
- * from the score and put it straight back. So a deduction drops the score to
- * the floor of the level below, keeping the two consistent. This is only
- * reachable from a present (see engine/presents.js); nothing else may call it.
+ * Below the cap, dropping the level alone would be undone by the next fish
+ * eaten: addScore recomputes the level from the score and would put it straight
+ * back. So down there a deduction also drops the score to the floor of the
+ * level below, keeping the two consistent. At or above the cap the score no
+ * longer feeds the level at all, so a plain decrement already sticks and there
+ * is no reason to take a player's points as well.
+ *
+ * Losing a level means its boss must be beaten again — the shell re-arms it on
+ * the level-up path like any other. Only a present can reach this (see
+ * engine/presents.js); nothing else may call it.
  */
 export function deductLevel(state) {
   const level = Math.max(1, state.level - 1);
   if (level === state.level) return { score: state.score, level };
-  return { score: Math.min(state.score, (level - 1) * CONFIG.pointsPerLevel), level };
+  const score = level < CONFIG.scoreLevelCap
+    ? Math.min(state.score, (level - 1) * CONFIG.pointsPerLevel)
+    : state.score;
+  return { score, level };
 }
 
 /** How many predators should be hunting at this level. */
@@ -40,9 +79,9 @@ export function predatorTarget(level) {
   return CONFIG.predatorsBase + Math.floor(level / CONFIG.levelsPerPredator);
 }
 
-/** Does reaching this level unleash a boss? */
+/** Is this level guarded by a boss? Every level from the first one on. */
 export function isBossLevel(level) {
-  return level > 0 && level % CONFIG.bossEveryLevels === 0;
+  return level >= CONFIG.boss.firstLevel;
 }
 
 /** Speed multiplier earned by reaching this level. */

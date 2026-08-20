@@ -1,30 +1,39 @@
 import { Given, When, Then } from "@cucumber/cucumber";
 import assert from "node:assert/strict";
-import { addScore, deductLevel, predatorTarget, isBossLevel } from "../../src/engine/scoring.js";
+import {
+  addScore, completeLevel, deductLevel, predatorTarget, isBossLevel, bossHits,
+} from "../../src/engine/scoring.js";
 
 // These steps drive the real engine, never a mock of it. They stand in for the
 // shell: the engine reports the levels crossed, and this applies their effects,
-// exactly as src/index.html does.
-function apply(world, n) {
-  const next = addScore(world, n);
+// exactly as src/index.html does. Both routes up — points and a dead boss —
+// come back in the same shape, so both go through the same function here.
+function applyLevels(world, next) {
   for (const L of next.levelsGained) {
     world.predators = predatorTarget(L);
-    if (isBossLevel(L)) world.bossUnleashed = true;
+    world.bossGuarding = isBossLevel(L);   // the next level arms its own boss
   }
   world.score = next.score;
   world.level = next.level;
 }
 
 Given("a new game", function () {
-  this.world = { score: 0, level: 1, predators: predatorTarget(1), bossUnleashed: false };
+  this.world = {
+    score: 0, level: 1, predators: predatorTarget(1), bossGuarding: isBossLevel(1),
+  };
 });
 
 When("the player scores {int} points", function (n) {
-  apply(this.world, n);
+  applyLevels(this.world, addScore(this.world, n));
 });
 
 When("the player loses {int} points", function (n) {
-  apply(this.world, -n);
+  applyLevels(this.world, addScore(this.world, -n));
+});
+
+When("the player kills the boss", function () {
+  assert.equal(this.world.bossGuarding, true, "there was no boss to kill");
+  applyLevels(this.world, completeLevel(this.world));
 });
 
 Then("the player is on level {int}", function (level) {
@@ -39,23 +48,28 @@ Then("{int} predators are hunting", function (n) {
   assert.equal(this.world.predators, n);
 });
 
-Then("a boss has been unleashed", function () {
-  assert.equal(this.world.bossUnleashed, true);
+Then("a boss is guarding the way", function () {
+  assert.equal(this.world.bossGuarding, true);
 });
 
-Then("no boss has been unleashed", function () {
-  assert.equal(this.world.bossUnleashed, false);
+Then("no boss is guarding the way", function () {
+  assert.equal(this.world.bossGuarding, false);
+});
+
+Then("the boss guarding level {int} takes {int} hits", function (level, hits) {
+  assert.equal(bossHits(level), hits);
 });
 
 When("the player opens a present holding a level deduction", function () {
   const after = deductLevel(this.world);
   this.world.score = after.score;
   this.world.level = after.level;
-  this.world.predators = predatorTarget(after.level);   // the perks go too
+  this.world.predators = predatorTarget(after.level);      // the perks go too
+  this.world.bossGuarding = isBossLevel(after.level);      // and the boss is back
 });
 
 Then("scoring another point does not give the level back", function () {
   const before = this.world.level;
-  apply(this.world, 1);
+  applyLevels(this.world, addScore(this.world, 1));
   assert.equal(this.world.level, before);
 });

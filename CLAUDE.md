@@ -6,7 +6,7 @@ Guidance for working in this repo. Read this before making changes.
 
 ## 1. Background
 
-**Eel Shock** is a small, ad-free browser game in the spirit of *slither.io* / *snake.io*, set in the deep sea. You play a young electric eel: eat fish to grow, bite chunks off rival eels, dodge or shock-and-devour predators, and fight a boss every ten levels.
+**Eel Shock** is a small, ad-free browser game in the spirit of *slither.io* / *snake.io*, set in the deep sea. You play a young electric eel: eat fish to grow, bite chunks off rival eels, dodge or shock-and-devour predators, and fight your way up through a boss on every level.
 
 Design values, in priority order:
 
@@ -27,7 +27,7 @@ Design values, in priority order:
 - **Zap:** when charged, stuns **everything** nearby (predators and eels, any size) for a few seconds; nearby fish burst into energy.
 - **Self-cross:** crossing your own tail bites it off — you lose length and points (with a short cooldown and a generous "neck" buffer so ordinary tight turns are safe).
 - **Presents:** a wrapped box holding one of six things — points, a shield, a full zap meter, lost points, a predator spawned nearby, or a level taken away. Kind outcomes outweigh cruel ones roughly 7 to 3.
-- **Levelling:** score-based and **sticky** (never falls, except to a present). `+1 predator every 2 levels`; a `boss every 10 levels` — slower than a normal predator but takes **2 hits** (stun, then ram twice).
+- **Levelling:** points carry you to level 2 and no further — from there **killing the boss guarding your level is the only way up**. Levels are **sticky** (never fall, except to a present). `+1 predator every 2 levels`. Every level from 2 on has a boss: slower than a predator so you can always disengage, but it takes **as many hits as the level number** (level 2 = two hits, level 15 = fifteen), each one needing a stun or a shield. A **breather** follows every level-up before the next boss arrives — that gap is when you find a starfish and recharge, and the fight is balanced around it existing.
 
 ---
 
@@ -124,35 +124,34 @@ Rendering, input, and the animation loop live outside the engine and are the *on
 
 ### Pure functions can't have side effects — so return them
 
-A level-up spawns predators and, every tenth level, a boss. `addScore` cannot do that and stay pure. The temptation is to let it "just this once" — and then the boss rule is invisible to tests, the suite stays green, and nobody notices bosses stopped appearing until level 10.
+A level-up spawns predators and arms the next boss. `addScore` cannot do that and stay pure. The temptation is to let it "just this once" — and then the boss rule is invisible to tests, the suite stays green, and nobody notices bosses stopped appearing at all.
 
 The pattern instead: **the engine reports what happened, the shell applies it.**
 
 ```js
-// src/engine/scoring.js
-export function addScore(state, n) {
-  const score = Math.max(0, state.score + n);
-  const level = Math.max(state.level, 1 + Math.floor(score / CONFIG.pointsPerLevel));
-  const levelsGained = [];
-  for (let L = state.level + 1; L <= level; L++) levelsGained.push(L);
-  return { score, level, levelsGained };
+// src/engine/scoring.js — two routes up, one report shape
+export function completeLevel(state) {
+  const level = state.level + 1;
+  return { score: state.score, level, levelsGained: [level] };
 }
 ```
 
 ```js
 // src/index.html — the shell owns the side effects
-function addScore(n){
-  const next = Engine.addScore({ score, level }, n);
+function onBossKilled(){
+  const next = Engine.completeLevel({ score, level });
   score = next.score;
-  if (next.levelsGained.length){
-    for (const L of next.levelsGained) onLevelUp(L);
-    level = next.level;
-    flashT = .35;
-  }
+  for (const L of next.levelsGained) onLevelUp(L);   // predators, banner, next boss
+  level = next.level;
+  flashT = .35;
 }
 ```
 
-Now `expect(addScore({score:0,level:1}, 1200).levelsGained).toContain(10)` is a real test of the boss rule. Use this shape for every rule whose consequence is a spawn, a sound, or a screen shake.
+Now `expect(completeLevel({score:0,level:4}).levelsGained).toEqual([5])` is a real
+test of the rule. `addScore` returns the same shape for the one level points can
+still win, so the shell applies a level won by combat and a level won by points
+through the *same* path — one set of side effects that cannot drift apart. Use
+this shape for every rule whose consequence is a spawn, a sound, or a screen shake.
 
 ---
 
@@ -268,11 +267,14 @@ rule §1 states. Levels remain sticky against *losing points* — `addScore` wil
 never lower one — and `deductLevel` is the only function that can, reachable
 only from a present.
 
-It could not simply decrement the level: `addScore` recomputes the level from
-the score, so the next fish eaten would hand it straight back. So a deduction
-also drops the score to the floor of the level below, keeping the two
-consistent. If you add another way to lose a level, use `deductLevel`; do not
-reach for `state.level--`.
+Below `scoreLevelCap` it could not simply decrement the level: `addScore`
+recomputes the level from the score down there, so the next fish eaten would
+hand it straight back. So a deduction in that range also drops the score to the
+floor of the level below, keeping the two consistent. At or above the cap, score
+no longer feeds the level at all, so a plain decrement already sticks and there
+is no reason to take the player's points as well. Losing a level means its boss
+must be beaten again. If you add another way to lose a level, use `deductLevel`;
+do not reach for `state.level--`.
 
 The present that spawns a predator puts it 420–620 units away, not on top of the
 player. Being eaten the instant you open a box is not a difficulty spike, it is

@@ -5,12 +5,27 @@
 // entity tunables still live in the shell and move here with their own slice.
 export const CONFIG = {
   // scoring & levels
-  pointsPerLevel: 120,      // score needed per level; levels are sticky (never fall)
+  //
+  // Score gets a player as far as the first boss and no further: from
+  // `boss.firstLevel` on, the only way up is killing the boss guarding the
+  // level you are on. Points keep accruing — they are the bank and the
+  // leaderboard — they just stop buying levels.
+  pointsPerLevel: 120,      // score needed for the one level score can win
+  scoreLevelCap: 2,         // the highest level score alone can reach
 
   // difficulty ramp
   predatorsBase: 3,         // predators in the sea at level 1
   levelsPerPredator: 2,     // +1 predator every N levels
-  bossEveryLevels: 10,      // a boss is unleashed every N levels
+
+  // The boss guarding each level. It takes as many hits as the level number,
+  // so it is the pacing of the whole game: level 2 is two hits, level 15 is
+  // fifteen. That only works because it is slow enough to swim away from —
+  // a boss you cannot escape and cannot out-damage is just a wall.
+  boss: {
+    firstLevel: 2,          // levels below this are unguarded
+    breatherMs: 6000,       // calm after a level-up before the next boss shows
+    speedFactor: 0.72,      // slower than a predator: you can always disengage
+  },
 
   // per-level speed reward, capped so the eel stays controllable
   levelSpeedPerLevel: 0.015,
