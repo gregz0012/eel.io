@@ -23,14 +23,14 @@ your eel" on the home screen. Volt is yours from the start; after that:
 | Colours | Coral, Orchid, Sky, Lime | 250 |
 | Metals | Copper, Iron, Gold, Platinum | 500 / 1,000 / 2,000 / 5,000 |
 | Gems | Emerald, Ruby, Diamond | 7,500 |
-| Heroes | Spider, Eel-wolf, Symbiote, Eel-pool | 10,000 |
+| Heroes | Spider, Eel-wolf, Eel-symbiote, Eel-pool | 10,000 |
 
 The metals catch the light — the dearer the metal, the harder it shines, so
 Platinum is a mirror where Copper is a soft glow. Gems shimmer. Heroes are
 banded in two colours and each carries its own flourish — Spider is webbed,
 Eel-wolf has a horned cowl masked through the eyes, Eel-pool wears a masked
-stare and a pair of crossed swords on its back, and Symbiote is near black with
-pale veins. Buying deducts the points — but a skin you have bought is yours
+stare and a pair of crossed swords on its back, and Eel-symbiote is black with
+a white spider spread across its back and a toothy grin. Buying deducts the points — but a skin you have bought is yours
 forever, however empty the bank gets afterwards.
 
 Diving costs a few points too. If you can't cover it, the dive is free: you can

@@ -1215,6 +1215,33 @@
     c.restore();
   }
 
+  // A spider spread across the back, legs reaching out to either flank. Sized
+  // to stay inside the body: legs that overshot the silhouette would read as
+  // stray white marks floating in the water rather than as markings on skin.
+  function drawSymbioteSpider(c, x, y, ang, size){
+    c.save();
+    c.translate(x, y); c.rotate(ang);
+    c.fillStyle = "#f2f6f8";
+    c.strokeStyle = "#f2f6f8";
+    c.lineCap = "round";
+    c.beginPath(); c.ellipse(0, 0, size*0.52, size*0.32, 0, 0, TAU); c.fill();
+    c.lineWidth = Math.max(1, size*0.17);
+    // legs radiate at distinct angles with a knee — drawn as parallel curves
+    // they read as gills or ribs, and only the splay makes them legs
+    for (const s of [-1, 1]){
+      for (const deg of [52, 90, 128]){
+        const a = deg * Math.PI / 180;
+        const dx = Math.cos(a), dy = s * Math.sin(a);
+        c.beginPath();
+        c.moveTo(dx*size*0.3, dy*size*0.3);
+        c.lineTo(dx*size*0.8, dy*size*0.8);
+        c.lineTo(dx*size*1.35, dy*size*1.1);
+        c.stroke();
+      }
+    }
+    c.restore();
+  }
+
   function drawEelBody(body, radius, skin, glow, isPlayer){
     const { hue, sat, bodyLight, headLight, gem, sheen = 0, accent, accentRatio = 0.5 } = skin;
     if (body.length < 2) return;
@@ -1341,6 +1368,18 @@
         Math.atan2(body[si].y - tail.y, body[si].x - tail.x), radius*2.1);
     }
 
+    if (marks.includes("emblem")){
+      let travelled = 0, ei = 0;
+      while (ei < body.length - 2 && travelled < radius*3.4){
+        travelled += Math.hypot(body[ei+1].x - body[ei].x, body[ei+1].y - body[ei].y);
+        ei++;
+      }
+      const back = body[Math.min(body.length - 1, ei + 5)];
+      const [ex,ey] = worldToScreen(body[ei].x, body[ei].y);
+      drawSymbioteSpider(ctx, ex, ey,
+        Math.atan2(body[ei].y - back.y, body[ei].x - back.x), radius*0.85);
+    }
+
     // head
     const [hx,hy] = worldToScreen(body[0].x, body[0].y);
     const ang = Math.atan2(body[0].y - body[Math.min(6,body.length-1)].y,
@@ -1383,6 +1422,23 @@
       ctx.beginPath(); ctx.ellipse(radius*0.28, 0, radius*0.74, radius*1.6, 0, 0, TAU); ctx.fill();
       ctx.restore();
     }
+
+    // "maw": a wide grin across the snout, with the head colour struck back
+    // through it as a jagged bite line so it reads as teeth
+    if (marks.includes("maw")){
+      ctx.fillStyle = "#f2f6f8";
+      ctx.beginPath(); ctx.ellipse(radius*0.92, 0, radius*0.40, radius*0.78, 0, 0, TAU); ctx.fill();
+      ctx.strokeStyle = `hsl(${hue},${sat}%,${headLight}%)`;
+      ctx.lineWidth = Math.max(1, radius*0.15);
+      ctx.lineJoin = "miter";
+      ctx.beginPath();
+      for (let i = 0; i <= 6; i++){
+        const yy = -radius*0.72 + radius*1.44 * (i/6);
+        const xx = radius*(i % 2 === 0 ? 0.72 : 1.10);
+        i === 0 ? ctx.moveTo(xx, yy) : ctx.lineTo(xx, yy);
+      }
+      ctx.stroke();
+    }
     // "patch": a dark mask panel behind each eye, so the whites read as the
     // cut-outs of a mask rather than as plain eyes
     if (marks.includes("patch") && accent){
@@ -1398,6 +1454,14 @@
       for (const s of [-1, 1]){
         ctx.beginPath();
         ctx.ellipse(radius*0.56, s*radius*0.56, radius*0.30, radius*0.18, s*-0.35, 0, TAU);
+        ctx.fill();
+      }
+    } else if (marks.includes("maw")){
+      // big, angled, and no pupils — a stare, not a face
+      ctx.fillStyle = "#f2f6f8";
+      for (const s of [-1, 1]){
+        ctx.beginPath();
+        ctx.ellipse(radius*0.30, s*radius*0.52, radius*0.48, radius*0.26, s*-0.42, 0, TAU);
         ctx.fill();
       }
     } else if (marks.includes("ears") && accent){
@@ -1893,6 +1957,12 @@
         Math.atan2(at.y - back.y, at.x - back.x), radius*2.1);
     }
 
+    if (marks.includes("emblem")){
+      const at = body[8], back = body[13];
+      drawSymbioteSpider(pctx, at.x, at.y,
+        Math.atan2(at.y - back.y, at.x - back.x), radius*0.85);
+    }
+
     const head = body[0], neck = body[3];
     const ang = Math.atan2(head.y - neck.y, head.x - neck.x);
     pctx.save();
@@ -1929,6 +1999,23 @@
       pctx.beginPath(); pctx.ellipse(radius*0.28, 0, radius*0.74, radius*1.6, 0, 0, TAU); pctx.fill();
       pctx.restore();
     }
+
+    // "maw": a wide grin across the snout, with the head colour struck back
+    // through it as a jagged bite line so it reads as teeth
+    if (marks.includes("maw")){
+      pctx.fillStyle = "#f2f6f8";
+      pctx.beginPath(); pctx.ellipse(radius*0.92, 0, radius*0.40, radius*0.78, 0, 0, TAU); pctx.fill();
+      pctx.strokeStyle = `hsl(${hue},${sat}%,${headLight}%)`;
+      pctx.lineWidth = Math.max(1, radius*0.15);
+      pctx.lineJoin = "miter";
+      pctx.beginPath();
+      for (let i = 0; i <= 6; i++){
+        const yy = -radius*0.72 + radius*1.44 * (i/6);
+        const xx = radius*(i % 2 === 0 ? 0.72 : 1.10);
+        i === 0 ? pctx.moveTo(xx, yy) : pctx.lineTo(xx, yy);
+      }
+      pctx.stroke();
+    }
     if (marks.includes("patch") && accent){
       pctx.fillStyle = `hsl(${accent.hue},${accent.sat}%,${accent.light}%)`;
       for (const s of [-1, 1]){
@@ -1940,6 +2027,13 @@
       for (const s of [-1, 1]){
         pctx.beginPath();
         pctx.ellipse(radius*0.56, s*radius*0.56, radius*0.30, radius*0.18, s*-0.35, 0, TAU);
+        pctx.fill();
+      }
+    } else if (marks.includes("maw")){
+      pctx.fillStyle = "#f2f6f8";
+      for (const s of [-1, 1]){
+        pctx.beginPath();
+        pctx.ellipse(radius*0.30, s*radius*0.52, radius*0.48, radius*0.26, s*-0.42, 0, TAU);
         pctx.fill();
       }
     } else if (marks.includes("ears") && accent){
