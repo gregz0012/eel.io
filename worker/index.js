@@ -1,14 +1,24 @@
 // Eel Shock leaderboard Worker (Cloudflare Workers + D1).
 //
-//   GET  /top?limit=   -> [{ tag, score }]  the board, highest first (limit is clamped)
-//   GET  /rank?id=     -> { rank, best } | null   a player's own standing, without joining
-//   POST /scores       -> { rank, best }    submit a run: { id, score, durationMs }
-//   POST /forget       -> { forgotten }     delete everything for { id }
+//   GET  /top?limit=&by=    -> [{ tag, score, level }]  the board (by defaults
+//                              to "score"; "level" sorts the other board)
+//   GET  /rank?id=          -> { score:{rank,best}, level:{rank,best} } | null
+//   POST /scores            -> same shape as /rank — submit a run:
+//                              { id, score, level, durationMs }
+//   POST /forget            -> { forgotten }     delete everything for { id }
+//
+// Two independent leaderboards, one row per player: the highest score anyone
+// has ever posted, and the deepest level anyone has ever reached — often
+// different people, since score keeps rising after level 2 stops being
+// buyable with points (see CLAUDE.md's levelling rules). Both are kept in the
+// same UPDATE on every accepted submission, never just whichever happened to
+// be higher this run.
 //
 // The rules live in ../src/engine/ and are shared with the game itself, so a
 // cap cannot drift between what the client believes and what the server
-// enforces. The client is never trusted: it sends an id and a score, and the
-// server decides the display name and whether the run is plausible.
+// enforces. The client is never trusted: it sends an id, a score and a
+// level, and the server decides the display name and whether the run is
+// plausible.
 //
 // Deploy:  npx wrangler deploy      (from this directory)
 
@@ -40,43 +50,64 @@ function json(body, status, headers) {
   });
 }
 
+// Coerces any input to one of the two real column names — never interpolated
+// from a request until it has passed through here, so a `by=` query string
+// can pick a sort order and nothing else.
+function metricColumn(by) {
+  return by === "level" ? "level" : "score";
+}
+
 async function handleTop(request, env, cors) {
+  const url = new URL(request.url);
   // clampTopLimit is the same function the client uses, so a "Top 25" screen
   // and this endpoint can never disagree about what "25" is allowed to mean.
-  const limit = clampTopLimit(new URL(request.url).searchParams.get("limit"));
+  const limit = clampTopLimit(url.searchParams.get("limit"));
+  const column = metricColumn(url.searchParams.get("by"));
   const { results } = await env.DB
-    .prepare("SELECT id, score FROM scores ORDER BY score DESC LIMIT ?")
+    .prepare(`SELECT id, score, level FROM scores ORDER BY ${column} DESC LIMIT ?`)
     .bind(limit)
     .all();
 
   // The tag is derived here, from the id, so a client cannot choose the words
-  // that appear on a board children read. Ids are never sent back.
-  const rows = topRows((results ?? []).map(r => ({ tag: tagFor(r.id), score: r.score })), limit);
+  // that appear on a board children read. Ids are never sent back. Every row
+  // carries both metrics regardless of which one is sorting this board.
+  const rows = topRows(
+    (results ?? []).map(r => ({ tag: tagFor(r.id), score: r.score, level: r.level })),
+    limit, column,
+  );
   return json(rows, 200, cors);
 }
 
-/** How many rows beat this score. Shared by /rank and a fresh /scores submission. */
-async function rankFor(env, score) {
+/** How many rows beat this value on this metric. Shared by /rank and /scores. */
+async function rankFor(env, metric, value) {
+  const column = metricColumn(metric);
   const higher = await env.DB
-    .prepare("SELECT COUNT(*) AS n FROM scores WHERE score > ?")
-    .bind(score)
+    .prepare(`SELECT COUNT(*) AS n FROM scores WHERE ${column} > ?`)
+    .bind(value)
     .first();
   return (higher?.n ?? 0) + 1;
 }
 
+async function standingFor(env, row) {
+  return {
+    score: { rank: await rankFor(env, "score", row.score), best: row.score },
+    level: { rank: await rankFor(env, "level", row.level), best: row.level },
+  };
+}
+
 /**
- * A player's own standing, without submitting anything or joining the board.
- * `null` for a player who has never joined — there is nothing to rank, and
- * that is not an error.
+ * A player's own standing on both boards, without submitting anything or
+ * joining the board. `null` for a player who has never joined — there is
+ * nothing to rank, and that is not an error.
  */
 async function handleRank(request, env, cors) {
   const id = new URL(request.url).searchParams.get("id");
   if (typeof id !== "string" || !UUID.test(id)) {
     return json({ error: "id must be a UUID" }, 400, cors);
   }
-  const row = await env.DB.prepare("SELECT score FROM scores WHERE id = ?").bind(id).first();
+  const row = await env.DB.prepare("SELECT score, level FROM scores WHERE id = ?").bind(id).first();
   if (!row) return json(null, 200, cors);
-  return json({ rank: await rankFor(env, row.score), best: row.score }, 200, cors);
+  return json(await standingFor(env, row), 200, cors);
 }
 
 async function handleSubmit(request, env, cors) {
@@ -87,17 +118,17 @@ async function handleSubmit(request, env, cors) {
     return json({ error: "expected a JSON body" }, 400, cors);
   }
 
-  const { id, score, durationMs } = body ?? {};
+  const { id, score, level, durationMs } = body ?? {};
   if (typeof id !== "string" || !UUID.test(id)) {
     return json({ error: "id must be a UUID the browser generated" }, 400, cors);
   }
 
-  const verdict = validateSubmission({ score, durationMs });
+  const verdict = validateSubmission({ score, durationMs, level });
   if (!verdict.ok) return json({ error: verdict.reason }, 422, cors);
 
   const now = Date.now();
   const existing = await env.DB
-    .prepare("SELECT score, updated_at FROM scores WHERE id = ?")
+    .prepare("SELECT score, level, updated_at FROM scores WHERE id = ?")
     .bind(id)
     .first();
 
@@ -105,25 +136,25 @@ async function handleSubmit(request, env, cors) {
     return json({ error: "submitting too fast" }, 429, cors);
   }
 
-  // Keep the player's best run, never their latest.
+  // Score and level are each kept at their own best, independently — a run
+  // that sets a new deepest level but not a new high score must not have its
+  // level improvement silently dropped, and vice versa.
+  const bestScore = Math.max(score, existing?.score ?? 0);
+  const bestLevel = Math.max(level, existing?.level ?? 0);
+
   if (!existing) {
     await env.DB
-      .prepare("INSERT INTO scores (id, score, duration_ms, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
-      .bind(id, score, Math.round(durationMs), now, now)
-      .run();
-  } else if (score > existing.score) {
-    await env.DB
-      .prepare("UPDATE scores SET score = ?, duration_ms = ?, updated_at = ? WHERE id = ?")
-      .bind(score, Math.round(durationMs), now, id)
+      .prepare("INSERT INTO scores (id, score, level, duration_ms, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .bind(id, bestScore, bestLevel, Math.round(durationMs), now, now)
       .run();
   } else {
-    await env.DB.prepare("UPDATE scores SET updated_at = ? WHERE id = ?").bind(now, id).run();
+    await env.DB
+      .prepare("UPDATE scores SET score = ?, level = ?, duration_ms = ?, updated_at = ? WHERE id = ?")
+      .bind(bestScore, bestLevel, Math.round(durationMs), now, id)
+      .run();
   }
 
-  // Counting the scores above this one is the same answer rankOf() gives — ties
-  // share a rank — without reading every row in the table on every submission.
-  const best = Math.max(score, existing?.score ?? 0);
-  return json({ best, rank: await rankFor(env, best) }, 200, cors);
+  return json(await standingFor(env, { score: bestScore, level: bestLevel }), 200, cors);
 }
 
 async function handleForget(request, env, cors) {

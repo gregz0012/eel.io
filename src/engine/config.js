@@ -93,6 +93,7 @@ export const CONFIG = {
     topLimit: 10,           // rows shown on the board by default
     maxTopLimit: 25,        // the most a caller may ever ask for, e.g. /top?limit=
     maxScore: 1000000,      // nothing above this is a real run
+    maxLevel: 200,          // generous: reaching this needs hours of unbroken play
     maxPointsPerSecond: 60, // generous: a great run stays under it, score=9e9 does not
     minRunMs: 3000,         // a run shorter than this cannot have earned anything
     submitCooldownMs: 5000, // per player, server-enforced

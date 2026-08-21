@@ -207,6 +207,16 @@
   #boardNote b, #homeBoardNote b, #fullBoardNote b{color:var(--ink);font-weight:600;}
   #homeBoard #openBoardBtn{margin-top:12px;}
 
+  /* Points/Level board tabs — home preview and the Top 25 screen only; the
+     death-screen board stays score-only by design. */
+  .boardTabs{display:flex;gap:8px;margin-bottom:10px;}
+  .boardTab{
+    flex:1;padding:6px 0;border-radius:8px;border:1px solid rgba(79,230,214,.25);
+    background:transparent;color:var(--muted);font-family:inherit;font-weight:700;
+    font-size:11px;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;
+  }
+  .boardTab.active{background:rgba(142,243,255,.15);color:var(--volt);border-color:rgba(142,243,255,.5);}
+
   /* lifetime stats */
   #statsRows{
     display:grid;grid-template-columns:1fr auto;gap:7px 14px;text-align:left;
@@ -466,6 +476,10 @@
   </div>
   <div id="homeBoard" class="hidden">
     <h2>Top divers</h2>
+    <div class="boardTabs">
+      <button id="homeTabScore" class="boardTab active">Points</button>
+      <button id="homeTabLevel" class="boardTab">Level</button>
+    </div>
     <div id="homeBoardRows"></div>
     <div id="homeBoardNote"></div>
     <button id="openBoardBtn" class="quiet">See top 25</button>
@@ -475,6 +489,10 @@
 <div id="boardScreen" class="overlay hidden">
   <h1>LEADERBOARD<span class="sub">top 25 divers</span></h1>
   <div id="fullBoard">
+    <div class="boardTabs">
+      <button id="fullTabScore" class="boardTab active">Points</button>
+      <button id="fullTabLevel" class="boardTab">Level</button>
+    </div>
     <div id="fullBoardRows"></div>
     <div id="fullBoardNote"></div>
   </div>
@@ -680,6 +698,7 @@
         topLimit: 10,           // rows shown on the board by default
         maxTopLimit: 25,        // the most a caller may ever ask for, e.g. /top?limit=
         maxScore: 1000000,      // nothing above this is a real run
+        maxLevel: 200,          // generous: reaching this needs hours of unbroken play
         maxPointsPerSecond: 60, // generous: a great run stays under it, score=9e9 does not
         minRunMs: 3000,         // a run shorter than this cannot have earned anything
         submitCooldownMs: 5000, // per player, server-enforced
@@ -983,11 +1002,11 @@
     
     /**
      * Is this submission plausible enough to store?
-     * @param {{score:unknown, durationMs:unknown}} submission
+     * @param {{score:unknown, durationMs:unknown, level:unknown}} submission
      * @returns {{ok:true} | {ok:false, reason:string}}
      */
     function validateSubmission(submission) {
-      const { score, durationMs } = submission ?? {};
+      const { score, durationMs, level } = submission ?? {};
     
       if (!Number.isInteger(score)) return { ok: false, reason: "score must be a whole number" };
       if (score < 0) return { ok: false, reason: "score cannot be negative" };
@@ -998,6 +1017,10 @@
     
       const perSecond = score / (durationMs / 1000);
       if (perSecond > L.maxPointsPerSecond) return { ok: false, reason: "scored faster than is possible" };
+    
+      if (!Number.isInteger(level)) return { ok: false, reason: "level must be a whole number" };
+      if (level < 1) return { ok: false, reason: "level cannot be below 1" };
+      if (level > L.maxLevel) return { ok: false, reason: "level above the plausible maximum" };
     
       return { ok: true };
     }
@@ -1017,10 +1040,15 @@
       return rank;
     }
     
-    /** Rows the board should display, highest first. */
-    function topRows(rows, limit = L.topLimit) {
+    /**
+     * Rows the board should display, highest first.
+     * @param {string} metric  "score" or "level" — which column ranks the board.
+     *   Rows carry both; this only decides the sort, so client and Worker share
+     *   the one rule for both the Points and the Level board.
+     */
+    function topRows(rows, limit = L.topLimit, metric = "score") {
       return [...rows]
-        .sort((a, b) => b.score - a.score || String(a.tag).localeCompare(String(b.tag)))
+        .sort((a, b) => b[metric] - a[metric] || String(a.tag).localeCompare(String(b.tag)))
         .slice(0, limit);
     }
     
@@ -2094,6 +2122,7 @@
 
   let joined = readStore(STORE.joined) === "yes";
   let runStartedAt = 0, pausedAt = 0, pausedMs = 0;
+  let homeBoardTabs, fullBoardTabs;   // wired at boot — see wireBoardTabs()
 
   async function api(path, options){
     const res = await fetch(LEADERBOARD_URL + path, options);
@@ -2101,14 +2130,14 @@
     return res.json();
   }
 
-  function submitRun(score, durationMs){
+  function submitRun(score, durationMs, level){
     // Check locally first with the same rules the server uses, so an ordinary
     // short run never turns into a pointless request.
-    if (!Engine.validateSubmission({ score, durationMs }).ok) return Promise.resolve(null);
+    if (!Engine.validateSubmission({ score, durationMs, level }).ok) return Promise.resolve(null);
     return api("/scores", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: playerId(), score, durationMs }),
+      body: JSON.stringify({ id: playerId(), score, durationMs, level }),
     });
   }
 
@@ -2204,12 +2233,13 @@
     challengeTickHandle = null;
   }
 
-  function renderBoardRows(rows, myTag, targetId = "boardRows"){
+  function renderBoardRows(rows, myTag, metric = "score", targetId = "boardRows"){
     const el = document.getElementById(targetId);
     el.textContent = "";
     rows.forEach((row, i) => {
       const mine = row.tag === myTag;
-      for (const [cls, text] of [["rank", "#" + (i+1)], ["tag", row.tag], ["pts", row.score]]){
+      const value = metric === "level" ? row.level : row.score;
+      for (const [cls, text] of [["rank", "#" + (i+1)], ["tag", row.tag], ["pts", value]]){
         const cell = document.createElement("div");
         cell.className = mine ? cls + " me" : cls;
         cell.textContent = text;          // textContent, never innerHTML: the board is public
@@ -2227,7 +2257,11 @@
     document.getElementById("leaveBtn").classList.add("hidden");
   }
 
-  async function updateBoard(score, durationMs){
+  // The death-screen board stays score-only by design (see the maintainer's
+  // decision on PR #39) — the Points/Level tabs live on the home preview and
+  // the Top 25 screen instead. The level is still submitted here, though, so
+  // it reaches both server-side boards the instant a run ends.
+  async function updateBoard(score, durationMs, level){
     const board = document.getElementById("board");
     if (!LEADERBOARD_URL){ board.classList.add("hidden"); return; }
     board.classList.remove("hidden");
@@ -2235,7 +2269,7 @@
     const myTag = Engine.tagFor(playerId());
     try {
       let mine = null;
-      if (joined && score > 0) mine = await submitRun(Math.round(score), durationMs);
+      if (joined && score > 0) mine = await submitRun(Math.round(score), durationMs, level);
       const rows = await api("/top");
       renderBoardRows(rows, joined ? myTag : null);
 
@@ -2243,7 +2277,7 @@
       else {
         document.getElementById("joinBtn").classList.add("hidden");
         document.getElementById("leaveBtn").classList.remove("hidden");
-        setBoardNote(mine ? `${myTag} — best ${mine.best}, ranked #${mine.rank}.` : `You are ${myTag}.`);
+        setBoardNote(mine ? `${myTag} — best ${mine.score.best}, ranked #${mine.score.rank}.` : `You are ${myTag}.`);
       }
     } catch {
       // Offline, or the leaderboard is down. Neither is the player's problem.
@@ -2252,6 +2286,25 @@
       document.getElementById("joinBtn").classList.add("hidden");
       document.getElementById("leaveBtn").classList.add("hidden");
     }
+  }
+
+  // Wires a Points/Level tab pair for one board instance. Switching tabs asks
+  // the server for that metric's own top rows (a different sort can surface
+  // an entirely different set of players, so this can't be derived from
+  // whichever board is already on screen) and re-renders in place.
+  function wireBoardTabs(prefix, onSwitch){
+    const state = { metric: "score" };
+    const scoreBtn = document.getElementById(prefix + "TabScore");
+    const levelBtn = document.getElementById(prefix + "TabLevel");
+    function setActive(m){
+      state.metric = m;
+      scoreBtn.classList.toggle("active", m === "score");
+      levelBtn.classList.toggle("active", m === "level");
+      onSwitch(m);
+    }
+    scoreBtn.addEventListener("click", () => setActive("score"));
+    levelBtn.addEventListener("click", () => setActive("level"));
+    return state;   // .metric always reflects whichever tab is active
   }
 
   // A small preview on the home screen, so a player sees where they stand
@@ -2263,17 +2316,18 @@
     const wrap = document.getElementById("homeBoard");
     if (!LEADERBOARD_URL){ wrap.classList.add("hidden"); return; }
     wrap.classList.remove("hidden");
+    const metric = homeBoardTabs.metric;
     try {
       const myTag = joined ? Engine.tagFor(playerId()) : null;
-      const rows = await api("/top?limit=5");
-      renderBoardRows(rows, myTag, "homeBoardRows");
+      const rows = await api(`/top?limit=5&by=${metric}`);
+      renderBoardRows(rows, myTag, metric, "homeBoardRows");
 
       let note = "";
       // Only a joined player has a row in D1 at all (submitRun only ever runs
       // when joined), so asking /rank for anyone else would be a wasted trip.
       if (joined && !rows.some(r => r.tag === myTag)){
         const mine = await api(`/rank?id=${encodeURIComponent(playerId())}`);
-        if (mine) note = `You're #${mine.rank} — best ${mine.best}.`;
+        if (mine) note = `You're #${mine[metric].rank} — best ${mine[metric].best}.`;
       }
       document.getElementById("homeBoardNote").textContent = note;
     } catch {
@@ -2283,15 +2337,16 @@
 
   async function refreshFullBoard(){
     if (!LEADERBOARD_URL) return;
+    const metric = fullBoardTabs.metric;
     try {
       const myTag = joined ? Engine.tagFor(playerId()) : null;
-      const rows = await api("/top?limit=25");
-      renderBoardRows(rows, myTag, "fullBoardRows");
+      const rows = await api(`/top?limit=25&by=${metric}`);
+      renderBoardRows(rows, myTag, metric, "fullBoardRows");
       document.getElementById("fullBoardNote").textContent = joined
         ? `You're ${myTag}.`
         : "Join from a dive's end screen to appear here.";
     } catch {
-      renderBoardRows([], null, "fullBoardRows");
+      renderBoardRows([], null, metric, "fullBoardRows");
       document.getElementById("fullBoardNote").textContent =
         "Leaderboard unavailable right now — your score is still saved on this device.";
     }
@@ -2397,7 +2452,7 @@
 
   document.getElementById("joinBtn").addEventListener("click", () => {
     joined = true; writeStore(STORE.joined, "yes");
-    updateBoard(best, Math.max(Engine.CONFIG.leaderboard.minRunMs, lastRunMs));
+    updateBoard(best, Math.max(Engine.CONFIG.leaderboard.minRunMs, lastRunMs), bestLevel);
     renderHomeSummary(Engine.wearableSkin(skinId, owned));   // home screen picks up "on the board" too
     refreshHomeBoard();
   });
@@ -2409,7 +2464,7 @@
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }),
     }); } catch {}
     dropStore(STORE.id);                 // a new id next time: the old one is gone for good
-    updateBoard(0, 0);
+    updateBoard(0, 0, 1);   // joined is already false above, so this never actually submits
     // after dropStore, so this reads the fresh id rather than the forgotten one
     renderHomeSummary(Engine.wearableSkin(skinId, owned));
     refreshHomeBoard();
@@ -2429,7 +2484,7 @@
     writeStore(STORE.best, String(best));          // survives a reload, never leaves the device
     document.getElementById("finalScore").textContent = Math.round(score);
     document.getElementById("best").textContent = best;
-    updateBoard(Math.round(score), lastRunMs);
+    updateBoard(Math.round(score), lastRunMs, level);
     document.getElementById("oversub").textContent = Math.round(score) > 0
       ? `${reason} — ${Math.round(score).toLocaleString()} points banked`
       : reason;
@@ -4122,6 +4177,8 @@
   skinId = Engine.wearableSkin(readStore(STORE.skin), owned).id;
   document.getElementById("best").textContent = best;
   renderSkins();
+  homeBoardTabs = wireBoardTabs("home", () => refreshHomeBoard());
+  fullBoardTabs = wireBoardTabs("full", () => refreshFullBoard());
   refreshHomeBoard();
   startChallengeTicker();   // the page boots straight onto the home screen
 

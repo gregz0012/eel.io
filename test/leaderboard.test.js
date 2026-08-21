@@ -3,7 +3,7 @@ import { validateSubmission, bestOf, rankOf, topRows, clampTopLimit } from "../s
 import { CONFIG } from "../src/engine/config.js";
 
 const L = CONFIG.leaderboard;
-const run = (over) => ({ score: 500, durationMs: 120000, ...over });
+const run = (over) => ({ score: 500, level: 3, durationMs: 120000, ...over });
 
 describe("validateSubmission", () => {
   it("accepts an ordinary good run", () => {
@@ -16,12 +16,12 @@ describe("validateSubmission", () => {
 
   it("rejects a score earned impossibly fast", () => {
     const tooFast = Math.ceil(L.maxPointsPerSecond * 60) + 1;
-    expect(validateSubmission({ score: tooFast, durationMs: 60000 }).ok).toBe(false);
+    expect(validateSubmission(run({ score: tooFast, durationMs: 60000 })).ok).toBe(false);
   });
 
   it("allows a great run right up to the rate cap", () => {
     const atCap = Math.floor(L.maxPointsPerSecond * 60);
-    expect(validateSubmission({ score: atCap, durationMs: 60000 }).ok).toBe(true);
+    expect(validateSubmission(run({ score: atCap, durationMs: 60000 })).ok).toBe(true);
   });
 
   it("rejects runs too short to have earned anything", () => {
@@ -36,8 +36,27 @@ describe("validateSubmission", () => {
   });
 
   it("rejects a missing or malformed duration", () => {
-    expect(validateSubmission({ score: 100 }).ok).toBe(false);
+    expect(validateSubmission({ score: 100, level: 1 }).ok).toBe(false);
     expect(validateSubmission(run({ durationMs: Infinity })).ok).toBe(false);
+  });
+
+  it("rejects an absurd level outright", () => {
+    expect(validateSubmission(run({ level: 999999 })).ok).toBe(false);
+  });
+
+  it("allows a level right up to the cap", () => {
+    expect(validateSubmission(run({ level: L.maxLevel })).ok).toBe(true);
+  });
+
+  it("rejects non-integer, sub-1 and non-numeric levels", () => {
+    expect(validateSubmission(run({ level: 2.5 })).ok).toBe(false);
+    expect(validateSubmission(run({ level: 0 })).ok).toBe(false);
+    expect(validateSubmission(run({ level: "5" })).ok).toBe(false);
+    expect(validateSubmission(run({ level: NaN })).ok).toBe(false);
+  });
+
+  it("rejects a missing level — every real submission has one", () => {
+    expect(validateSubmission({ score: 500, durationMs: 120000 }).ok).toBe(false);
   });
 
   it("survives a junk body without throwing", () => {
@@ -79,12 +98,21 @@ describe("rankOf", () => {
 
 describe("topRows", () => {
   const rows = [
-    { tag: "A-0001", score: 10 }, { tag: "B-0002", score: 90 },
-    { tag: "C-0003", score: 50 }, { tag: "D-0004", score: 90 },
+    { tag: "A-0001", score: 10, level: 8 }, { tag: "B-0002", score: 90, level: 2 },
+    { tag: "C-0003", score: 50, level: 5 }, { tag: "D-0004", score: 90, level: 1 },
   ];
 
-  it("sorts highest first", () => {
+  it("sorts by score, highest first, by default", () => {
     expect(topRows(rows).map(r => r.score)).toEqual([90, 90, 50, 10]);
+  });
+
+  it("sorts by level instead when asked — a different order entirely", () => {
+    expect(topRows(rows, undefined, "level").map(r => r.level)).toEqual([8, 5, 2, 1]);
+  });
+
+  it("every row keeps both metrics regardless of which one is sorting", () => {
+    const byLevel = topRows(rows, undefined, "level");
+    expect(byLevel[0]).toEqual({ tag: "A-0001", score: 10, level: 8 });
   });
 
   it("breaks ties stably by tag so the board does not shuffle on refresh", () => {

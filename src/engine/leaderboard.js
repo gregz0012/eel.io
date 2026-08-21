@@ -14,11 +14,11 @@ const L = CONFIG.leaderboard;
 
 /**
  * Is this submission plausible enough to store?
- * @param {{score:unknown, durationMs:unknown}} submission
+ * @param {{score:unknown, durationMs:unknown, level:unknown}} submission
  * @returns {{ok:true} | {ok:false, reason:string}}
  */
 export function validateSubmission(submission) {
-  const { score, durationMs } = submission ?? {};
+  const { score, durationMs, level } = submission ?? {};
 
   if (!Number.isInteger(score)) return { ok: false, reason: "score must be a whole number" };
   if (score < 0) return { ok: false, reason: "score cannot be negative" };
@@ -29,6 +29,10 @@ export function validateSubmission(submission) {
 
   const perSecond = score / (durationMs / 1000);
   if (perSecond > L.maxPointsPerSecond) return { ok: false, reason: "scored faster than is possible" };
+
+  if (!Number.isInteger(level)) return { ok: false, reason: "level must be a whole number" };
+  if (level < 1) return { ok: false, reason: "level cannot be below 1" };
+  if (level > L.maxLevel) return { ok: false, reason: "level above the plausible maximum" };
 
   return { ok: true };
 }
@@ -48,10 +52,15 @@ export function rankOf(sortedScores, score) {
   return rank;
 }
 
-/** Rows the board should display, highest first. */
-export function topRows(rows, limit = L.topLimit) {
+/**
+ * Rows the board should display, highest first.
+ * @param {string} metric  "score" or "level" — which column ranks the board.
+ *   Rows carry both; this only decides the sort, so client and Worker share
+ *   the one rule for both the Points and the Level board.
+ */
+export function topRows(rows, limit = L.topLimit, metric = "score") {
   return [...rows]
-    .sort((a, b) => b.score - a.score || String(a.tag).localeCompare(String(b.tag)))
+    .sort((a, b) => b[metric] - a[metric] || String(a.tag).localeCompare(String(b.tag)))
     .slice(0, limit);
 }
 

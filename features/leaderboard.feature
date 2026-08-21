@@ -20,6 +20,13 @@ Feature: Anonymous leaderboard
     And they finish a run worth 100 points
     Then the board shows them with 900 points
 
+  Scenario: The board keeps a player's best level as well as their best score
+    Given a player whose browser generated the id "3f2a9c14-0000-4000-8000-000000000001"
+    When they finish a run worth 100 points and level 8
+    And they finish a run worth 900 points and level 2
+    Then the board shows them with 900 points
+    And the board shows them at level 8
+
   Scenario: A forged score is refused
     Given a player whose browser generated the id "3f2a9c14-0000-4000-8000-000000000001"
     When they submit a run worth 999999999 points
