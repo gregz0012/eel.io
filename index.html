@@ -1341,18 +1341,28 @@
     //               Like gem and sheen, a skin only ever wears one finish; fx is
     //               exclusive with those two but may sit alongside accent/mark,
     //               the same way a hero's banding and flourish already do.
-    //   material    what the eel's surface is *made from* — organic, brushed
-    //               metal, stone, crystal, and so on — as opposed to fx, which is
-    //               the animated effect layered on top of it (Earth is
+    //   material    what the eel's surface is *made from*, as opposed to fx,
+    //               which is the animated effect layered on top of it (Earth is
     //               material:"stone" + fx:"cracks"; Gold is material:"brushedMetal"
-    //               + sheen:0.78). Unlike gem/sheen/accent/fx, which are mutually
-    //               exclusive with each other, material is orthogonal to all four
-    //               and may combine with any of them — a metal is still made of
-    //               metal whether or not it also sparkles. A bare string ("stone")
-    //               or an object ({type, strength, scale}) are both legal; see
-    //               resolveMaterial below for what each field means and what a
-    //               skin gets when it names none. Drawn by the shell's
-    //               SKIN_MATERIAL table, the same pattern SKIN_FX already uses.
+    //               + sheen:0.78; Water is material:"water" + fx:"ripple").
+    //               Unlike gem/sheen/accent/fx, which are mutually exclusive with
+    //               each other, material is orthogonal to all four and may
+    //               combine with any of them — a metal is still made of metal
+    //               whether or not it also sparkles. The full catalogue is
+    //               MATERIALS, below: organic (every Standard/Hero skin's
+    //               default — subtle, low-contrast surface variation), brushedMetal
+    //               (the Metallic tier), stone and charred (Earth/Lava and
+    //               Fire/Lava), crystal (the Gemstones plus Frost/Prism), water
+    //               and air (their Element and Special-tier variants), charged
+    //               (Lightning) and liquid (Eel-symbiote alone — the one hero
+    //               with a bespoke material rather than a tuned organic). A bare
+    //               string ("stone") or an object ({type, strength, scale}) are
+    //               both legal; see resolveMaterial below for what each field
+    //               means and what a skin gets when it names none or an unknown
+    //               one. Drawn by the shell's SKIN_MATERIAL table, the same
+    //               dispatch-by-name pattern SKIN_FX already uses — a new
+    //               material is a new table entry, never a new `if` keyed on a
+    //               skin id.
     
     /**
      * Colours are HSL parts the renderer assembles, so a skin can be a metal

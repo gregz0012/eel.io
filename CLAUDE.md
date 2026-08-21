@@ -295,6 +295,47 @@ index — no stored state, no `Math.random` — which is what lets the shop's
 small preview canvas run the exact same function as the live game and get an
 identical result, and what keeps reduced motion showing one still frame
 instead of going blank.
+
+### Material vs. fx
+
+`skin.material` and `skin.fx` split one question two ways: material is what
+the eel's surface is *made from* (organic, brushed metal, stone, crystal,
+water, ...); fx is the animated effect layered on top of it. Earth is
+`material:"stone"` + `fx:"cracks"`; Gold is `material:"brushedMetal"` +
+`sheen:0.78`. The engine's `resolveMaterial(skin)` (`src/engine/skins.js`)
+normalises a bare string, an object (`{type, strength, scale}`), or nothing
+at all into one shape, falling back to a shared frozen `organic` default for
+anything unrecognised — same never-throw contract as `wearableSkin` falling
+back to the starting skin. The shell mirrors this with its own `SKIN_MATERIAL`
+dispatch table and a second, independent fallback to organic, so the two
+sides can never crash even if they briefly drift.
+
+Every eel gets a **universal baseline** first — `drawBodyShading`/
+`drawHeadShading` lay down three hue-agnostic bands (a dark underside, a
+broad soft highlight, a narrow specular streak) before any material or `fx`
+touches the body — which is what makes even a bare `organic` eel read as
+rounded and wet rather than a flat colour fill; `sheen` (`fxSheen`) then
+adds *more* shine on top of that floor rather than carrying the whole
+three-dimensional read by itself.
+
+Every material in the catalogue is built from one shared primitive,
+`bodyRibbon(ctx2d, pts, bodyLength, radius, from, to, style, k0, k1)`: a
+tapered filled ribbon walking a slice of the body (`k0` to `k1`, default the
+whole thing) along one signed local-radius offset and back along another,
+closed and filled once. Ribbons fill with `rgba(0,0,0,a)`/`rgba(255,255,255,a)`
+rather than the skin's own hue, so material shading composes for free with
+`accent` banding, `fade`, `iridescent` and a bare rival's `skinFromHue()`
+colour without any of them needing to special-case it. A shared, pooled
+projection of the sampled body (`SKIN_FX_POOL`/`poolPoint`, mutated in place
+rather than reallocated) carries each point's cumulative on-body distance as
+`s` alongside its screen position `i` — structured materials (crystal's
+facets, charged's veins) size themselves against `s`, not raw index, which
+is what keeps the shop preview's 46 fixed points and the game's ~250 sampled
+points reading as the same apparent grain rather than two different scales
+of the same pattern. `drawSkinMaterial`'s `detail` parameter (1 for the
+player and the shop preview, lower for a rival) is the same "gracefully
+simplify as a last resort" idea `fx` cheapening already uses for the
+up-to-14-rivals-on-screen case.
 `wearableSkin` stays deliberately level-blind, so nothing a player already owns
 can ever be taken back off them, and Volt — which sits in the "standard" tier —
 never locks a new player out of their own eel. When a skin is both too deep and
