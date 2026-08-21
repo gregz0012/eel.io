@@ -84,8 +84,21 @@ export const SKINS = [
     minLevel: 7, fx: "slime" },
   { id: "frost", tier: "special", name: "Frost", hue: 198, sat: 40, bodyLight: 62, headLight: 90, price: 7500,
     minLevel: 8, fx: "sparkle" },
+  // the remaining four special finishes change the body-drawing pass itself
+  // rather than layering an effect on top of it — fade dims the stroke
+  // toward the tail, iridescent drifts its hue — so a bug here disfigures
+  // the eel, not just a stray sparkle; afterimage and stars still overlay,
+  // but are grouped here since they were built alongside the two that don't
+  { id: "abyss", tier: "special", name: "Abyss", hue: 220, sat: 35, bodyLight: 7, headLight: 13, price: 8500,
+    minLevel: 9, fx: "fade" },
   { id: "lava", tier: "special", name: "Lava", hue: 14, sat: 60, bodyLight: 10, headLight: 16, price: 9000,
     minLevel: 9, fx: "molten" },
+  { id: "ghost", tier: "special", name: "Ghost", hue: 195, sat: 12, bodyLight: 72, headLight: 94, price: 10000,
+    minLevel: 10, fx: "afterimage" },
+  { id: "prism", tier: "special", name: "Prism", hue: 0, sat: 70, bodyLight: 55, headLight: 80, price: 12500,
+    minLevel: 10, fx: "iridescent" },
+  { id: "void", tier: "special", name: "Void", hue: 260, sat: 25, bodyLight: 4, headLight: 9, price: 12500,
+    minLevel: 12, fx: "stars" },
 
   // two-tone heroes — the top of the shop. Each opens at its own depth now
   // (see `minLevel` below `levelFor`) rather than sharing the hero tier's

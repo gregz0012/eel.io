@@ -23,7 +23,7 @@ describe("the catalogue", () => {
       "copper", "iron", "gold", "platinum",
       "water", "air", "earth", "fire", "lightning",
       "emerald", "ruby", "diamond",
-      "biolume", "toxic", "frost", "lava",
+      "biolume", "toxic", "frost", "abyss", "lava", "ghost", "prism", "void",
       "spider", "eelwolf", "symbiote", "eelpool",
     ]);
   });
@@ -86,8 +86,10 @@ describe("the catalogue", () => {
   it("only ever names an fx the renderer knows how to draw", () => {
     for (const s of SKINS) {
       if (s.fx === undefined) continue;
-      expect(["ripple", "vortex", "cracks", "ember", "arc", "spots", "slime", "sparkle", "molten"])
-        .toContain(s.fx);
+      expect([
+        "ripple", "vortex", "cracks", "ember", "arc", "spots", "slime", "sparkle", "molten",
+        "fade", "afterimage", "iridescent", "stars",
+      ]).toContain(s.fx);
     }
   });
 
@@ -108,7 +110,7 @@ describe("the catalogue", () => {
     expect(skinsByTier("gemstone").map(s => s.id))
       .toEqual(["emerald", "ruby", "diamond"]);
     expect(skinsByTier("special").map(s => s.id))
-      .toEqual(["biolume", "toxic", "frost", "lava"]);
+      .toEqual(["biolume", "toxic", "frost", "abyss", "lava", "ghost", "prism", "void"]);
     expect(skinsByTier("hero").map(s => s.id))
       .toEqual(["spider", "eelwolf", "symbiote", "eelpool"]);
   });
@@ -268,6 +270,25 @@ describe("per-skin level gating", () => {
     const r = buySkin({ banked: 1e9, owned: [], bestLevel: 8 }, "lava");
     expect(r.bought).toBe(false);
     expect(r.reason).toContain("level 9");
+  });
+
+  it("opens each body-modulating special skin at its own depth", () => {
+    expect(levelFor(skinById("abyss"))).toBe(9);
+    expect(levelFor(skinById("ghost"))).toBe(10);
+    expect(levelFor(skinById("prism"))).toBe(10);
+    expect(levelFor(skinById("void"))).toBe(12);
+  });
+
+  it("refuses Void below level 12 and quotes its own level", () => {
+    const r = buySkin({ banked: 1e9, owned: [], bestLevel: 11 }, "void");
+    expect(r.bought).toBe(false);
+    expect(r.reason).toContain("level 12");
+  });
+
+  it("sells Abyss the moment level 9 is reached", () => {
+    const abyss = skinById("abyss");
+    const r = buySkin({ banked: abyss.price, owned: [], bestLevel: 9 }, "abyss");
+    expect(r.bought).toBe(true);
   });
 });
 
