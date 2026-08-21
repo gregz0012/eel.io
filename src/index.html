@@ -2396,11 +2396,15 @@
   // Gems get a travelling twinkle down the spine that plain metal never
   // has — this is the one thing that makes the top tier look worth the
   // price, so it stays even under reduced motion (it is a colour change,
-  // not a shake). `stride` is how many `pts` entries apart each twinkle
-  // candidate sits — the two canvases sample their own body at different
-  // densities, so each passes whatever spacing looks right at its own scale.
+  // not a shake): both callers already freeze `nowMs` to 0 under reduced
+  // motion, which turns this into a stable, static glint pattern rather than
+  // an animation — there used to be an early return here that skipped this
+  // entirely and left gems reading as plain pale eels for that preference,
+  // contradicting this very comment; that was a bug, now fixed. `stride` is
+  // how many `pts` entries apart each twinkle candidate sits — the two
+  // canvases sample their own body at different densities, so each passes
+  // whatever spacing looks right at its own scale.
   function fxGemTwinkle(ctx2d, pts, stride, bodyLength, radius, skin, nowMs){
-    if (reduceMotion) return;
     const { hue, sat, headLight } = skin;
     ctx2d.save();
     ctx2d.globalCompositeOperation = "lighter";
@@ -3019,8 +3023,64 @@
     drawCrackLips(ctx2d, pts, bodyLength, radius, "rgba(0,0,0,0.4)");
   }
 
+  // crystal: faceted geometric regions rather than random noise — points are
+  // grouped into "facets" by where they fall along the body's own
+  // arc-length `s` (not raw point index, so the shop preview's 46 points and
+  // the game's ~250 sampled points group into facets of the same apparent
+  // size in both canvases), each facet's own lightness from a hash of its
+  // own facet index, alternating which flank each facet leans toward so the
+  // cuts read as diagonal facets rather than horizontal rings. gem and
+  // fxGemTwinkle (called after this in the pipeline) become the highlight
+  // riding over these facets, not the whole effect any more. A sparse,
+  // hue-shifted dispersion glint — scaled by `strength`, so it's barely
+  // there for Emerald/Ruby and genuinely present for Diamond, which is
+  // tuned to the highest strength/scale of the three — stands in for a cut
+  // gem's rainbow flash.
+  function matCrystal(ctx2d, pts, bodyLength, radius, skin, nowMs, detail){
+    const m = Engine.resolveMaterial(skin);
+    const n = pts.length;
+    if (n < 3) return;
+    const facetSize = Math.max(1, (radius * 1.6) / Math.max(0.3, m.scale));
+    let flank = 1, runStart = 0, runFacet = Math.floor(pts[0].s / facetSize);
+    for (let k = 1; k <= n; k++){
+      const facet = k < n ? Math.floor(pts[k].s / facetSize) : -1;
+      if (facet !== runFacet){
+        const k1 = k - 1;
+        if (k1 > runStart){
+          const hash = (((Math.sin(runFacet * 27.13 + bodyLength * 0.005) * 91731.234) % 1) + 1) % 1;
+          const style = hash > 0.55
+            ? `rgba(255,255,255,${(0.08 + hash * 0.18) * Math.max(0.3, m.strength) * detail})`
+            : `rgba(0,0,0,${(0.06 + (1 - hash) * 0.12) * Math.max(0.3, m.strength) * detail})`;
+          const near = flank * (0.12 + hash * 0.35);
+          const far = flank * (0.45 + hash * 0.3);
+          bodyRibbon(ctx2d, pts, bodyLength, radius, Math.min(near, far), Math.max(near, far), style, runStart, k1);
+        }
+        flank *= -1;
+        runStart = k1;
+        runFacet = facet;
+      }
+    }
+
+    ctx2d.save();
+    ctx2d.globalCompositeOperation = "lighter";
+    for (let k = 0; k < n; k += 4){
+      const p = pts[k];
+      const hash = (((Math.sin(p.i * 9.87 + 1.7) * 5432.1) % 1) + 1) % 1;
+      if (hash < 0.72) continue;
+      const t = 1 - p.i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const glint = ((hash - 0.72) / 0.28) * m.strength * detail;
+      if (glint < 0.02) continue;
+      const dispersionHue = (hash * 360) % 360;
+      ctx2d.fillStyle = `hsla(${dispersionHue},85%,88%,${Math.min(0.5, glint * 0.4)})`;
+      ctx2d.beginPath(); ctx2d.arc(p.x, p.y, Math.max(0.7, r * 0.09), 0, TAU); ctx2d.fill();
+    }
+    ctx2d.restore();
+  }
+
   const SKIN_MATERIAL = {
     organic: matOrganic, brushedMetal: matBrushedMetal, stone: matStone, charred: matCharred,
+    crystal: matCrystal,
   };
 
   // Falls back to organic for any unresolved type — a second, shell-side
