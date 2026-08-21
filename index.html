@@ -1427,11 +1427,11 @@
       // from the gems' twinkle, lava from Earth's cracks), priced and gated the
       // same theme-first way the Elements are
       { id: "biolume", tier: "special", name: "Bioluminescent", hue: 178, sat: 75, bodyLight: 10, headLight: 18, price: 6000,
-        minLevel: 6, fx: "spots" },
+        minLevel: 6, fx: "spots", material: "organic" },
       { id: "toxic", tier: "special", name: "Toxic", hue: 82, sat: 70, bodyLight: 26, headLight: 40, price: 7000,
-        minLevel: 7, fx: "slime" },
+        minLevel: 7, fx: "slime", material: "organic" },
       { id: "frost", tier: "special", name: "Frost", hue: 198, sat: 40, bodyLight: 62, headLight: 90, price: 7500,
-        minLevel: 8, fx: "sparkle" },
+        minLevel: 8, fx: "sparkle", material: { type: "crystal", strength: 0.5, scale: 1.0 } },
       // the signature skin: a skeleton that glows brighter with the live zap
       // charge and flares on a fresh zap — see chargeGlow below. Needs no
       // gameplay state of its own beyond what the shell already tracks, so it
@@ -1444,15 +1444,15 @@
       // the eel, not just a stray sparkle; afterimage and stars still overlay,
       // but are grouped here since they were built alongside the two that don't
       { id: "abyss", tier: "special", name: "Abyss", hue: 220, sat: 35, bodyLight: 7, headLight: 13, price: 8500,
-        minLevel: 9, fx: "fade" },
+        minLevel: 9, fx: "fade", material: { type: "organic", strength: 0.25, scale: 1 } },
       { id: "lava", tier: "special", name: "Lava", hue: 14, sat: 60, bodyLight: 10, headLight: 16, price: 9000,
-        minLevel: 9, fx: "molten" },
+        minLevel: 9, fx: "molten", material: { type: "charred", strength: 0.65, scale: 1 } },
       { id: "ghost", tier: "special", name: "Ghost", hue: 195, sat: 12, bodyLight: 72, headLight: 94, price: 10000,
-        minLevel: 10, fx: "afterimage" },
+        minLevel: 10, fx: "afterimage", material: { type: "air", strength: 0.4, scale: 1 } },
       { id: "prism", tier: "special", name: "Prism", hue: 0, sat: 70, bodyLight: 55, headLight: 80, price: 12500,
-        minLevel: 10, fx: "iridescent" },
+        minLevel: 10, fx: "iridescent", material: { type: "crystal", strength: 0.3, scale: 1.0 } },
       { id: "void", tier: "special", name: "Void", hue: 260, sat: 25, bodyLight: 4, headLight: 9, price: 12500,
-        minLevel: 12, fx: "stars" },
+        minLevel: 12, fx: "stars", material: { type: "organic", strength: 0.25, scale: 1 } },
     
       // two-tone heroes — the top of the shop. Each opens at its own depth now
       // (see `minLevel` below `levelFor`) rather than sharing the hero tier's
