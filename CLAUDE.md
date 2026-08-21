@@ -276,8 +276,14 @@ in — a daily allowance, a free dive, something.
 **Skins are gated on depth as well as money.** Each tier in `skins.js` carries a
 `minLevel` — standard 2, metallic 5, gemstone 10, hero 15 — checked against the
 deepest level the player has ever reached, so the shop is a reason to go down
-rather than to grind fish in the shallows. Two rules keep that from turning
-cruel: the gate is on *buying* only, and the free starting skin is exempt.
+rather than to grind fish in the shallows. A skin's own `minLevel`, when it has
+one, wins over its tier's — the four Hero skins each open at their own depth
+(8/9/10/11) rather than sharing the tier's single Level 15 gate, so the shop's
+top is a ladder, not one distant step. `levelFor(skin)` is the one place this
+is decided; everything else (`buySkin`, `skinStatus`, `nextSkinToBuy`) already
+routes through it and needed no change when the per-skin override was added.
+Two rules keep the gate from turning cruel: it is on *buying* only, and the
+free starting skin is exempt.
 `wearableSkin` stays deliberately level-blind, so nothing a player already owns
 can ever be taken back off them, and Volt — which sits in the "standard" tier —
 never locks a new player out of their own eel. When a skin is both too deep and
