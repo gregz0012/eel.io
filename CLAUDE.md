@@ -197,8 +197,20 @@ no requests, no id generated, no storage beyond the local best score. Offline or
 server down, the overlay says so and the game plays exactly as before. The game
 must never need the network.
 
-**Stored data is the minimum:** id, score, duration, timestamps. No IP addresses,
-no user agents, nothing a person typed.
+**Stored data is the minimum:** id, score, level, duration, timestamps. No IP
+addresses, no user agents, nothing a person typed.
+
+**Score and level are two boards, kept independently.** A player's top score
+and their deepest level are often different runs — points alone only ever buy
+the first boss (`scoreLevelCap`), so a long, careful climb can be a low-scoring,
+high-level run and vice versa. `topRows`/`rankOf` in `leaderboard.js` take a
+`metric` parameter so client and Worker share one sort rule for either board,
+and the Worker's `handleSubmit` tracks each metric's best with its own
+`Math.max` against the existing row — never a single `if (score > existing)`
+branch, which would silently drop a level improvement on a run whose score
+didn't also improve. The home preview and the Top 25 screen each show a
+Points/Level tab pair; the death screen's board stays score-only by design,
+though it still submits `level` so every run reaches both boards.
 
 ### The caps are a speed bump, not a lock
 

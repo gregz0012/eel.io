@@ -23,28 +23,29 @@ function fakeDB(rows = []) {
           if (/SELECT COUNT\(\*\) AS n FROM scores WHERE score >/.test(sql)) {
             return { n: rows.filter(r => r.score > stmt.args[0]).length };
           }
+          if (/SELECT COUNT\(\*\) AS n FROM scores WHERE level >/.test(sql)) {
+            return { n: rows.filter(r => r.level > stmt.args[0]).length };
+          }
           throw new Error("unexpected first(): " + sql);
         },
         async all() {
-          if (/SELECT id, score FROM scores/.test(sql)) {
+          if (/SELECT id, score, level FROM scores ORDER BY score DESC/.test(sql)) {
             const limit = stmt.args[0] ?? rows.length;
             return { results: [...rows].sort((a, b) => b.score - a.score).slice(0, limit) };
           }
-          if (/SELECT score FROM scores/.test(sql)) {
-            return { results: [...rows].sort((a, b) => b.score - a.score) };
+          if (/SELECT id, score, level FROM scores ORDER BY level DESC/.test(sql)) {
+            const limit = stmt.args[0] ?? rows.length;
+            return { results: [...rows].sort((a, b) => b.level - a.level).slice(0, limit) };
           }
           throw new Error("unexpected all(): " + sql);
         },
         async run() {
           if (/^INSERT INTO scores/.test(sql)) {
-            const [id, score, duration_ms, created_at, updated_at] = stmt.args;
-            rows.push({ id, score, duration_ms, created_at, updated_at });
+            const [id, score, level, duration_ms, created_at, updated_at] = stmt.args;
+            rows.push({ id, score, level, duration_ms, created_at, updated_at });
           } else if (/^UPDATE scores SET score/.test(sql)) {
-            const [score, duration_ms, updated_at, id] = stmt.args;
-            Object.assign(rows.find(r => r.id === id), { score, duration_ms, updated_at });
-          } else if (/^UPDATE scores SET updated_at/.test(sql)) {
-            const [updated_at, id] = stmt.args;
-            Object.assign(rows.find(r => r.id === id), { updated_at });
+            const [score, level, duration_ms, updated_at, id] = stmt.args;
+            Object.assign(rows.find(r => r.id === id), { score, level, duration_ms, updated_at });
           } else if (/^DELETE FROM scores/.test(sql)) {
             const i = rows.findIndex(r => r.id === stmt.args[0]);
             if (i >= 0) rows.splice(i, 1);
@@ -66,13 +67,16 @@ const post = (path, body) => new Request("https://api.test" + path, {
 });
 const get = (path) => new Request("https://api.test" + path, { headers: { Origin: ORIGIN } });
 
-const goodRun = (id, score = 500) => ({ id, score, durationMs: 120000 });
+const goodRun = (id, score = 500, level = 3) => ({ id, score, level, durationMs: 120000 });
 
 describe("POST /scores", () => {
-  it("accepts a plausible run and reports the rank", async () => {
+  it("accepts a plausible run and reports both boards' standing", async () => {
     const res = await worker.fetch(post("/scores", goodRun(uuid(1))), env);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ best: 500, rank: 1 });
+    expect(await res.json()).toEqual({
+      score: { rank: 1, best: 500 },
+      level: { rank: 1, best: 3 },
+    });
   });
 
   it("rejects a forged score", async () => {
@@ -81,8 +85,14 @@ describe("POST /scores", () => {
     expect(env.DB.rows).toHaveLength(0);
   });
 
+  it("rejects a forged level", async () => {
+    const res = await worker.fetch(post("/scores", goodRun(uuid(1), 500, 999999)), env);
+    expect(res.status).toBe(422);
+    expect(env.DB.rows).toHaveLength(0);
+  });
+
   it("rejects a score earned impossibly fast", async () => {
-    const req = post("/scores", { id: uuid(1), score: 50000, durationMs: L.minRunMs });
+    const req = post("/scores", { id: uuid(1), score: 50000, level: 5, durationMs: L.minRunMs });
     expect((await worker.fetch(req, env)).status).toBe(422);
   });
 
@@ -95,12 +105,34 @@ describe("POST /scores", () => {
     expect((await worker.fetch(post("/scores", "not json"), env)).status).toBe(400);
   });
 
-  it("keeps the player's best run, not their latest", async () => {
-    await worker.fetch(post("/scores", goodRun(uuid(1), 900)), env);
+  it("keeps the player's best score, not their latest", async () => {
+    await worker.fetch(post("/scores", goodRun(uuid(1), 900, 5)), env);
     env.DB.rows[0].updated_at -= L.submitCooldownMs;      // let the cooldown lapse
-    const res = await worker.fetch(post("/scores", goodRun(uuid(1), 100)), env);
-    expect(await res.json()).toMatchObject({ best: 900 });
+    const res = await worker.fetch(post("/scores", goodRun(uuid(1), 100, 5)), env);
+    expect(await res.json()).toMatchObject({ score: { best: 900 } });
     expect(env.DB.rows[0].score).toBe(900);
+  });
+
+  it("keeps the player's best level, not their latest, independently of score", async () => {
+    await worker.fetch(post("/scores", goodRun(uuid(1), 100, 8)), env);
+    env.DB.rows[0].updated_at -= L.submitCooldownMs;
+    // a later run with a *higher* score but a *lower* level must not drop the level
+    const res = await worker.fetch(post("/scores", goodRun(uuid(1), 900, 2)), env);
+    expect(await res.json()).toEqual({
+      score: { rank: 1, best: 900 },
+      level: { rank: 1, best: 8 },
+    });
+    expect(env.DB.rows[0]).toMatchObject({ score: 900, level: 8 });
+  });
+
+  it("keeps a low score's higher level even when the score does not improve", async () => {
+    await worker.fetch(post("/scores", goodRun(uuid(1), 900, 2)), env);
+    env.DB.rows[0].updated_at -= L.submitCooldownMs;
+    const res = await worker.fetch(post("/scores", goodRun(uuid(1), 100, 12)), env);
+    expect(await res.json()).toEqual({
+      score: { rank: 1, best: 900 },
+      level: { rank: 1, best: 12 },
+    });
   });
 
   it("stores one row per player, not one per run", async () => {
@@ -112,12 +144,12 @@ describe("POST /scores", () => {
 
   it("ranks a submission the way rankOf defines it, ties included", async () => {
     for (const [i, score] of [900, 900, 400].entries()) {
-      env.DB.rows.push({ id: uuid(90 + i), score, duration_ms: 120000, created_at: 0, updated_at: 0 });
+      env.DB.rows.push({ id: uuid(90 + i), score, level: 1, duration_ms: 120000, created_at: 0, updated_at: 0 });
     }
     const res = await worker.fetch(post("/scores", goodRun(uuid(1), 900)), env);
     const body = await res.json();
-    expect(body.rank).toBe(rankOf([900, 900, 900, 400], 900));   // shared definition
-    expect(body.rank).toBe(1);
+    expect(body.score.rank).toBe(rankOf([900, 900, 900, 400], 900));   // shared definition
+    expect(body.score.rank).toBe(1);
   });
 
   it("rate limits a player submitting in a loop", async () => {
@@ -129,20 +161,30 @@ describe("POST /scores", () => {
   it("stores nothing that identifies a person or a device", async () => {
     await worker.fetch(post("/scores", goodRun(uuid(1))), env);
     expect(Object.keys(env.DB.rows[0]).sort())
-      .toEqual(["created_at", "duration_ms", "id", "score", "updated_at"]);
+      .toEqual(["created_at", "duration_ms", "id", "level", "score", "updated_at"]);
   });
 });
 
 describe("GET /top", () => {
   beforeEach(async () => {
-    for (const [i, score] of [300, 900, 600].entries()) {
-      env.DB.rows.push({ id: uuid(i), score, duration_ms: 120000, created_at: 0, updated_at: 0 });
+    for (const [i, [score, level]] of [[300, 4], [900, 2], [600, 9]].entries()) {
+      env.DB.rows.push({ id: uuid(i), score, level, duration_ms: 120000, created_at: 0, updated_at: 0 });
     }
   });
 
-  it("returns the board highest first", async () => {
+  it("defaults to ranking by score, highest first", async () => {
     const rows = await (await worker.fetch(get("/top"), env)).json();
     expect(rows.map(r => r.score)).toEqual([900, 600, 300]);
+  });
+
+  it("ranks by level when asked", async () => {
+    const rows = await (await worker.fetch(get("/top?by=level"), env)).json();
+    expect(rows.map(r => r.level)).toEqual([9, 4, 2]);
+  });
+
+  it("every row carries both metrics, regardless of which one is sorting", async () => {
+    const rows = await (await worker.fetch(get("/top?by=level"), env)).json();
+    expect(rows[0]).toEqual({ tag: tagFor(uuid(2)), score: 600, level: 9 });
   });
 
   it("names players by a tag derived from their id", async () => {
@@ -153,14 +195,14 @@ describe("GET /top", () => {
   it("never leaks player ids", async () => {
     const body = await (await worker.fetch(get("/top"), env)).text();
     expect(body).not.toContain(uuid(1));
-    expect(JSON.parse(body).every(r => Object.keys(r).sort().join() === "score,tag")).toBe(true);
+    expect(JSON.parse(body).every(r => Object.keys(r).sort().join() === "level,score,tag")).toBe(true);
   });
 });
 
 describe("GET /top?limit=", () => {
   beforeEach(async () => {
     for (let i = 0; i < 30; i++) {
-      env.DB.rows.push({ id: uuid(i), score: 1000 - i, duration_ms: 120000, created_at: 0, updated_at: 0 });
+      env.DB.rows.push({ id: uuid(i), score: 1000 - i, level: 1, duration_ms: 120000, created_at: 0, updated_at: 0 });
     }
   });
 
@@ -192,20 +234,23 @@ describe("GET /rank", () => {
     expect(await res.json()).toBeNull();
   });
 
-  it("reports a joined player's own rank and best, without them submitting again", async () => {
-    await worker.fetch(post("/scores", goodRun(uuid(1), 500)), env);
+  it("reports a joined player's own rank and best on both boards, without them submitting again", async () => {
+    await worker.fetch(post("/scores", goodRun(uuid(1), 500, 7)), env);
     const res = await worker.fetch(get(`/rank?id=${uuid(1)}`), env);
-    expect(await res.json()).toEqual({ rank: 1, best: 500 });
+    expect(await res.json()).toEqual({
+      score: { rank: 1, best: 500 },
+      level: { rank: 1, best: 7 },
+    });
   });
 
   it("agrees with the rank a submission reports, ties included", async () => {
     for (const [i, score] of [900, 700, 700].entries()) {
-      env.DB.rows.push({ id: uuid(90 + i), score, duration_ms: 120000, created_at: 0, updated_at: 0 });
+      env.DB.rows.push({ id: uuid(90 + i), score, level: 1, duration_ms: 120000, created_at: 0, updated_at: 0 });
     }
-    const submitRank = (await (await worker.fetch(post("/scores", goodRun(uuid(1), 700)), env)).json()).rank;
+    const submitBody = await (await worker.fetch(post("/scores", goodRun(uuid(1), 700)), env)).json();
     const res = await worker.fetch(get(`/rank?id=${uuid(1)}`), env);
-    expect((await res.json()).rank).toBe(submitRank);
-    expect(submitRank).toBe(rankOf([900, 700, 700, 700], 700));   // shared definition
+    expect((await res.json()).score.rank).toBe(submitBody.score.rank);
+    expect(submitBody.score.rank).toBe(rankOf([900, 700, 700, 700], 700));   // shared definition
   });
 
   it("rejects an id that is not a UUID", async () => {
