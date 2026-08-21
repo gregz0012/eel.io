@@ -4259,35 +4259,120 @@
     ctx2d.restore();
   }
 
-  // The signature skin: a rib/spine skeleton whose brightness tracks the
-  // live zap charge and flares on a fresh zap (see Engine.chargeGlow) —
-  // reuses the "web" mark's spine-plus-perpendicular-ribs template, adapted
-  // to the shared screen-space points every fx function already walks.
+  // The signature skin: a stylised eel skeleton whose brightness tracks the
+  // live zap charge and flares on a fresh zap (see Engine.chargeGlow).
   // `glow` (0..1) is the one piece of real gameplay state any fx function
   // takes — every other finish is a pure function of the points/skin/time
   // alone, but X-Ray has nothing to show without it, and threading it as an
   // ordinary parameter (not a closure over shell state) keeps this function
-  // itself just as stateless and preview-safe as the rest.
-  function fxXray(ctx2d, pts, bodyLength, radius, skin, nowMs, glow = 0){
-    const g = Math.max(0, Math.min(1, glow));
-    ctx2d.save();
-    ctx2d.globalCompositeOperation = "lighter";
-    ctx2d.strokeStyle = `hsla(190,70%,88%,${0.25 + 0.55 * g})`;
-    ctx2d.lineWidth = Math.max(0.7, radius * 0.1);
+  // itself just as stateless and preview-safe as the rest. Split into three
+  // helpers per layer, each scaled by the same `g`: a dark body-dimming
+  // overlay, curved paired ribs concentrated in the front of the body, and
+  // a spine built from discrete tapering vertebrae rather than one line.
+
+  // Pushes the outer flesh further into the background relative to the
+  // bones — ordinary source-over compositing (not "lighter"), so it
+  // darkens what's already been drawn instead of adding light. Entirely
+  // self-contained here: the shared base-body pass has no per-skin alpha
+  // concept and stays untouched for every other skin.
+  function drawXrayGlow(ctx2d, pts, radius, g){
+    ctx2d.strokeStyle = `rgba(2,10,14,${0.38 + 0.06 * g})`;
+    ctx2d.lineWidth = radius * 1.9;
+    ctx2d.lineCap = "round"; ctx2d.lineJoin = "round";
     ctx2d.beginPath();
     pts.forEach((p, k) => k === 0 ? ctx2d.moveTo(p.x, p.y) : ctx2d.lineTo(p.x, p.y));
     ctx2d.stroke();
-    for (let k = pts.length - 1; k >= 1; k -= 3){
-      const p = pts[k], q = pts[k - 1];
+  }
+
+  // Paired curved ribs, front-weighted: only drawn while `t` (1 at head, 0
+  // at tail) sits above `cutoff`, fading in strength over `fadeBand` as `t`
+  // climbs away from it rather than starting abruptly — so the rib cage
+  // reads as occupying the front of the body and the tail reads as
+  // spine-only, per the issue's "ribs stop before the tail" requirement.
+  // Each rib bows outward via a control point offset both along the local
+  // normal and forward along the tangent, which is what makes it an arc
+  // rather than a straight bar out to the side.
+  function drawXrayRibs(ctx2d, pts, bodyLength, radius, g){
+    const n = pts.length;
+    if (n < 6) return;
+    const cutoff = 0.55, fadeBand = 0.18, step = 5;
+    ctx2d.save();
+    ctx2d.globalCompositeOperation = "lighter";
+    ctx2d.lineCap = "round";
+    for (let k = 1; k < n - 1; k += step){
+      const p = pts[k];
+      const t = 1 - p.i / bodyLength;
+      if (t < cutoff) continue;
+      const fadeIn = Math.min(1, (t - cutoff) / fadeBand);
+      const a = pts[k - 1], b = pts[k + 1];
+      const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len, tx = dx / len, ty = dy / len;
+      const r = radius * (0.35 + 0.65 * t);
+      const reach = r * (0.55 + 0.35 * fadeIn);
+      const bow = r * 0.25;
+      for (const side of [-1, 1]){
+        const midx = p.x + nx * reach * 0.6 * side + tx * bow;
+        const midy = p.y + ny * reach * 0.6 * side + ty * bow;
+        const endx = p.x + nx * reach * side, endy = p.y + ny * reach * side;
+        ctx2d.strokeStyle = `rgba(90,200,230,${(0.16 + 0.2 * g) * (0.4 + 0.6 * fadeIn)})`;
+        ctx2d.lineWidth = Math.max(0.8, r * (0.14 + 0.06 * fadeIn));
+        ctx2d.beginPath();
+        ctx2d.moveTo(p.x, p.y);
+        ctx2d.quadraticCurveTo(midx, midy, endx, endy);
+        ctx2d.stroke();
+        ctx2d.strokeStyle = `rgba(178,224,240,${(0.4 + 0.35 * g) * (0.4 + 0.6 * fadeIn)})`;
+        ctx2d.lineWidth = Math.max(0.5, r * (0.08 + 0.03 * fadeIn));
+        ctx2d.beginPath();
+        ctx2d.moveTo(p.x, p.y);
+        ctx2d.quadraticCurveTo(midx, midy, endx, endy);
+        ctx2d.stroke();
+      }
+    }
+    ctx2d.restore();
+  }
+
+  // The spine: a thin connective line underneath a run of small tapering
+  // vertebra shapes, each oriented to the local body tangent so they read
+  // as discrete bones rather than one continuous wire. Sampled coarser
+  // than every point so long eels don't turn into visual noise.
+  function drawXraySpine(ctx2d, pts, bodyLength, radius, g){
+    const n = pts.length;
+    if (n < 2) return;
+    ctx2d.strokeStyle = `rgba(178,224,240,${0.35 + 0.3 * g})`;
+    ctx2d.lineWidth = Math.max(0.6, radius * 0.05);
+    ctx2d.beginPath();
+    pts.forEach((p, k) => k === 0 ? ctx2d.moveTo(p.x, p.y) : ctx2d.lineTo(p.x, p.y));
+    ctx2d.stroke();
+
+    const step = 3;
+    ctx2d.save();
+    ctx2d.globalCompositeOperation = "lighter";
+    for (let k = 0; k < n; k += step){
+      const p = pts[k], q = pts[Math.min(n - 1, k + 1)];
       const t = 1 - p.i / bodyLength;
       const r = radius * (0.35 + 0.65 * t);
-      const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
-      const nx = -dy / len, ny = dx / len;
-      ctx2d.beginPath();
-      ctx2d.moveTo(p.x - nx * r * 0.85, p.y - ny * r * 0.85);
-      ctx2d.lineTo(p.x + nx * r * 0.85, p.y + ny * r * 0.85);
-      ctx2d.stroke();
+      const ang = Math.atan2(q.y - p.y, q.x - p.x);
+      const vw = Math.max(0.9, r * 0.28), vl = Math.max(0.7, r * 0.22);
+      ctx2d.save();
+      ctx2d.translate(p.x, p.y);
+      ctx2d.rotate(ang);
+      ctx2d.fillStyle = `rgba(90,200,230,${0.18 + 0.22 * g})`;
+      ctx2d.beginPath(); ctx2d.ellipse(0, 0, vl * 1.6, vw * 1.6, 0, 0, TAU); ctx2d.fill();
+      ctx2d.fillStyle = `rgba(178,224,240,${0.4 + 0.35 * g})`;
+      ctx2d.beginPath(); ctx2d.ellipse(0, 0, vl, vw, 0, 0, TAU); ctx2d.fill();
+      ctx2d.fillStyle = `rgba(235,248,255,${0.55 + 0.4 * g})`;
+      ctx2d.beginPath(); ctx2d.ellipse(0, 0, vl * 0.45, vw * 0.4, 0, 0, TAU); ctx2d.fill();
+      ctx2d.restore();
     }
+    ctx2d.restore();
+  }
+
+  function fxXray(ctx2d, pts, bodyLength, radius, skin, nowMs, glow = 0){
+    const g = Math.max(0, Math.min(1, glow));
+    ctx2d.save();
+    drawXrayGlow(ctx2d, pts, radius, g);
+    drawXrayRibs(ctx2d, pts, bodyLength, radius, g);
+    drawXraySpine(ctx2d, pts, bodyLength, radius, g);
     ctx2d.restore();
   }
 
