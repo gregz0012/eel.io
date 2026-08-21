@@ -522,6 +522,20 @@
         firstLevel: 2,          // levels below this are unguarded
         breatherMs: 6000,       // calm after a level-up before the next boss shows
         speedFactor: 0.72,      // slower than a predator: you can always disengage
+        ramKnockback: 30,       // world units the boss is pushed back per ram hit
+        hitCooldownMs: 600,     // gap enforced between ram hits on a stunned boss
+        hitGraceMs: 300,        // window right after a stun ends where contact
+                                 // neither kills nor counts as a hit — otherwise a
+                                 // stun that expires mid-collision kills for free
+      },
+    
+      // stun durations, shared by predators and rival eels alike. A zap knocks out
+      // anything in range regardless of size; a shield that absorbs a hit stuns
+      // back whatever landed it. The HUD reads these too, so they live here rather
+      // than as a magic number duplicated in draw code.
+      stun: {
+        zapMs: 3000,
+        shieldMs: 2000,
       },
     
       // per-level speed reward, capped so the eel stays controllable
@@ -1390,6 +1404,11 @@
   const FEAST_TARGET = 3;
   const PRESENT_TARGET = Engine.CONFIG.presents.target;
 
+  const ZAP_STUN_S = Engine.CONFIG.stun.zapMs / 1000;
+  const SHIELD_STUN_S = Engine.CONFIG.stun.shieldMs / 1000;
+  const BOSS_HIT_COOLDOWN_S = Engine.CONFIG.boss.hitCooldownMs / 1000;
+  const BOSS_HIT_GRACE_S = Engine.CONFIG.boss.hitGraceMs / 1000;
+
   /**
    * The player's own short name, for rivals to avoid colliding with.
    *
@@ -1447,7 +1466,7 @@
     const p2 = spawnAwayFromPlayer(800);
     p.x = p2.x; p.y = p2.y;
     predators.push({ x:p.x, y:p.y, a:rand(0,TAU), v:rand(1.15,1.55),
-                     r:rand(26,40), wanderA:rand(0,TAU), thinkT:0, stun:0,
+                     r:rand(26,40), wanderA:rand(0,TAU), thinkT:0, stun:0, grace:0,
                      tail:0, hue:rand(190,210), dead:false });
   }
   function addStar(){
@@ -1547,7 +1566,7 @@
     predators.push({ x: clamp(x + Math.cos(a)*d, 40, WORLD.w-40),
                      y: clamp(y + Math.sin(a)*d, 40, WORLD.h-40),
                      a: rand(0,TAU), v: rand(1.15,1.55),
-                     r: rand(26,40), wanderA: rand(0,TAU), thinkT: 0, stun: 0,
+                     r: rand(26,40), wanderA: rand(0,TAU), thinkT: 0, stun: 0, grace: 0,
                      tail: 0, hue: rand(190,210), dead: false });
   }
 
@@ -1623,7 +1642,7 @@
     const hp = Engine.bossHits(L);
     predators.push({ x:p.x, y:p.y, a:rand(0,TAU),
                      v:rand(.85,1.05) * Engine.CONFIG.boss.speedFactor,  // outrunnable, always
-                     r:rand(52,66), wanderA:rand(0,TAU), thinkT:0, stun:0,
+                     r:rand(52,66), wanderA:rand(0,TAU), thinkT:0, stun:0, grace:0,
                      tail:0, hue:rand(335,352), dead:false, boss:true, hp, maxHp:hp, hitCd:0 });
     bossAlert = 2.6;
   }
@@ -1646,7 +1665,7 @@
     // stun every predator in range and knock it back
     for (const p of predators){
       if (dist2(p.x, p.y, player.x, player.y) < R2){
-        p.stun = 3.0;
+        p.stun = ZAP_STUN_S; p.stunMax = ZAP_STUN_S;
         const a = Math.atan2(p.y - player.y, p.x - player.x);
         p.x += Math.cos(a) * 45; p.y += Math.sin(a) * 45;
       }
@@ -1654,7 +1673,7 @@
     // stun every eel in range, whatever its size
     for (const e of eels){
       if (!e.dead && dist2(e.x, e.y, player.x, player.y) < R2){
-        e.stun = 3.0;
+        e.stun = ZAP_STUN_S;
         burst(e.x, e.y, "#8ef3ff", 6, 3);
       }
     }
@@ -2061,7 +2080,7 @@
       if (e.dead) continue;
 
       if (e.stun > 0){
-        e.stun -= dt;                        // frozen by a shock — no move, but still edible
+        e.stun = Math.max(0, e.stun - dt);   // frozen by a shock — no move, but still edible
       } else {
         e.thinkT -= dt;
         if (e.thinkT <= 0){ e.wanderA += rand(-1,1); e.giveUp = Math.random() < 0.5; e.thinkT = rand(.5,1.4); }
@@ -2120,8 +2139,12 @@
       p.tail += dt*10;
       if (p.hitCd > 0) p.hitCd -= dt;
       if (p.stun > 0){
-        p.stun -= dt;                        // stunned by a shock — sitting duck
+        p.stun = Math.max(0, p.stun - dt);   // stunned by a shock — sitting duck
+        // grace starts the instant the stun runs out, so a boss that expires
+        // mid-collision gets a beat before contact can hurt anyone again
+        if (p.stun === 0) p.grace = BOSS_HIT_GRACE_S;
       } else {
+        if (p.grace > 0) p.grace -= dt;
         p.thinkT -= dt;
         if (p.thinkT <= 0){ p.wanderA += rand(-.7,.7); p.thinkT = rand(.7,1.6); }
         let target = p.wanderA;
@@ -2129,16 +2152,19 @@
         if (dpl < 300*300 && player.len < 220){ target = Math.atan2(player.y-p.y, player.x-p.x); }
         p.a = angLerp(p.a, target, 0.028);
         p.x += Math.cos(p.a)*p.v; p.y += Math.sin(p.a)*p.v;
-        p.x = clamp(p.x, 30, WORLD.w-30); p.y = clamp(p.y, 30, WORLD.h-30);
       }
+      // clamp to the world every frame, stunned or not — a zap or a ram hit can
+      // knock a stunned boss well past the edge, and skipping the clamp while
+      // stunned is exactly how it used to vanish off-map (#28)
+      p.x = clamp(p.x, 30, WORLD.w-30); p.y = clamp(p.y, 30, WORLD.h-30);
       // collision with player head (runs even while stunned)
       if (dist2(p.x,p.y,player.x,player.y) < (R+p.r)*(R+p.r)){
         if (p.stun > 0){
           if (p.boss){
             if (p.hitCd <= 0){
-              p.hp -= 1; p.hitCd = 0.6;
+              p.hp -= 1; p.hitCd = BOSS_HIT_COOLDOWN_S;
               const a = Math.atan2(p.y-player.y, p.x-player.x);
-              p.x += Math.cos(a)*55; p.y += Math.sin(a)*55;
+              p.x += Math.cos(a)*Engine.CONFIG.boss.ramKnockback; p.y += Math.sin(a)*Engine.CONFIG.boss.ramKnockback;
               burst(p.x, p.y, "#ffd166", 22, 6); shakeT = .25;
               grow(4); addScore(10);
               // as many hits as the level number, then the way opens
@@ -2148,7 +2174,11 @@
             killPredator(p, true);                    // devour a stunned predator
           }
         }
-        else if (shieldOn){ shieldOn = false; p.stun = 2; burst(player.x,player.y,"#ffd166",26,6); shakeT=.3; }
+        else if (p.grace > 0){
+          // a stun just wore off with the player still on top of it — neither
+          // a kill nor a free hit; give a beat to swim clear (#29)
+        }
+        else if (shieldOn){ shieldOn = false; p.stun = SHIELD_STUN_S; p.stunMax = SHIELD_STUN_S; burst(player.x,player.y,"#ffd166",26,6); shakeT=.3; }
         else { die(p.boss ? "the boss devoured you" : "a predator got you"); return; }
       }
     }
@@ -2782,6 +2812,14 @@
         ctx.save(); ctx.globalCompositeOperation="lighter";
         ctx.strokeStyle="rgba(230,80,200,0.55)"; ctx.lineWidth=2;
         ctx.beginPath(); ctx.arc(sx,sy,p.r*1.75,0,TAU); ctx.stroke();
+        // depleting stun ring: exactly how long the window to hit it stays
+        // open, drained clockwise from the top as p.stun counts down (#29)
+        if (p.stun > 0 && p.stunMax){
+          ctx.strokeStyle = "#8ef3ff"; ctx.lineWidth = 4;
+          ctx.beginPath();
+          ctx.arc(sx, sy, p.r*1.75, -Math.PI/2, -Math.PI/2 + TAU * (p.stun / p.stunMax));
+          ctx.stroke();
+        }
         ctx.restore();
         // A boss takes as many hits as its level, so by level 10 a row of pips
         // would be wider than the boss. Pips while they still read at a glance,
