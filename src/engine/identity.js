@@ -71,6 +71,30 @@ export function shortTagFor(id) {
   return tagFor(id).replace(/-\d+$/, "");
 }
 
+/**
+ * A short tag for a rival eel that is guaranteed not to be the player's own.
+ *
+ * There are only 64 adjectives x 63 nouns = 4,032 short tags, and the sea keeps
+ * fourteen rivals topped up for the whole dive, so a rival wearing the player's
+ * own name is not a freak event — it is a birthday-paradox certainty over a
+ * long session, and it happened in the first week of play. Seeing "yourself"
+ * swim past breaks the illusion these names exist to create.
+ *
+ * @param {() => number} rng      injected; the shell passes Math.random
+ * @param {string} excludedTag    the player's own short tag
+ */
+export function rivalTag(rng, excludedTag) {
+  // Bounded: the caller is an unconditional respawn loop, so this must always
+  // terminate even if the name pool were somehow exhausted. Ten tries makes a
+  // repeat collision vanishingly unlikely; the fallback is a suffixed name,
+  // which is still never equal to the excluded tag.
+  for (let i = 0; i < 10; i++) {
+    const tag = shortTagFor(String(rng()));
+    if (tag !== excludedTag) return tag;
+  }
+  return `${excludedTag}II`;
+}
+
 /** Shape check for a tag this code produced. */
 export function isWellFormedTag(tag) {
   return typeof tag === "string" && /^[A-Z][a-z]+[A-Z][a-z]+-\d{4}$/.test(tag);

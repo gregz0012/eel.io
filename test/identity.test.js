@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { tagFor, shortTagFor, isWellFormedTag, tagSpaceSize } from "../src/engine/identity.js";
+import { tagFor, shortTagFor, rivalTag, isWellFormedTag, tagSpaceSize } from "../src/engine/identity.js";
+import { seededRng } from "../src/engine/rng.js";
 
 const uuid = (n) => `0000${n}`.slice(-4) + "0000-0000-4000-8000-000000000000";
 
@@ -63,5 +64,48 @@ describe("shortTagFor", () => {
     const names = new Set();
     for (let i = 0; i < 200; i++) names.add(shortTagFor("eel" + i));
     expect(names.size).toBeGreaterThan(150);
+  });
+});
+
+describe("rivalTag", () => {
+  it("never hands a rival the player's own name", () => {
+    // Force the collision: an rng that always returns the same value would,
+    // without the guard, produce the excluded tag every single time.
+    const collidingSeed = 0.5;
+    const excluded = shortTagFor(String(collidingSeed));
+    expect(rivalTag(() => collidingSeed, excluded)).not.toBe(excluded);
+  });
+
+  it("never collides across a long dive's worth of respawns", () => {
+    const rng = seededRng(11);
+    const excluded = shortTagFor("player-id");
+    for (let i = 0; i < 5000; i++) {
+      expect(rivalTag(rng, excluded)).not.toBe(excluded);
+    }
+  });
+
+  it("still returns ordinary names when there is no collision", () => {
+    const rng = seededRng(3);
+    const tag = rivalTag(rng, "NotAnyRealTag");
+    expect(tag).toMatch(/^[A-Z][a-z]+[A-Z][a-z]+$/);
+  });
+
+  it("terminates and falls back when literally every roll collides", () => {
+    // An rng frozen on one value, with that value's own tag excluded: every
+    // one of the ten tries collides, so this only returns at all if the loop
+    // is bounded. The caller is an unconditional respawn loop — a spin here
+    // would hang the game.
+    const stuck = 0.4242;
+    const excluded = shortTagFor(String(stuck));
+    const tag = rivalTag(() => stuck, excluded);
+    expect(tag).not.toBe(excluded);
+    expect(tag).toBeTruthy();
+  });
+
+  it("gives rivals varied names, not one repeated", () => {
+    const rng = seededRng(5);
+    const names = new Set();
+    for (let i = 0; i < 200; i++) names.add(rivalTag(rng, "Excluded"));
+    expect(names.size).toBeGreaterThan(100);
   });
 });
