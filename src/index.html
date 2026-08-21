@@ -747,6 +747,12 @@
   const ZAP_COST = 1;      // full meter to fire
   let shieldCount = 0;   // how many shields are banked; see Engine.shieldCap
   let shakeT = 0, flashT = 0;
+  // Separate from flashT — that one also fires on level-ups and presents,
+  // which would flare X-Ray's skeleton for the wrong reasons. Same idiom
+  // (seconds, counted down by dt in update()); ZAP_FLASH_S is what a reader
+  // of chargeGlow's normalised 0..1 input divides by at the call site.
+  let zapFlashT = 0;
+  const ZAP_FLASH_S = 0.5;
   let toast = null;            // {text, colour, t} — what the last present held
 
   const FISH_TARGET = 280;
@@ -843,7 +849,7 @@
   function reset(){
     fish = []; eels = []; predators = []; stars = []; babies = []; feasts = []; presents = []; energy = [];
     particles = []; bubbles = [];
-    score = 0; level = 1; zap = 0.35; shieldCount = 0; shakeT = 0; flashT = 0;
+    score = 0; level = 1; zap = 0.35; shieldCount = 0; shakeT = 0; flashT = 0; zapFlashT = 0;
     predTarget = PRED_BASE; bossAlert = 0; toast = null;
     bossPending = 0; bossReady = false; levelStartScore = 0;
     levelBanner = 0;                    // every dive starts at level 1, unguarded
@@ -1134,7 +1140,7 @@
       particles.push({ x:player.x, y:player.y, vx:Math.cos(a)*7, vy:Math.sin(a)*7,
                        life:1, r:4, color:"#e9ffff" });
     }
-    shakeT = .35; flashT = .22;
+    shakeT = .35; flashT = .22; zapFlashT = ZAP_FLASH_S;
     fx("zapFire"); vibrate(50);
   }
 
@@ -2044,6 +2050,7 @@
 
     if (shakeT > 0) shakeT -= dt;
     if (flashT > 0) flashT -= dt;
+    if (zapFlashT > 0) zapFlashT -= dt;
     if (toast) { toast.t -= dt; if (toast.t <= 0) toast = null; }
     if (bossAlert > 0) bossAlert -= dt;
     if (levelBanner > 0) levelBanner -= dt;
@@ -2668,6 +2675,38 @@
     ctx2d.restore();
   }
 
+  // The signature skin: a rib/spine skeleton whose brightness tracks the
+  // live zap charge and flares on a fresh zap (see Engine.chargeGlow) —
+  // reuses the "web" mark's spine-plus-perpendicular-ribs template, adapted
+  // to the shared screen-space points every fx function already walks.
+  // `glow` (0..1) is the one piece of real gameplay state any fx function
+  // takes — every other finish is a pure function of the points/skin/time
+  // alone, but X-Ray has nothing to show without it, and threading it as an
+  // ordinary parameter (not a closure over shell state) keeps this function
+  // itself just as stateless and preview-safe as the rest.
+  function fxXray(ctx2d, pts, bodyLength, radius, skin, nowMs, glow = 0){
+    const g = Math.max(0, Math.min(1, glow));
+    ctx2d.save();
+    ctx2d.globalCompositeOperation = "lighter";
+    ctx2d.strokeStyle = `hsla(190,70%,88%,${0.25 + 0.55 * g})`;
+    ctx2d.lineWidth = Math.max(0.7, radius * 0.1);
+    ctx2d.beginPath();
+    pts.forEach((p, k) => k === 0 ? ctx2d.moveTo(p.x, p.y) : ctx2d.lineTo(p.x, p.y));
+    ctx2d.stroke();
+    for (let k = pts.length - 1; k >= 1; k -= 3){
+      const p = pts[k], q = pts[k - 1];
+      const t = 1 - p.i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      ctx2d.beginPath();
+      ctx2d.moveTo(p.x - nx * r * 0.85, p.y - ny * r * 0.85);
+      ctx2d.lineTo(p.x + nx * r * 0.85, p.y + ny * r * 0.85);
+      ctx2d.stroke();
+    }
+    ctx2d.restore();
+  }
+
   // One dispatch table for every themed finish — new skin.fx values register
   // here, nowhere else. Keyed by the exact string skins.js's catalogue uses.
   // `fade` and `iridescent` are deliberately absent: they modulate the body's
@@ -2676,12 +2715,12 @@
   const SKIN_FX = {
     ripple: fxWater, vortex: fxVortex, cracks: fxCracks, ember: fxEmber, arc: fxArc,
     spots: fxSpots, slime: fxSlime, sparkle: fxSparkle, molten: fxMolten,
-    afterimage: fxAfterimage, stars: fxStars,
+    afterimage: fxAfterimage, stars: fxStars, xray: fxXray,
   };
 
-  function drawSkinFx(ctx2d, pts, bodyLength, radius, skin, nowMs){
+  function drawSkinFx(ctx2d, pts, bodyLength, radius, skin, nowMs, glow){
     const draw = SKIN_FX[skin.fx];
-    if (draw) draw(ctx2d, pts, bodyLength, radius, skin, nowMs);
+    if (draw) draw(ctx2d, pts, bodyLength, radius, skin, nowMs, glow);
   }
 
   // The two finishes that touch the *base* stroke colour every skin already
@@ -2780,7 +2819,8 @@
       }
       if (sheen > 0) fxSheen(ctx, SKIN_FX_SCRATCH, body.length, radius, skin);
       if (gem) fxGemTwinkle(ctx, SKIN_FX_SCRATCH, 4, body.length, radius, skin, nowMs);
-      if (skin.fx) drawSkinFx(ctx, SKIN_FX_SCRATCH, body.length, radius, skin, nowMs);
+      if (skin.fx) drawSkinFx(ctx, SKIN_FX_SCRATCH, body.length, radius, skin, nowMs,
+        skin.fx === "xray" ? Engine.chargeGlow(zap, zapFlashT / ZAP_FLASH_S) : undefined);
     }
 
     // "swords": crossed on the back, a little way behind the head. Walk the
@@ -3460,7 +3500,10 @@
     // its array index, since the preview walks every point already)
     if (sheen > 0) fxSheen(pctx, body, body.length, radius, skin);
     if (gem) fxGemTwinkle(pctx, body, 3, body.length, radius, skin, previewNowMs);
-    if (skin.fx) drawSkinFx(pctx, body, body.length, radius, skin, previewNowMs);
+    if (skin.fx) drawSkinFx(pctx, body, body.length, radius, skin, previewNowMs,
+      // no real zap in the shop — a synthetic, slowly-oscillating charge lets
+      // the signature skin visibly breathe rather than sit at one brightness
+      skin.fx === "xray" ? Engine.chargeGlow(0.5 + 0.5 * Math.sin(previewNowMs * 0.0006), 0) : undefined);
 
     if (marks.includes("swords")){
       const at = body[7], back = body[12];
