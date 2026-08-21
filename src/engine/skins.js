@@ -56,20 +56,23 @@ export const SKINS = [
   { id: "ruby", tier: "gemstone",     name: "Ruby",     hue: 350, sat: 82, bodyLight: 36, headLight: 60, price: 7500, gem: true },
   { id: "diamond", tier: "gemstone",  name: "Diamond",  hue: 190, sat: 45, bodyLight: 58, headLight: 82, price: 7500, gem: true },
 
-  // two-tone heroes — the top of the shop
+  // two-tone heroes — the top of the shop. Each opens at its own depth now
+  // (see `minLevel` below `levelFor`) rather than sharing the hero tier's
+  // one Level 15 gate, so reaching the top of the shop is a ladder, not a
+  // single distant step.
   { id: "spider", tier: "hero",   name: "Spider",   hue: 352, sat: 84, bodyLight: 41, headLight: 49, price: 10000,
-    accent: { hue: 222, sat: 80, light: 31 }, accentRatio: 0.3, mark: "web" },
+    minLevel: 9, accent: { hue: 222, sat: 80, light: 31 }, accentRatio: 0.3, mark: "web" },
   { id: "eelwolf", tier: "hero",  name: "Eel-wolf", hue: 47,  sat: 94, bodyLight: 48, headLight: 62, price: 10000,
-    accent: { hue: 226, sat: 72, light: 20 }, accentRatio: 0.42, mark: "ears" },
+    minLevel: 10, accent: { hue: 226, sat: 72, light: 20 }, accentRatio: 0.42, mark: "ears" },
   // no banding: its white is the spider, the grin and the stare, and a banded
   // ring would only compete with them. Barely any saturation either — the body
   // taper adds up to 18% lightness towards the head, so a saturated hue turns
   // visibly purple there instead of staying tar-black. A little sheen gives it
   // the wet gloss tar has.
   { id: "symbiote", tier: "hero", name: "Eel-symbiote", hue: 250, sat: 9, bodyLight: 5, headLight: 8, price: 10000,
-    sheen: 0.3, mark: ["emblem", "stare"] },
+    minLevel: 11, sheen: 0.3, mark: ["emblem", "stare"] },
   { id: "eelpool", tier: "hero",  name: "Eel-pool", hue: 354, sat: 82, bodyLight: 38, headLight: 46, price: 10000,
-    accent: { hue: 0,   sat: 0,  light: 9 },  accentRatio: 0.3, mark: ["patch", "swords"] },
+    minLevel: 8, accent: { hue: 0,   sat: 0,  light: 9 },  accentRatio: 0.3, mark: ["patch", "swords"] },
 ];
 
 export const DEFAULT_SKIN_ID = "volt";
@@ -80,9 +83,10 @@ export const DEFAULT_SKIN_ID = "volt";
  * its wet gloss but belongs with the heroes, so inferring "metallic" from that
  * flag would file it in the wrong section.
  *
- * `minLevel` is the deepest level a player must have reached before the
- * section opens for business. Points alone are no longer enough: the shop is a
- * reason to go deeper, not just to grind fish in the shallows.
+ * `minLevel` is a section's *default* depth requirement — the one a skin in
+ * it falls back to if it does not name its own. Points alone are no longer
+ * enough: the shop is a reason to go deeper, not just to grind fish in the
+ * shallows.
  */
 export const TIERS = [
   { id: "standard", label: "Standard", minLevel: 2 },
@@ -95,9 +99,13 @@ export function skinsByTier(tier) {
   return SKINS.filter(s => s.tier === tier);
 }
 
-/** The deepest level a player needs before this skin can be bought. */
+/**
+ * The deepest level a player needs before this skin can be bought. A skin's
+ * own `minLevel` wins when it has one (the four heroes each open at their
+ * own depth now); otherwise it falls back to its section's default.
+ */
 export function levelFor(skin) {
-  return TIERS.find(t => t.id === skin?.tier)?.minLevel ?? 1;
+  return skin?.minLevel ?? TIERS.find(t => t.id === skin?.tier)?.minLevel ?? 1;
 }
 
 /**

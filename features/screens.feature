@@ -64,6 +64,13 @@ Feature: Screens, pausing and skins
     Then they do not own the gold skin
     And their bank holds 999999 points
 
+  Scenario: A hero opens at its own depth, not its section's shared level
+    Given a player with 999999 points banked who has only reached level 8
+    When they buy the eelpool skin
+    Then they own the eelpool skin
+    When they buy the symbiote skin
+    Then they do not own the symbiote skin
+
   Scenario: A bought skin is never lost, even when the bank empties
     Given a player with 2500 points banked
     When they buy the gold skin

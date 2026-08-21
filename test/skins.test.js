@@ -150,6 +150,54 @@ describe("the catalogue", () => {
   });
 });
 
+describe("per-skin level gating", () => {
+  it("lets a skin's own minLevel override its section's default", () => {
+    expect(skinById("eelpool").minLevel).toBe(8);
+    expect(levelFor(skinById("eelpool"))).toBe(8);
+    // the hero tier's own default (15) is still there for a skin that
+    // doesn't name its own, just not exercised by any hero any more
+    expect(TIERS.find(t => t.id === "hero").minLevel).toBe(15);
+  });
+
+  it("falls back to the section's default when a skin names no minLevel of its own", () => {
+    const gold = skinById("gold");
+    expect(gold.minLevel).toBeUndefined();
+    expect(levelFor(gold)).toBe(TIERS.find(t => t.id === "metallic").minLevel);
+  });
+
+  it("opens each hero at its own depth, not the shared tier level", () => {
+    expect(levelFor(skinById("eelpool"))).toBe(8);
+    expect(levelFor(skinById("spider"))).toBe(9);
+    expect(levelFor(skinById("eelwolf"))).toBe(10);
+    expect(levelFor(skinById("symbiote"))).toBe(11);
+  });
+
+  it("refuses a hero below its own level and quotes that level, not 15", () => {
+    const r = buySkin({ banked: 1e9, owned: [], bestLevel: 7 }, "eelpool");
+    expect(r.bought).toBe(false);
+    expect(r.reason).toContain("level 8");
+  });
+
+  it("sells a hero the moment its own level is reached", () => {
+    const eelpool = skinById("eelpool");
+    const r = buySkin({ banked: eelpool.price, owned: [], bestLevel: 8 }, "eelpool");
+    expect(r.bought).toBe(true);
+  });
+
+  it("a different hero stays sealed even once the first one opens", () => {
+    // level 8 opens Eel-pool but not Spider (9), Eel-wolf (10) or Eel-symbiote (11)
+    const r = buySkin({ banked: 1e9, owned: [], bestLevel: 8 }, "symbiote");
+    expect(r.bought).toBe(false);
+    expect(r.reason).toContain("level 11");
+  });
+
+  it("an owned hero stays wearable below its own level — buying gates, wearing never does", () => {
+    expect(wearableSkin("symbiote", ["symbiote"]).id).toBe("symbiote");
+    expect(meetsLevel(skinById("symbiote"), 1)).toBe(false); // couldn't buy it at level 1...
+    expect(wearableSkin("symbiote", ["symbiote"]).id).toBe("symbiote"); // ...but still wears it
+  });
+});
+
 describe("ownership", () => {
   it("a new player owns only the free colour", () => {
     expect(ownedSkins([]).map(s => s.id)).toEqual(free.map(s => s.id));
