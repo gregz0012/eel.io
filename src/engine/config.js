@@ -25,6 +25,20 @@ export const CONFIG = {
     firstLevel: 2,          // levels below this are unguarded
     breatherMs: 6000,       // calm after a level-up before the next boss shows
     speedFactor: 0.72,      // slower than a predator: you can always disengage
+    ramKnockback: 30,       // world units the boss is pushed back per ram hit
+    hitCooldownMs: 600,     // gap enforced between ram hits on a stunned boss
+    hitGraceMs: 300,        // window right after a stun ends where contact
+                             // neither kills nor counts as a hit — otherwise a
+                             // stun that expires mid-collision kills for free
+  },
+
+  // stun durations, shared by predators and rival eels alike. A zap knocks out
+  // anything in range regardless of size; a shield that absorbs a hit stuns
+  // back whatever landed it. The HUD reads these too, so they live here rather
+  // than as a magic number duplicated in draw code.
+  stun: {
+    zapMs: 3000,
+    shieldMs: 2000,
   },
 
   // per-level speed reward, capped so the eel stays controllable
