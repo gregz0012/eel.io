@@ -92,7 +92,7 @@ sent anywhere.
 - **Presents are a gamble.** Most are a treat; some are not — a nasty one costs you points or drops a predator on your tail, but nothing in a present can ever take a level off you.
 - **Mind your own tail.** Cross over yourself and you'll bite your own tail off, losing length and points.
 - **Getting eaten takes you back to the surface**, not straight into another dive — so you can change your eel before you go again.
-- **A calming break, every so often.** After about fifteen minutes of play, dying offers a short exercise — square breathing, or gathering a few kind words — worth 250 banked points. It's optional, never added to a run's score, and skipping it just leaves it waiting for next time.
+- **A calming break, every so often.** After about fifteen minutes of play, dying offers one of six short activities — square breathing, gathering a few kind words, a gentle stretch, popping a few gratitude bubbles, a Good Deed Quest (go and actually do one small kindness, with an uncapped "give me another" if the one offered doesn't fit right now), or Kind Choices (pick the kind response to a small everyday scenario — an unkind pick costs nothing and just asks you to try again) — worth 250 banked points. It's optional, never added to a run's score, and skipping it just leaves it waiting for next time.
 
 ## Run it locally
 
