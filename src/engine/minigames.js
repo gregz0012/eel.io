@@ -1,22 +1,41 @@
 import { CONFIG } from "./config.js";
+import { weightedPick } from "./rng.js";
 
-// Two short, screen-only calming exercises, offered after a long stretch of
-// play — see engine/progress.js for when one is due. Pure: every timing
-// question here takes elapsed time as an argument and never touches a clock
-// or Math.random directly, same rule as the rest of engine/.
+// Short, screen-only positive activities, offered after a long stretch of
+// play — see engine/progress.js for when one is due. Pure: every timing or
+// selection question here takes elapsed time or an rng as an argument and
+// never touches a clock or Math.random directly, same rule as the rest of
+// engine/.
 //
 // The reward for finishing one is banked points (CONFIG.miniGames.reward),
 // spendable on skins like any other points. It is never added to a run's
 // score, so it can never reach the leaderboard and the anti-cheat caps in
-// leaderboard.js need no loosening for it to exist.
+// leaderboard.js need no loosening for it to exist. No activity declares its
+// own reward — the flat CONFIG.miniGames.reward stays the single source of
+// truth for all of them, so none can be tuned into a farming loop by itself.
+//
+// This registry is what the shell iterates to draw the offer's title/sub and
+// to wire each activity's own screen — see MINI_GAME_VIEWS in src/index.html.
+export const MINI_GAMES = [
+  { id: "breathing", title: "TAKE A BREATH", sub: "a short, calm break",     weight: 1 },
+  { id: "words",     title: "KIND WORDS",    sub: "gather a few kind words", weight: 1 },
+];
+
+export function miniGameIds() {
+  return MINI_GAMES.map(g => g.id);
+}
+
+export function miniGameById(id) {
+  return MINI_GAMES.find(g => g.id === id) ?? MINI_GAMES[0];
+}
+
+/** Which activity to offer this time. */
+export function pickMiniGame(rng) {
+  return weightedPick(rng, MINI_GAMES).id;
+}
 
 const B = CONFIG.miniGames.breathing;
 const W = CONFIG.miniGames.words;
-
-/** Which exercise to offer this time. */
-export function pickMiniGame(rng) {
-  return rng() < 0.5 ? "breathing" : "words";
-}
 
 // Named so the shell never has to infer which hold it's in from context —
 // "hold after breathing in" and "hold after breathing out" look different
