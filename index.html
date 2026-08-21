@@ -1487,6 +1487,22 @@
       { id: "eelpool", tier: "hero",  name: "Eel-pool", hue: 354, sat: 82, bodyLight: 38, headLight: 46, price: 10000,
         minLevel: 8, accent: { hue: 0,   sat: 0,  light: 9 },  accentRatio: 0.3, mark: ["patch", "swords"],
         material: { type: "organic", strength: 0.6, scale: 1 } },
+    
+      // Legends — the top of the shop, above Heroes. Each has its own bespoke
+      // material rather than a tuned organic, so the collection reads as a
+      // deliberately different tier rather than four more colours. See the
+      // `material:` doc paragraph above for the full catalogue; the four here
+      // introduce chitin, scarred and worn, and reuse liquid (Eel-symbiote's own
+      // material) rather than forking it — Voidbond's extra "living surface"
+      // detail lives entirely in its fx, not in the material itself.
+      //
+      // A deep crimson/burgundy over charcoal, muted copper plating and silk —
+      // deliberately not a bright-red-and-blue palette. hue/sat/bodyLight sit
+      // darker and less saturated than Eel-pool's brighter red so the two never
+      // read as the same colour with different marks.
+      { id: "orbweaver", tier: "legend", name: "Orbweaver", hue: 350, sat: 58, bodyLight: 20, headLight: 28,
+        price: 12500, minLevel: 10, material: { type: "chitin", strength: 0.5, scale: 1 },
+        fx: "silk", mark: ["orbweave", "manyeyes"] },
     ];
     
     const DEFAULT_SKIN_ID = "volt";
@@ -1509,6 +1525,7 @@
       { id: "gemstone", label: "Gemstone", minLevel: 10 },
       { id: "special",  label: "Special",  minLevel: 6 },
       { id: "hero",     label: "Heroes",   minLevel: 15 },
+      { id: "legend",   label: "Legends",  minLevel: 10 },
     ];
     
     function skinsByTier(tier) {
@@ -1635,6 +1652,7 @@
       air: { strength: 0.5, scale: 1 },
       charged: { strength: 0.5, scale: 1 },
       liquid: { strength: 0.5, scale: 1 },
+      chitin: { strength: 0.5, scale: 1 },
     };
     
     const DEFAULT_MATERIAL = Object.freeze({ type: "organic", ...MATERIALS.organic });
@@ -3743,6 +3761,25 @@
     c.restore();
   }
 
+  // An original abstract dorsal marking for Orbweaver: two interlocking
+  // loops around a small hub, reading as an orb-web/hourglass silhouette at
+  // a glance — deliberately not a spider silhouette (that shape is
+  // Eel-symbiote's "emblem" alone) and not a literal radial orb web.
+  function drawOrbweaverMark(c, x, y, ang, size){
+    c.save();
+    c.translate(x, y); c.rotate(ang);
+    c.strokeStyle = "rgba(196,158,110,0.55)";
+    c.lineWidth = Math.max(1, size * 0.09);
+    for (const s of [-1, 1]){
+      c.beginPath();
+      c.ellipse(s * size * 0.32, 0, size * 0.34, size * 0.5, s * 0.5, 0, TAU);
+      c.stroke();
+    }
+    c.fillStyle = "rgba(196,158,110,0.7)";
+    c.beginPath(); c.arc(0, 0, size * 0.1, 0, TAU); c.fill();
+    c.restore();
+  }
+
   // ---------- skin finish effects, shared by the game canvas and the shop
   // preview ----------
   // Both canvases draw the same eel skins, so a metal's sheen or a gem's
@@ -4189,13 +4226,65 @@
     ctx2d.restore();
   }
 
+  // silk (Orbweaver): thin, asymmetric, irregularly-spaced strand arcs over
+  // portions of the body — a hashed midpoint bow on each keeps them curved
+  // rather than straight, and irregular span/spacing keeps this reading as
+  // naturally spun silk rather than the regular crosshatch grid "web"
+  // (Spider's own mark) already owns. Muted copper/pale warm ink, never
+  // white, so it never reads as a superhero web costume. A rare, fine
+  // bridge strand between two sampled points a fixed index-gap apart fires
+  // only when the body has curled tightly enough to bring them close in
+  // screen space *and* a low-probability hash passes — at most one per
+  // frame, no stored state, nothing that could accumulate. Reduced motion
+  // omits the bridge only; the body strands are already a static function
+  // of position, so they need no special-casing to freeze correctly.
+  function fxSilk(ctx2d, pts, bodyLength, radius, skin, nowMs){
+    const n = pts.length;
+    if (n < 8) return;
+    ctx2d.strokeStyle = "rgba(196,158,110,0.4)";
+    ctx2d.lineWidth = Math.max(0.5, radius * 0.05);
+    const strandCount = Math.max(3, Math.round(n / 20));
+    for (let j = 0; j < strandCount; j++){
+      const hash = (((Math.sin(j * 31.7 + bodyLength * 0.011) * 27431.5) % 1) + 1) % 1;
+      const spanHash = (((Math.sin(j * 9.3 + 4.1) * 8123.7) % 1) + 1) % 1;
+      const lo = Math.max(0, Math.min(n - 5, Math.floor(hash * (n - 6))));
+      const hi = Math.min(n - 1, lo + 3 + Math.floor(spanHash * 6));
+      if (hi <= lo + 1) continue;
+      const p0 = pts[lo], p2 = pts[hi];
+      const dx = p2.x - p0.x, dy = p2.y - p0.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      const side = hash > 0.5 ? 1 : -1;
+      const bow = side * (0.15 + spanHash * 0.35) * len;
+      const mx = (p0.x + p2.x) / 2 + nx * bow, my = (p0.y + p2.y) / 2 + ny * bow;
+      ctx2d.beginPath();
+      ctx2d.moveTo(p0.x, p0.y);
+      ctx2d.quadraticCurveTo(mx, my, p2.x, p2.y);
+      ctx2d.stroke();
+    }
+
+    if (!reduceMotion){
+      const gap = Math.max(6, Math.round(n / 6));
+      const step = Math.max(4, Math.round(n / 8));
+      for (let k = 0; k + gap < n; k += step){
+        const a = pts[k], b = pts[k + gap];
+        if (Math.hypot(a.x - b.x, a.y - b.y) > radius * 1.4) continue;
+        const hash = (((Math.sin(k * 7.13 + Math.floor(nowMs / 1400)) * 5871.3) % 1) + 1) % 1;
+        if (hash < 0.9) continue;
+        ctx2d.strokeStyle = "rgba(220,190,150,0.5)";
+        ctx2d.lineWidth = Math.max(0.4, radius * 0.03);
+        ctx2d.beginPath(); ctx2d.moveTo(a.x, a.y); ctx2d.lineTo(b.x, b.y); ctx2d.stroke();
+        break;
+      }
+    }
+  }
+
   // One dispatch table for every themed finish — new skin.fx values register
   // here, nowhere else. Keyed by the exact string skins.js's catalogue uses.
   // `fade` and `iridescent` are deliberately absent: they modulate the body's
   // own base stroke rather than layering on top of it, so they live in
   // bodyFxStyle beside the colour math they change, not here.
   const SKIN_FX = {
-    ripple: fxWater, vortex: fxVortex, cracks: fxCracks, ember: fxEmber, arc: fxArc,
+    ripple: fxWater, vortex: fxVortex, cracks: fxCracks, ember: fxEmber, arc: fxArc, silk: fxSilk,
     spots: fxSpots, slime: fxSlime, sparkle: fxSparkle, molten: fxMolten,
     afterimage: fxAfterimage, stars: fxStars, xray: fxXray,
   };
@@ -4390,6 +4479,23 @@
         ctx2d.beginPath();
         ctx2d.ellipse(radius*0.54, s*radius*0.55, radius*0.34, radius*0.22, s*-0.3, 0, TAU);
         ctx2d.fill();
+      }
+    } else if (marks.includes("manyeyes")){
+      // a narrow amber primary pair plus a few smaller secondary eye-spots —
+      // subtly spider-like without a large white superhero eye patch
+      ctx2d.fillStyle = "#ffb347";
+      for (const s of [-1, 1]){
+        ctx2d.beginPath();
+        ctx2d.ellipse(radius*0.55, s*radius*0.5, radius*0.28, radius*0.12, s*0.15, 0, TAU);
+        ctx2d.fill();
+      }
+      ctx2d.fillStyle = "rgba(255,179,71,0.75)";
+      for (const [dx, dy] of [[0.25,0.62],[0.15,0.78],[0.35,0.85]]){
+        for (const s of [-1, 1]){
+          ctx2d.beginPath();
+          ctx2d.arc(radius*dx, s*radius*dy, radius*0.07, 0, TAU);
+          ctx2d.fill();
+        }
       }
     } else {
       // eyes
@@ -4694,9 +4800,21 @@
     ctx2d.restore();
   }
 
+  // chitin (Orbweaver): plated surface via mottlePatches (PR X) in muted
+  // copper/bronze, restrained and unlit — no mirror-bright sheen the way
+  // brushedMetal gets one, so it still reads as living tissue rather than
+  // armour plating.
+  function matChitin(ctx2d, pts, bodyLength, radius, skin, nowMs, detail){
+    const m = Engine.resolveMaterial(skin);
+    const count = Math.max(3, Math.round(6 * m.strength * detail));
+    mottlePatches(ctx2d, pts, bodyLength, radius, count, hash =>
+      hash > 0.5 ? `hsla(28,55%,42%,${0.08 + 0.09 * m.strength})` : `rgba(0,0,0,${0.06 + 0.08 * m.strength})`);
+  }
+
   const SKIN_MATERIAL = {
     organic: matOrganic, brushedMetal: matBrushedMetal, stone: matStone, charred: matCharred,
     crystal: matCrystal, water: matWater, air: matAir, charged: matCharged, liquid: matLiquid,
+    chitin: matChitin,
   };
 
   // Falls back to organic for any unresolved type — a second, shell-side
@@ -4853,6 +4971,21 @@
       const [ex,ey] = worldToScreen(body[ei].x, body[ei].y);
       drawSymbioteSpider(ctx, ex, ey,
         Math.atan2(body[ei].y - back.y, body[ei].x - back.x), radius*0.8);
+    }
+
+    // "orbweave": Orbweaver's dorsal marking, sitting a little further back
+    // than "emblem" does — it's meant to read as a marking on the back
+    // proper, not right behind the head.
+    if (marks.includes("orbweave")){
+      let travelled = 0, oi = 0;
+      while (oi < body.length - 2 && travelled < radius*4){
+        travelled += Math.hypot(body[oi+1].x - body[oi].x, body[oi+1].y - body[oi].y);
+        oi++;
+      }
+      const back = body[Math.min(body.length - 1, oi + 5)];
+      const [ox,oy] = worldToScreen(body[oi].x, body[oi].y);
+      drawOrbweaverMark(ctx, ox, oy,
+        Math.atan2(body[oi].y - back.y, body[oi].x - back.x), radius*1.1);
     }
 
     // head
@@ -5444,6 +5577,12 @@
       const at = body[8], back = body[13];
       drawSymbioteSpider(pctx, at.x, at.y,
         Math.atan2(at.y - back.y, at.x - back.x), radius*0.8);
+    }
+
+    if (marks.includes("orbweave")){
+      const at = body[9], back = body[14];
+      drawOrbweaverMark(pctx, at.x, at.y,
+        Math.atan2(at.y - back.y, at.x - back.x), radius*1.1);
     }
 
     const head = body[0], neck = body[3];

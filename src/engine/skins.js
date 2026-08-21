@@ -181,6 +181,22 @@ export const SKINS = [
   { id: "eelpool", tier: "hero",  name: "Eel-pool", hue: 354, sat: 82, bodyLight: 38, headLight: 46, price: 10000,
     minLevel: 8, accent: { hue: 0,   sat: 0,  light: 9 },  accentRatio: 0.3, mark: ["patch", "swords"],
     material: { type: "organic", strength: 0.6, scale: 1 } },
+
+  // Legends — the top of the shop, above Heroes. Each has its own bespoke
+  // material rather than a tuned organic, so the collection reads as a
+  // deliberately different tier rather than four more colours. See the
+  // `material:` doc paragraph above for the full catalogue; the four here
+  // introduce chitin, scarred and worn, and reuse liquid (Eel-symbiote's own
+  // material) rather than forking it — Voidbond's extra "living surface"
+  // detail lives entirely in its fx, not in the material itself.
+  //
+  // A deep crimson/burgundy over charcoal, muted copper plating and silk —
+  // deliberately not a bright-red-and-blue palette. hue/sat/bodyLight sit
+  // darker and less saturated than Eel-pool's brighter red so the two never
+  // read as the same colour with different marks.
+  { id: "orbweaver", tier: "legend", name: "Orbweaver", hue: 350, sat: 58, bodyLight: 20, headLight: 28,
+    price: 12500, minLevel: 10, material: { type: "chitin", strength: 0.5, scale: 1 },
+    fx: "silk", mark: ["orbweave", "manyeyes"] },
 ];
 
 export const DEFAULT_SKIN_ID = "volt";
@@ -203,6 +219,7 @@ export const TIERS = [
   { id: "gemstone", label: "Gemstone", minLevel: 10 },
   { id: "special",  label: "Special",  minLevel: 6 },
   { id: "hero",     label: "Heroes",   minLevel: 15 },
+  { id: "legend",   label: "Legends",  minLevel: 10 },
 ];
 
 export function skinsByTier(tier) {
@@ -329,6 +346,7 @@ export const MATERIALS = {
   air: { strength: 0.5, scale: 1 },
   charged: { strength: 0.5, scale: 1 },
   liquid: { strength: 0.5, scale: 1 },
+  chitin: { strength: 0.5, scale: 1 },
 };
 
 const DEFAULT_MATERIAL = Object.freeze({ type: "organic", ...MATERIALS.organic });
