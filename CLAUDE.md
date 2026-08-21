@@ -65,7 +65,8 @@ eel.io/
 │   │   ├── session.js    # which screen we are on: home/playing/paused/over (pure)
 │   │   ├── bank.js       # banking a dive's score, and the dive fare (pure)
 │   │   ├── skins.js      # the skin catalogue and buying them (pure)
-│   │   ├── minigames.js  # square breathing, the kind-words tap game (pure)
+│   │   ├── minigames.js  # a registry of positive activities (square breathing,
+│   │   │                 #   the kind-words tap game, ...) — pure
 │   │   ├── progress.js   # cumulative playtime; when a mini-game is due (pure)
 │   │   ├── stats.js      # lifetime counters, folded in as events happen (pure)
 │   │   ├── achievements.js # a fixed catalogue checked against stats.js (pure)

@@ -573,12 +573,12 @@
       <button id="leaveBtn" class="quiet hidden">Leave the board</button>
     </div>
   </div>
-  <button id="miniGameOfferBtn" class="quiet hidden">Take a breather — earn 250</button>
+  <button id="miniGameOfferBtn" class="quiet hidden">A mindful moment — earn 250</button>
   <button id="againBtn">Back to the surface</button>
 </div>
 
 <div id="minigameScreen" class="overlay hidden">
-  <h1 id="miniGameTitle">TAKE A BREATH<span class="sub" id="miniGameSub">a short, calm break</span></h1>
+  <h1><span id="miniGameTitle">TAKE A BREATH</span><span class="sub" id="miniGameSub">a short, calm break</span></h1>
 
   <div id="breathingGame" class="hidden">
     <div id="breathSquare"><div id="breathDot"></div></div>
@@ -1441,19 +1441,53 @@
   // never added to a run's score, so it can never reach the leaderboard.
   let miniGameEarned = false;
 
+  // One entry per activity in Engine.MINI_GAMES: which DOM screen is theirs,
+  // what to do the instant they're picked, and what to do every animation
+  // frame while they're active. Adding an activity to the registry means
+  // adding one entry here — nothing else in the mini-game flow below needs
+  // to know how many activities exist.
+  const MINI_GAME_VIEWS = {
+    breathing: {
+      screen: "breathingGame",
+      start(){},
+      tick(elapsedMs){
+        const b = Engine.breathPhaseAt(elapsedMs);
+        const scale = { in: 0.35 + 0.65 * b.progress, holdIn: 1, out: 1 - 0.65 * b.progress, holdOut: 0.35 }[b.phase];
+        document.getElementById("breathDot").style.transform = `scale(${scale ?? 1})`;
+        document.getElementById("breathLabel").textContent = {
+          in: "Breathe in", holdIn: "Hold", out: "Breathe out", holdOut: "Hold",
+        }[b.phase] ?? "Breathe in";
+        if (b.done) completeMiniGame();
+      },
+    },
+    words: {
+      screen: "wordsGame",
+      start(){ renderWordCloud(); },
+      tick(){
+        const waiting = !Engine.canTapAt(lastWordTapAt, Date.now());
+        document.getElementById("wordCloud").classList.toggle("waiting", waiting);
+      },
+    },
+  };
+
+  function hideAllMiniGameSubScreens(){
+    for (const g of Engine.MINI_GAMES) show(MINI_GAME_VIEWS[g.id].screen, false);
+    show("miniGameDone", false);
+  }
+
   function startMiniGame(){
     miniGame = Engine.pickMiniGame(Math.random);
     miniGameStartedAt = Date.now();
     wordTaps = []; lastWordTapAt = null; miniGameEarned = false;
 
-    show("breathingGame", miniGame === "breathing");
-    show("wordsGame", miniGame === "words");
-    show("miniGameDone", false);
+    hideAllMiniGameSubScreens();
+    show(MINI_GAME_VIEWS[miniGame].screen, true);
     document.getElementById("skipMiniGameBtn").textContent = "Skip";
-    document.getElementById("miniGameSub").textContent =
-      miniGame === "breathing" ? "a short, calm break" : "gather a few kind words";
+    const g = Engine.miniGameById(miniGame);
+    document.getElementById("miniGameTitle").textContent = g.title;
+    document.getElementById("miniGameSub").textContent = g.sub;
 
-    if (miniGame === "words") renderWordCloud();
+    MINI_GAME_VIEWS[miniGame].start();
     startMiniGameLoop();
   }
 
@@ -1490,7 +1524,8 @@
 
   function completeMiniGame(){
     miniGameEarned = true;
-    show("breathingGame", false); show("wordsGame", false); show("miniGameDone", true);
+    hideAllMiniGameSubScreens();
+    show("miniGameDone", true);
     document.getElementById("miniGameReward").textContent = Engine.CONFIG.miniGames.reward;
     document.getElementById("skipMiniGameBtn").textContent = "Done";
   }
@@ -1511,18 +1546,7 @@
   function miniGameLoop(){
     if (phase !== "minigame"){ miniGameLoopRunning = false; return; }
 
-    if (miniGame === "breathing" && !miniGameEarned){
-      const b = Engine.breathPhaseAt(Date.now() - miniGameStartedAt);
-      const scale = { in: 0.35 + 0.65 * b.progress, holdIn: 1, out: 1 - 0.65 * b.progress, holdOut: 0.35 }[b.phase];
-      document.getElementById("breathDot").style.transform = `scale(${scale ?? 1})`;
-      document.getElementById("breathLabel").textContent = {
-        in: "Breathe in", holdIn: "Hold", out: "Breathe out", holdOut: "Hold",
-      }[b.phase] ?? "Breathe in";
-      if (b.done) completeMiniGame();
-    } else if (miniGame === "words" && !miniGameEarned){
-      const waiting = !Engine.canTapAt(lastWordTapAt, Date.now());
-      document.getElementById("wordCloud").classList.toggle("waiting", waiting);
-    }
+    if (!miniGameEarned) MINI_GAME_VIEWS[miniGame].tick(Date.now() - miniGameStartedAt);
 
     requestAnimationFrame(miniGameLoop);
   }

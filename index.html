@@ -573,12 +573,12 @@
       <button id="leaveBtn" class="quiet hidden">Leave the board</button>
     </div>
   </div>
-  <button id="miniGameOfferBtn" class="quiet hidden">Take a breather — earn 250</button>
+  <button id="miniGameOfferBtn" class="quiet hidden">A mindful moment — earn 250</button>
   <button id="againBtn">Back to the surface</button>
 </div>
 
 <div id="minigameScreen" class="overlay hidden">
-  <h1 id="miniGameTitle">TAKE A BREATH<span class="sub" id="miniGameSub">a short, calm break</span></h1>
+  <h1><span id="miniGameTitle">TAKE A BREATH</span><span class="sub" id="miniGameSub">a short, calm break</span></h1>
 
   <div id="breathingGame" class="hidden">
     <div id="breathSquare"><div id="breathDot"></div></div>
@@ -1388,23 +1388,41 @@
     }
 
     // ---- src/engine/minigames.js ----
-    // Two short, screen-only calming exercises, offered after a long stretch of
-    // play — see engine/progress.js for when one is due. Pure: every timing
-    // question here takes elapsed time as an argument and never touches a clock
-    // or Math.random directly, same rule as the rest of engine/.
+    // Short, screen-only positive activities, offered after a long stretch of
+    // play — see engine/progress.js for when one is due. Pure: every timing or
+    // selection question here takes elapsed time or an rng as an argument and
+    // never touches a clock or Math.random directly, same rule as the rest of
+    // engine/.
     //
     // The reward for finishing one is banked points (CONFIG.miniGames.reward),
     // spendable on skins like any other points. It is never added to a run's
     // score, so it can never reach the leaderboard and the anti-cheat caps in
-    // leaderboard.js need no loosening for it to exist.
+    // leaderboard.js need no loosening for it to exist. No activity declares its
+    // own reward — the flat CONFIG.miniGames.reward stays the single source of
+    // truth for all of them, so none can be tuned into a farming loop by itself.
+    //
+    // This registry is what the shell iterates to draw the offer's title/sub and
+    // to wire each activity's own screen — see MINI_GAME_VIEWS in src/index.html.
+    const MINI_GAMES = [
+      { id: "breathing", title: "TAKE A BREATH", sub: "a short, calm break",     weight: 1 },
+      { id: "words",     title: "KIND WORDS",    sub: "gather a few kind words", weight: 1 },
+    ];
+    
+    function miniGameIds() {
+      return MINI_GAMES.map(g => g.id);
+    }
+    
+    function miniGameById(id) {
+      return MINI_GAMES.find(g => g.id === id) ?? MINI_GAMES[0];
+    }
+    
+    /** Which activity to offer this time. */
+    function pickMiniGame(rng) {
+      return weightedPick(rng, MINI_GAMES).id;
+    }
     
     const B = CONFIG.miniGames.breathing;
     const W = CONFIG.miniGames.words;
-    
-    /** Which exercise to offer this time. */
-    function pickMiniGame(rng) {
-      return rng() < 0.5 ? "breathing" : "words";
-    }
     
     // Named so the shell never has to infer which hold it's in from context —
     // "hold after breathing in" and "hold after breathing out" look different
@@ -1609,7 +1627,7 @@
       return challengeProgress(challenge, stats, baselineStats) >= challenge.target;
     }
 
-    return { CONFIG, angleTo, distanceTo, seededRng, randInt, weightedPick, hash32, seedFromDate, addScore, completeLevel, bossHits, predatorTarget, isBossLevel, levelSpeed, shieldCap, tagFor, shortTagFor, rivalTag, isWellFormedTag, tagSpaceSize, validateSubmission, bestOf, rankOf, topRows, clampTopLimit, PHASES, nextPhase, canDo, isRunning, deposit, diveCost, payForDive, canAffordDive, SKINS, DEFAULT_SKIN_ID, TIERS, skinsByTier, levelFor, meetsLevel, skinById, isOwned, ownedSkins, canAfford, buySkin, wearableSkin, nextSkinToBuy, skinFromHue, skinStatus, PRESENT_KINDS, rollPresent, isKindGift, pickMiniGame, breathPhaseAt, canTapAt, wordsNeeded, isWordGameComplete, wordList, addPlayTime, miniGameDue, recordMiniGameReward, recordEvent, recordMax, statValue, ACHIEVEMENTS, isEarned, achievementById, checkAchievements, CHALLENGE_POOL, challengeForDate, challengeProgress, isChallengeComplete };
+    return { CONFIG, angleTo, distanceTo, seededRng, randInt, weightedPick, hash32, seedFromDate, addScore, completeLevel, bossHits, predatorTarget, isBossLevel, levelSpeed, shieldCap, tagFor, shortTagFor, rivalTag, isWellFormedTag, tagSpaceSize, validateSubmission, bestOf, rankOf, topRows, clampTopLimit, PHASES, nextPhase, canDo, isRunning, deposit, diveCost, payForDive, canAffordDive, SKINS, DEFAULT_SKIN_ID, TIERS, skinsByTier, levelFor, meetsLevel, skinById, isOwned, ownedSkins, canAfford, buySkin, wearableSkin, nextSkinToBuy, skinFromHue, skinStatus, PRESENT_KINDS, rollPresent, isKindGift, MINI_GAMES, miniGameIds, miniGameById, pickMiniGame, breathPhaseAt, canTapAt, wordsNeeded, isWordGameComplete, wordList, addPlayTime, miniGameDue, recordMiniGameReward, recordEvent, recordMax, statValue, ACHIEVEMENTS, isEarned, achievementById, checkAchievements, CHALLENGE_POOL, challengeForDate, challengeProgress, isChallengeComplete };
   })();
 
   const canvas = document.getElementById("game");
@@ -2450,19 +2468,53 @@
   // never added to a run's score, so it can never reach the leaderboard.
   let miniGameEarned = false;
 
+  // One entry per activity in Engine.MINI_GAMES: which DOM screen is theirs,
+  // what to do the instant they're picked, and what to do every animation
+  // frame while they're active. Adding an activity to the registry means
+  // adding one entry here — nothing else in the mini-game flow below needs
+  // to know how many activities exist.
+  const MINI_GAME_VIEWS = {
+    breathing: {
+      screen: "breathingGame",
+      start(){},
+      tick(elapsedMs){
+        const b = Engine.breathPhaseAt(elapsedMs);
+        const scale = { in: 0.35 + 0.65 * b.progress, holdIn: 1, out: 1 - 0.65 * b.progress, holdOut: 0.35 }[b.phase];
+        document.getElementById("breathDot").style.transform = `scale(${scale ?? 1})`;
+        document.getElementById("breathLabel").textContent = {
+          in: "Breathe in", holdIn: "Hold", out: "Breathe out", holdOut: "Hold",
+        }[b.phase] ?? "Breathe in";
+        if (b.done) completeMiniGame();
+      },
+    },
+    words: {
+      screen: "wordsGame",
+      start(){ renderWordCloud(); },
+      tick(){
+        const waiting = !Engine.canTapAt(lastWordTapAt, Date.now());
+        document.getElementById("wordCloud").classList.toggle("waiting", waiting);
+      },
+    },
+  };
+
+  function hideAllMiniGameSubScreens(){
+    for (const g of Engine.MINI_GAMES) show(MINI_GAME_VIEWS[g.id].screen, false);
+    show("miniGameDone", false);
+  }
+
   function startMiniGame(){
     miniGame = Engine.pickMiniGame(Math.random);
     miniGameStartedAt = Date.now();
     wordTaps = []; lastWordTapAt = null; miniGameEarned = false;
 
-    show("breathingGame", miniGame === "breathing");
-    show("wordsGame", miniGame === "words");
-    show("miniGameDone", false);
+    hideAllMiniGameSubScreens();
+    show(MINI_GAME_VIEWS[miniGame].screen, true);
     document.getElementById("skipMiniGameBtn").textContent = "Skip";
-    document.getElementById("miniGameSub").textContent =
-      miniGame === "breathing" ? "a short, calm break" : "gather a few kind words";
+    const g = Engine.miniGameById(miniGame);
+    document.getElementById("miniGameTitle").textContent = g.title;
+    document.getElementById("miniGameSub").textContent = g.sub;
 
-    if (miniGame === "words") renderWordCloud();
+    MINI_GAME_VIEWS[miniGame].start();
     startMiniGameLoop();
   }
 
@@ -2499,7 +2551,8 @@
 
   function completeMiniGame(){
     miniGameEarned = true;
-    show("breathingGame", false); show("wordsGame", false); show("miniGameDone", true);
+    hideAllMiniGameSubScreens();
+    show("miniGameDone", true);
     document.getElementById("miniGameReward").textContent = Engine.CONFIG.miniGames.reward;
     document.getElementById("skipMiniGameBtn").textContent = "Done";
   }
@@ -2520,18 +2573,7 @@
   function miniGameLoop(){
     if (phase !== "minigame"){ miniGameLoopRunning = false; return; }
 
-    if (miniGame === "breathing" && !miniGameEarned){
-      const b = Engine.breathPhaseAt(Date.now() - miniGameStartedAt);
-      const scale = { in: 0.35 + 0.65 * b.progress, holdIn: 1, out: 1 - 0.65 * b.progress, holdOut: 0.35 }[b.phase];
-      document.getElementById("breathDot").style.transform = `scale(${scale ?? 1})`;
-      document.getElementById("breathLabel").textContent = {
-        in: "Breathe in", holdIn: "Hold", out: "Breathe out", holdOut: "Hold",
-      }[b.phase] ?? "Breathe in";
-      if (b.done) completeMiniGame();
-    } else if (miniGame === "words" && !miniGameEarned){
-      const waiting = !Engine.canTapAt(lastWordTapAt, Date.now());
-      document.getElementById("wordCloud").classList.toggle("waiting", waiting);
-    }
+    if (!miniGameEarned) MINI_GAME_VIEWS[miniGame].tick(Date.now() - miniGameStartedAt);
 
     requestAnimationFrame(miniGameLoop);
   }

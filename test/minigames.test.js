@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
-  pickMiniGame, breathPhaseAt, canTapAt, wordsNeeded, isWordGameComplete, wordList,
+  MINI_GAMES, miniGameIds, miniGameById, pickMiniGame,
+  breathPhaseAt, canTapAt, wordsNeeded, isWordGameComplete, wordList,
 } from "../src/engine/minigames.js";
 import { seededRng } from "../src/engine/rng.js";
 import { CONFIG } from "../src/engine/config.js";
@@ -8,22 +9,42 @@ import { CONFIG } from "../src/engine/config.js";
 const B = CONFIG.miniGames.breathing;
 const W = CONFIG.miniGames.words;
 
+describe("MINI_GAMES", () => {
+  it("gives every activity a unique id, a title, a subtitle and a positive weight", () => {
+    expect(new Set(miniGameIds()).size).toBe(MINI_GAMES.length);
+    for (const g of MINI_GAMES) {
+      expect(g.id).toEqual(expect.any(String));
+      expect(g.title).toEqual(expect.any(String));
+      expect(g.sub).toEqual(expect.any(String));
+      expect(g.weight).toBeGreaterThan(0);
+    }
+  });
+
+  it("declares no reward of its own — CONFIG.miniGames.reward is the one source of truth", () => {
+    for (const g of MINI_GAMES) expect(g.reward).toBeUndefined();
+  });
+
+  it("looks an activity up by id, falling back to the first for an unknown one", () => {
+    expect(miniGameById("words").id).toBe("words");
+    expect(miniGameById("nonexistent")).toBe(MINI_GAMES[0]);
+  });
+});
+
 describe("pickMiniGame", () => {
-  it("only ever picks a known exercise", () => {
+  it("only ever picks a registered activity", () => {
     const rng = seededRng(1);
-    for (let i = 0; i < 50; i++) expect(["breathing", "words"]).toContain(pickMiniGame(rng));
+    for (let i = 0; i < 50; i++) expect(miniGameIds()).toContain(pickMiniGame(rng));
   });
 
-  it("is deterministic for a given roll", () => {
-    expect(pickMiniGame(() => 0)).toBe("breathing");
-    expect(pickMiniGame(() => 0.99)).toBe("words");
+  it("is deterministic for a given roll — the lowest roll picks the first activity", () => {
+    expect(pickMiniGame(() => 0)).toBe(MINI_GAMES[0].id);
   });
 
-  it("picks both, given enough rolls", () => {
+  it("picks every registered activity, given enough rolls", () => {
     const rng = seededRng(7);
     const seen = new Set();
-    for (let i = 0; i < 50; i++) seen.add(pickMiniGame(rng));
-    expect(seen.size).toBe(2);
+    for (let i = 0; i < 200; i++) seen.add(pickMiniGame(rng));
+    expect(seen.size).toBe(MINI_GAMES.length);
   });
 });
 
