@@ -74,6 +74,19 @@ export const SKINS = [
   { id: "ruby", tier: "gemstone",     name: "Ruby",     hue: 350, sat: 82, bodyLight: 36, headLight: 60, price: 7500, gem: true },
   { id: "diamond", tier: "gemstone",  name: "Diamond",  hue: 190, sat: 45, bodyLight: 58, headLight: 82, price: 7500, gem: true },
 
+  // the special finishes — the four here are each a variant of an Elements
+  // effect (biolume from Water's dots, toxic from its bubble trail, frost
+  // from the gems' twinkle, lava from Earth's cracks), priced and gated the
+  // same theme-first way the Elements are
+  { id: "biolume", tier: "special", name: "Bioluminescent", hue: 178, sat: 75, bodyLight: 10, headLight: 18, price: 6000,
+    minLevel: 6, fx: "spots" },
+  { id: "toxic", tier: "special", name: "Toxic", hue: 82, sat: 70, bodyLight: 26, headLight: 40, price: 7000,
+    minLevel: 7, fx: "slime" },
+  { id: "frost", tier: "special", name: "Frost", hue: 198, sat: 40, bodyLight: 62, headLight: 90, price: 7500,
+    minLevel: 8, fx: "sparkle" },
+  { id: "lava", tier: "special", name: "Lava", hue: 14, sat: 60, bodyLight: 10, headLight: 16, price: 9000,
+    minLevel: 9, fx: "molten" },
+
   // two-tone heroes — the top of the shop. Each opens at its own depth now
   // (see `minLevel` below `levelFor`) rather than sharing the hero tier's
   // one Level 15 gate, so reaching the top of the shop is a ladder, not a
@@ -111,6 +124,7 @@ export const TIERS = [
   { id: "metallic", label: "Metallic", minLevel: 5 },
   { id: "element",  label: "Elements", minLevel: 4 },
   { id: "gemstone", label: "Gemstone", minLevel: 10 },
+  { id: "special",  label: "Special",  minLevel: 6 },
   { id: "hero",     label: "Heroes",   minLevel: 15 },
 ];
 

@@ -17,12 +17,13 @@ describe("the catalogue", () => {
     expect(free[0].id).toBe(DEFAULT_SKIN_ID);
   });
 
-  it("sells the rest: colours, then metals, then elements, then gems, then heroes", () => {
+  it("sells the rest: colours, then metals, then elements, then gems, then specials, then heroes", () => {
     expect(paid.map(s => s.id)).toEqual([
       "coral", "orchid", "sky", "lime",
       "copper", "iron", "gold", "platinum",
       "water", "air", "earth", "fire", "lightning",
       "emerald", "ruby", "diamond",
+      "biolume", "toxic", "frost", "lava",
       "spider", "eelwolf", "symbiote", "eelpool",
     ]);
   });
@@ -85,7 +86,8 @@ describe("the catalogue", () => {
   it("only ever names an fx the renderer knows how to draw", () => {
     for (const s of SKINS) {
       if (s.fx === undefined) continue;
-      expect(["ripple", "vortex", "cracks", "ember", "arc"]).toContain(s.fx);
+      expect(["ripple", "vortex", "cracks", "ember", "arc", "spots", "slime", "sparkle", "molten"])
+        .toContain(s.fx);
     }
   });
 
@@ -105,13 +107,15 @@ describe("the catalogue", () => {
       .toEqual(["water", "air", "earth", "fire", "lightning"]);
     expect(skinsByTier("gemstone").map(s => s.id))
       .toEqual(["emerald", "ruby", "diamond"]);
+    expect(skinsByTier("special").map(s => s.id))
+      .toEqual(["biolume", "toxic", "frost", "lava"]);
     expect(skinsByTier("hero").map(s => s.id))
       .toEqual(["spider", "eelwolf", "symbiote", "eelpool"]);
   });
 
   it("lists the shop's sections in the order a player browses them", () => {
     expect(TIERS.map(t => t.id))
-      .toEqual(["standard", "metallic", "element", "gemstone", "hero"]);
+      .toEqual(["standard", "metallic", "element", "gemstone", "special", "hero"]);
   });
 
   it("keeps Eel-symbiote with the heroes despite its sheen", () => {
@@ -162,12 +166,14 @@ describe("the catalogue", () => {
     }
   });
 
-  it("deepens each element as it gets more dramatic to look at", () => {
+  it("deepens each element and special skin as it gets more dramatic to look at", () => {
     // price and level ascend together within the section, same shape as the
     // per-section price test above, but for the depth requirement
-    const levels = skinsByTier("element").map(s => s.minLevel);
-    expect([...levels].sort((a, b) => a - b)).toEqual(levels);
-    for (const s of skinsByTier("element")) expect(s.minLevel).toEqual(expect.any(Number));
+    for (const tierId of ["element", "special"]) {
+      const levels = skinsByTier(tierId).map(s => s.minLevel);
+      expect([...levels].sort((a, b) => a - b)).toEqual(levels);
+      for (const s of skinsByTier(tierId)) expect(s.minLevel).toEqual(expect.any(Number));
+    }
   });
 
   it("has no duplicate ids", () => {
@@ -249,6 +255,19 @@ describe("per-skin level gating", () => {
     const water = skinById("water");
     const r = buySkin({ banked: water.price, owned: [], bestLevel: 4 }, "water");
     expect(r.bought).toBe(true);
+  });
+
+  it("opens each special skin at its own depth", () => {
+    expect(levelFor(skinById("biolume"))).toBe(6);
+    expect(levelFor(skinById("toxic"))).toBe(7);
+    expect(levelFor(skinById("frost"))).toBe(8);
+    expect(levelFor(skinById("lava"))).toBe(9);
+  });
+
+  it("refuses Lava below level 9 and quotes its own level", () => {
+    const r = buySkin({ banked: 1e9, owned: [], bestLevel: 8 }, "lava");
+    expect(r.bought).toBe(false);
+    expect(r.reason).toContain("level 9");
   });
 });
 
