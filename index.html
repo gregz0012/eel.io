@@ -545,9 +545,11 @@
           { kind: "points",    weight: 30, min: 40, max: 260 },
           { kind: "starfish",  weight: 20 },
           { kind: "zap",       weight: 20 },
-          { kind: "pointsLost", weight: 12, min: 30, max: 150 },
-          { kind: "predator",  weight: 12 },
-          { kind: "levelDown", weight: 6 },
+          // 15 each rather than 12: taking a level away used to carry the last 6
+          // points of "bad", and its share moved here when it was retired, so the
+          // 70/30 split above still holds.
+          { kind: "pointsLost", weight: 15, min: 30, max: 150 },
+          { kind: "predator",  weight: 15 },
         ],
       },
     
@@ -685,29 +687,6 @@
      */
     function bossHits(level) {
       return Math.max(1, level);
-    }
-    
-    /**
-     * Take a level away — the one thing that can lower it.
-     *
-     * Below the cap, dropping the level alone would be undone by the next fish
-     * eaten: addScore recomputes the level from the score and would put it straight
-     * back. So down there a deduction also drops the score to the floor of the
-     * level below, keeping the two consistent. At or above the cap the score no
-     * longer feeds the level at all, so a plain decrement already sticks and there
-     * is no reason to take a player's points as well.
-     *
-     * Losing a level means its boss must be beaten again — the shell re-arms it on
-     * the level-up path like any other. Only a present can reach this (see
-     * engine/presents.js); nothing else may call it.
-     */
-    function deductLevel(state) {
-      const level = Math.max(1, state.level - 1);
-      if (level === state.level) return { score: state.score, level };
-      const score = level < CONFIG.scoreLevelCap
-        ? Math.min(state.score, (level - 1) * CONFIG.pointsPerLevel)
-        : state.score;
-      return { score, level };
     }
     
     /** How many predators should be hunting at this level. */
@@ -1325,7 +1304,7 @@
       return { playedMs: state?.playedMs ?? 0, lastRewardAtMs: state?.playedMs ?? 0 };
     }
 
-    return { CONFIG, seededRng, randInt, weightedPick, addScore, completeLevel, bossHits, deductLevel, predatorTarget, isBossLevel, levelSpeed, tagFor, shortTagFor, rivalTag, isWellFormedTag, tagSpaceSize, validateSubmission, bestOf, rankOf, topRows, clampTopLimit, PHASES, nextPhase, canDo, isRunning, deposit, diveCost, payForDive, canAffordDive, SKINS, DEFAULT_SKIN_ID, TIERS, skinsByTier, levelFor, meetsLevel, skinById, isOwned, ownedSkins, canAfford, buySkin, wearableSkin, nextSkinToBuy, skinFromHue, skinStatus, PRESENT_KINDS, rollPresent, isKindGift, pickMiniGame, breathPhaseAt, canTapAt, wordsNeeded, isWordGameComplete, wordList, addPlayTime, miniGameDue, recordMiniGameReward };
+    return { CONFIG, seededRng, randInt, weightedPick, addScore, completeLevel, bossHits, predatorTarget, isBossLevel, levelSpeed, tagFor, shortTagFor, rivalTag, isWellFormedTag, tagSpaceSize, validateSubmission, bestOf, rankOf, topRows, clampTopLimit, PHASES, nextPhase, canDo, isRunning, deposit, diveCost, payForDive, canAffordDive, SKINS, DEFAULT_SKIN_ID, TIERS, skinsByTier, levelFor, meetsLevel, skinById, isOwned, ownedSkins, canAfford, buySkin, wearableSkin, nextSkinToBuy, skinFromHue, skinStatus, PRESENT_KINDS, rollPresent, isKindGift, pickMiniGame, breathPhaseAt, canTapAt, wordsNeeded, isWordGameComplete, wordList, addPlayTime, miniGameDue, recordMiniGameReward };
   })();
 
   const canvas = document.getElementById("game");
@@ -1556,13 +1535,6 @@
       spawnPredatorNear(player.x, player.y);
       showToast("A predator! Swim!", "#ff5d6c");
       shakeT = .35;
-    } else if (kind === "levelDown"){
-      const after = Engine.deductLevel({ score, level });
-      score = after.score;
-      level = after.level;
-      predTarget = Engine.predatorTarget(level);   // the perks go with it
-      showToast("You dropped a level", "#ff5d6c");
-      shakeT = .35;
     }
   }
 
@@ -1642,9 +1614,10 @@
 
   function spawnBoss(L){
     // Only ever one at a time — but wait and retry rather than dropping the
-    // spawn. A present can take a level while its boss is still swimming, and
-    // silently skipping the spawn would strand the player on a level with no
-    // boss left to kill and therefore no way up, forever.
+    // spawn. onLevelUp can in principle fire again (e.g. stacked level-ups)
+    // while the current boss is still swimming, and silently skipping the
+    // spawn would strand the player on a level with no boss left to kill and
+    // therefore no way up, forever.
     if (predators.some(p => p.boss && !p.dead)){ bossPending = 1; return; }
     const p = spawnAwayFromPlayer(950);
     const hp = Engine.bossHits(L);
@@ -2286,8 +2259,8 @@
       bossPending -= dt;
       if (bossPending <= 0){
         bossPending = 0;
-        // check the level again on arrival: a present may have dropped the
-        // player back below the first guarded level while this was counting down
+        // check the level again on arrival: cheap insurance against the
+        // guarded-level boundary ever moving underneath a pending breather
         if (Engine.isBossLevel(level)) spawnBoss(level);
       }
     }

@@ -722,13 +722,6 @@
       spawnPredatorNear(player.x, player.y);
       showToast("A predator! Swim!", "#ff5d6c");
       shakeT = .35;
-    } else if (kind === "levelDown"){
-      const after = Engine.deductLevel({ score, level });
-      score = after.score;
-      level = after.level;
-      predTarget = Engine.predatorTarget(level);   // the perks go with it
-      showToast("You dropped a level", "#ff5d6c");
-      shakeT = .35;
     }
   }
 
@@ -808,9 +801,10 @@
 
   function spawnBoss(L){
     // Only ever one at a time — but wait and retry rather than dropping the
-    // spawn. A present can take a level while its boss is still swimming, and
-    // silently skipping the spawn would strand the player on a level with no
-    // boss left to kill and therefore no way up, forever.
+    // spawn. onLevelUp can in principle fire again (e.g. stacked level-ups)
+    // while the current boss is still swimming, and silently skipping the
+    // spawn would strand the player on a level with no boss left to kill and
+    // therefore no way up, forever.
     if (predators.some(p => p.boss && !p.dead)){ bossPending = 1; return; }
     const p = spawnAwayFromPlayer(950);
     const hp = Engine.bossHits(L);
@@ -1452,8 +1446,8 @@
       bossPending -= dt;
       if (bossPending <= 0){
         bossPending = 0;
-        // check the level again on arrival: a present may have dropped the
-        // player back below the first guarded level while this was counting down
+        // check the level again on arrival: cheap insurance against the
+        // guarded-level boundary ever moving underneath a pending breather
         if (Engine.isBossLevel(level)) spawnBoss(level);
       }
     }

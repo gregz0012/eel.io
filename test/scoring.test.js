@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  addScore, completeLevel, bossHits, deductLevel, predatorTarget, isBossLevel, levelSpeed,
+  addScore, completeLevel, bossHits, predatorTarget, isBossLevel, levelSpeed,
 } from "../src/engine/scoring.js";
 import { CONFIG } from "../src/engine/config.js";
 
@@ -43,34 +43,6 @@ describe("addScore", () => {
     const before = { score: 0, level: 1 };
     addScore(before, 500);
     expect(before).toEqual({ score: 0, level: 1 });
-  });
-});
-
-describe("deductLevel", () => {
-  it("takes one level", () => {
-    expect(deductLevel({ score: 640, level: 6 }).level).toBe(5);
-  });
-
-  it("leaves the score alone above the cap, where points cannot buy levels back", () => {
-    const after = deductLevel({ score: 640, level: 6 });
-    expect(after.score).toBe(640);         // no reason to take the points too
-    expect(addScore(after, 1).level).toBe(5);
-  });
-
-  it("drops the score below the cap, where the next fish would undo the loss", () => {
-    const after = deductLevel({ score: 400, level: 2 });
-    expect(after.level).toBe(1);
-    expect(after.score).toBe(0);           // floor of level 1
-    expect(addScore(after, 1).level).toBe(1);
-  });
-
-  it("cannot take a player below level one", () => {
-    const after = deductLevel({ score: 50, level: 1 });
-    expect(after).toEqual({ score: 50, level: 1 });
-  });
-
-  it("is the only thing that lowers a level — losing points still does not", () => {
-    expect(addScore({ score: 640, level: 6 }, -640).level).toBe(6);
   });
 });
 

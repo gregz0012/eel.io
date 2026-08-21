@@ -49,15 +49,8 @@ describe("rollPresent", () => {
       const { kind } = rollPresent(rng);
       counts[kind] = (counts[kind] ?? 0) + 1;
     }
-    for (const kind of ["levelDown", "predator", "pointsLost"]) {
+    for (const kind of ["predator", "pointsLost"]) {
       expect(counts[kind]).toBeLessThan(counts.points);
-    }
-  });
-
-  it("makes losing a level the rarest outcome", () => {
-    const weights = Object.fromEntries(CONFIG.presents.effects.map(e => [e.kind, e.weight]));
-    for (const [kind, w] of Object.entries(weights)) {
-      if (kind !== "levelDown") expect(w).toBeGreaterThan(weights.levelDown);
     }
   });
 });

@@ -26,8 +26,8 @@ Design values, in priority order:
 - **Power-ups:** `starfish` = one-hit shield; `baby electric eel` = charges the zap meter.
 - **Zap:** when charged, stuns **everything** nearby (predators and eels, any size) for a few seconds; nearby fish burst into energy.
 - **Self-cross:** crossing your own tail bites it off — you lose length and points (with a short cooldown and a generous "neck" buffer so ordinary tight turns are safe).
-- **Presents:** a wrapped box holding one of six things — points, a shield, a full zap meter, lost points, a predator spawned nearby, or a level taken away. Kind outcomes outweigh cruel ones roughly 7 to 3.
-- **Levelling:** points carry you to level 2 and no further — from there **killing the boss guarding your level is the only way up**. Levels are **sticky** (never fall, except to a present). `+1 predator every 2 levels`. Every level from 2 on has a boss: slower than a predator so you can always disengage, but it takes **as many hits as the level number** (level 2 = two hits, level 15 = fifteen), each one needing a stun or a shield. A **breather** follows every level-up before the next boss arrives — that gap is when you find a starfish and recharge, and the fight is balanced around it existing.
+- **Presents:** a wrapped box holding one of five things — points, a shield, a full zap meter, lost points, or a predator spawned nearby. Kind outcomes outweigh cruel ones roughly 7 to 3.
+- **Levelling:** points carry you to level 2 and no further — from there **killing the boss guarding your level is the only way up**. Levels are **sticky** (never fall). `+1 predator every 2 levels`. Every level from 2 on has a boss: slower than a predator so you can always disengage, but it takes **as many hits as the level number** (level 2 = two hits, level 15 = fifteen), each one needing a stun or a shield. A **breather** follows every level-up before the next boss arrives — that gap is when you find a starfish and recharge, and the fight is balanced around it existing.
 
 ---
 
@@ -270,26 +270,14 @@ that one does live in `config.js`.
 Buying asks for confirmation in the shell. A mis-tap should not spend a child's
 savings.
 
-### Presents, and the one exception to sticky levels
+### Presents
 
-A present holds one of six effects, rolled by `presents.js` from an **injected
+A present holds one of five effects, rolled by `presents.js` from an **injected
 rng** — the shell passes `Math.random`, tests pass a seeded one, which is what
 makes "kind outcomes outweigh cruel ones" a thing a test can assert rather than
-a hope.
-
-One of those effects takes a level away, and that is a deliberate hole in the
-rule §1 states. Levels remain sticky against *losing points* — `addScore` will
-never lower one — and `deductLevel` is the only function that can, reachable
-only from a present.
-
-Below `scoreLevelCap` it could not simply decrement the level: `addScore`
-recomputes the level from the score down there, so the next fish eaten would
-hand it straight back. So a deduction in that range also drops the score to the
-floor of the level below, keeping the two consistent. At or above the cap, score
-no longer feeds the level at all, so a plain decrement already sticks and there
-is no reason to take the player's points as well. Losing a level means its boss
-must be beaten again. If you add another way to lose a level, use `deductLevel`;
-do not reach for `state.level--`.
+a hope. Levels stay sticky with no exception: nothing a present can hand out
+lowers one. `addScore` will never lower a level either, since losing points is
+the other way a present can sting.
 
 The present that spawns a predator puts it 420–620 units away, not on top of the
 player. Being eaten the instant you open a box is not a difficulty spike, it is
