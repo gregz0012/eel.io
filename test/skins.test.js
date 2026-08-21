@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   SKINS, DEFAULT_SKIN_ID, TIERS, skinsByTier, skinById, isOwned, ownedSkins,
   canAfford, buySkin, wearableSkin, nextSkinToBuy, skinFromHue, skinStatus,
-  levelFor, meetsLevel,
+  levelFor, meetsLevel, chargeGlow,
 } from "../src/engine/skins.js";
 
 const free = SKINS.filter(s => s.price === 0);
@@ -23,7 +23,7 @@ describe("the catalogue", () => {
       "copper", "iron", "gold", "platinum",
       "water", "air", "earth", "fire", "lightning",
       "emerald", "ruby", "diamond",
-      "biolume", "toxic", "frost", "abyss", "lava", "ghost", "prism", "void",
+      "biolume", "toxic", "frost", "xray", "abyss", "lava", "ghost", "prism", "void",
       "spider", "eelwolf", "symbiote", "eelpool",
     ]);
   });
@@ -88,7 +88,7 @@ describe("the catalogue", () => {
       if (s.fx === undefined) continue;
       expect([
         "ripple", "vortex", "cracks", "ember", "arc", "spots", "slime", "sparkle", "molten",
-        "fade", "afterimage", "iridescent", "stars",
+        "fade", "afterimage", "iridescent", "stars", "xray",
       ]).toContain(s.fx);
     }
   });
@@ -110,7 +110,7 @@ describe("the catalogue", () => {
     expect(skinsByTier("gemstone").map(s => s.id))
       .toEqual(["emerald", "ruby", "diamond"]);
     expect(skinsByTier("special").map(s => s.id))
-      .toEqual(["biolume", "toxic", "frost", "abyss", "lava", "ghost", "prism", "void"]);
+      .toEqual(["biolume", "toxic", "frost", "xray", "abyss", "lava", "ghost", "prism", "void"]);
     expect(skinsByTier("hero").map(s => s.id))
       .toEqual(["spider", "eelwolf", "symbiote", "eelpool"]);
   });
@@ -289,6 +289,16 @@ describe("per-skin level gating", () => {
     const abyss = skinById("abyss");
     const r = buySkin({ banked: abyss.price, owned: [], bestLevel: 9 }, "abyss");
     expect(r.bought).toBe(true);
+  });
+
+  it("opens X-Ray at level 8, alongside Frost", () => {
+    expect(levelFor(skinById("xray"))).toBe(8);
+  });
+
+  it("refuses X-Ray below level 8 and quotes its own level", () => {
+    const r = buySkin({ banked: 1e9, owned: [], bestLevel: 7 }, "xray");
+    expect(r.bought).toBe(false);
+    expect(r.reason).toContain("level 8");
   });
 });
 
@@ -489,5 +499,41 @@ describe("skinStatus", () => {
   it("a free skin is always owned, never locked", () => {
     const volt = skinById("volt");
     expect(skinStatus(volt, { wornId: "gold", owned: [], banked: 0 })).toBe("owned");
+  });
+});
+
+describe("chargeGlow", () => {
+  it("is dim at rest — no charge, no flash", () => {
+    expect(chargeGlow(0, 0)).toBeCloseTo(0.15);
+  });
+
+  it("is brighter at full charge than at none", () => {
+    expect(chargeGlow(1, 0)).toBeGreaterThan(chargeGlow(0, 0));
+  });
+
+  it("climbs monotonically with charge", () => {
+    const at = c => chargeGlow(c, 0);
+    expect(at(0.25)).toBeLessThan(at(0.5));
+    expect(at(0.5)).toBeLessThan(at(0.75));
+    expect(at(0.75)).toBeLessThan(at(1));
+  });
+
+  it("flares toward full brightness while a zap's flash is still running down", () => {
+    expect(chargeGlow(0, 1)).toBeCloseTo(1);
+    expect(chargeGlow(0, 0.5)).toBeGreaterThan(chargeGlow(0, 0));
+  });
+
+  it("decays back to the charge-driven baseline as the flash fades", () => {
+    expect(chargeGlow(0.4, 0.1)).toBeGreaterThan(chargeGlow(0.4, 0));
+    expect(chargeGlow(0.4, 0)).toBeCloseTo(chargeGlow(0.4, 0));
+  });
+
+  it("clamps garbage input instead of producing NaN or an out-of-range value", () => {
+    for (const bad of [NaN, undefined, null, -5, 99, "nope"]) {
+      const g = chargeGlow(bad, bad);
+      expect(g).toBeGreaterThanOrEqual(0);
+      expect(g).toBeLessThanOrEqual(1);
+      expect(Number.isNaN(g)).toBe(false);
+    }
   });
 });

@@ -19,31 +19,44 @@ page, behind the button on the home screen.
 ## Your eel
 
 Every dive's score is **banked**. Spend it in the skin shop — tap "Change
-your eel" on the home screen. The shop is grouped into four sections. Volt is
+your eel" on the home screen. The shop is grouped into six sections. Volt is
 yours from the start; after that:
 
 | Section | Skins | Price each | Opens at |
 | --- | --- | --- | --- |
 | Standard | Coral, Orchid, Sky, Lime | 250 | level 2 |
 | Metallic | Copper, Iron, Gold, Platinum | 500 / 1,000 / 2,000 / 5,000 | level 5 |
+| Elements | Water, Air, Earth, Fire, Lightning | 3,000 – 7,500 | level 4 – 8, one per skin |
 | Gemstone | Emerald, Ruby, Diamond | 7,500 | level 10 |
-| Heroes | Spider, Eel-wolf, Eel-symbiote, Eel-pool | 10,000 | level 15 |
+| Special | Bioluminescent, Toxic, Frost, X-Ray, Abyss, Lava, Ghost, Prism, Void | 6,000 – 12,500 | level 6 – 12, one per skin |
+| Heroes | Spider, Eel-wolf, Eel-symbiote, Eel-pool | 10,000 | level 8 – 11, one per skin |
 
-Points are only half of it: a section stays shut until you have been deep
-enough to reach it, however rich you are. Anything you can buy right now is lit
-up with its price; anything you can't afford is dimmed and padlocked; anything
-still out of your depth shows the level it opens at instead of a price. Tap a
-skin to see it swimming, then buy or wear it with the button beside it.
+Every skin opens at its own depth now, not just its section's — the four
+heroes each unlock at a different level, deepest first, so reaching the top
+of the shop is a ladder rather than one distant step. Points are still only
+half of it: a skin stays sealed until you have been deep enough to reach it,
+however rich you are. Anything you can buy right now is lit up with its
+price; anything you can't afford is dimmed and padlocked; anything still out
+of your depth shows the level it opens at instead of a price. Tap a skin to
+see it swimming, then buy or wear it with the button beside it.
 
 Volt is the exception and always will be — the eel you start in is never
 locked, and a skin you have bought stays wearable forever whatever happens
 afterwards.
 
 The metals catch the light — the dearer the metal, the harder it shines, so
-Platinum is a mirror where Copper is a soft glow. Gems shimmer. Heroes are
-banded in two colours and each carries its own flourish — Spider is webbed,
-Eel-wolf has a horned cowl masked through the eyes, Eel-pool wears a masked
-stare and a pair of crossed swords on its back, and Eel-symbiote is tar-black with
+Platinum is a mirror where Copper is a soft glow. Gems shimmer. The Elements
+each carry their own animated finish — Water ripples, Air swirls in a faint
+vortex, Earth cracks with a glow, Fire embers, Lightning arcs — and every
+Special skin is a variant of one of those five: Bioluminescent's fixed glowing
+spots, Toxic's murkier bubble trail, Frost's crystalline glints, Abyss fading
+toward its own tail, Lava's slower and heavier cracks, Ghost trailing a soft
+afterimage, Prism's drifting rainbow hue, and Void flecked with tiny stars.
+X-Ray is the signature skin: a skeleton that dims and brightens with your
+real zap charge, and flares the instant you fire one. Heroes are banded in
+two colours and each carries its own flourish — Spider is webbed, Eel-wolf
+has a horned cowl masked through the eyes, Eel-pool wears a masked stare and
+a pair of crossed swords on its back, and Eel-symbiote is tar-black with
 a white spider across its back, a toothy grin and a pale stare. Buying deducts the points — but a skin you have bought is yours
 forever, however empty the bank gets afterwards.
 

@@ -84,6 +84,12 @@ export const SKINS = [
     minLevel: 7, fx: "slime" },
   { id: "frost", tier: "special", name: "Frost", hue: 198, sat: 40, bodyLight: 62, headLight: 90, price: 7500,
     minLevel: 8, fx: "sparkle" },
+  // the signature skin: a skeleton that glows brighter with the live zap
+  // charge and flares on a fresh zap — see chargeGlow below. Needs no
+  // gameplay state of its own beyond what the shell already tracks, so it
+  // stays a normal catalogue row; only the fx wiring is bespoke.
+  { id: "xray", tier: "special", name: "X-Ray", hue: 190, sat: 55, bodyLight: 12, headLight: 20, price: 8000,
+    minLevel: 8, fx: "xray" },
   // the remaining four special finishes change the body-drawing pass itself
   // rather than layering an effect on top of it — fade dims the stroke
   // toward the tail, iridescent drifts its hue — so a bug here disfigures
@@ -265,4 +271,20 @@ export function skinStatus(skin, { wornId, owned, banked, bestLevel } = {}) {
   if (isOwned(skin.id, owned)) return "owned";
   if (!meetsLevel(skin, bestLevel)) return "sealed";
   return canAfford(skin, banked) ? "affordable" : "locked";
+}
+
+/**
+ * X-Ray's skeleton brightness, 0..1: dim at rest, brighter the more the zap
+ * meter has charged, and flaring toward full while a fresh zap's flash timer
+ * is still running down. `flashT` is expected already normalised 0..1 (1 the
+ * instant a zap fires, decaying to 0) — the shell owns that timer, this stays
+ * a pure function of two numbers. Garbage input clamps rather than throws, so
+ * a stray NaN never turns the skeleton invisible or blinding.
+ */
+export function chargeGlow(charge, flashT) {
+  const clamp01 = n => (Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : 0);
+  const c = clamp01(Number(charge));
+  const base = 0.15 + 0.55 * c;          // dim at rest, brighter as charge climbs
+  const flare = clamp01(Number(flashT));
+  return base + (1 - base) * flare;      // flares toward 1, decays back to base
 }
