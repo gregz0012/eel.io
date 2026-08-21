@@ -3287,9 +3287,32 @@
     ctx2d.restore();
   }
 
+  // liquid (Eel-symbiote): a sparse pair of glossy highlight ribbons whose
+  // offset drifts from *two* out-of-phase sine terms rather than one, so the
+  // motion reads as an irregular flex instead of a clean single-frequency
+  // wave. Deliberately restrained per the issue — one or two narrow ribbons,
+  // not a full-body ripple — since fxSheen (skin.sheen: 0.3) already carries
+  // the bulk of the wet-gloss read this rides on top of; this is the travel,
+  // not the shine itself.
+  function matLiquid(ctx2d, pts, bodyLength, radius, skin, nowMs, detail){
+    const m = Engine.resolveMaterial(skin);
+    const ribbons = Math.max(1, Math.round(2 * m.strength * detail));
+    ctx2d.save();
+    ctx2d.globalCompositeOperation = "lighter";
+    for (let b = 0; b < ribbons; b++){
+      const phase = b * 2.3;
+      const offset = (Math.sin(nowMs * 0.00018 + phase) * 0.6
+                    + Math.sin(nowMs * 0.00043 + phase * 1.9) * 0.4) * 0.35 * m.scale;
+      const width = 0.05 + 0.03 * m.strength;
+      bodyRibbon(ctx2d, pts, bodyLength, radius, offset - width, offset + width,
+        `rgba(255,255,255,${(0.05 + 0.06 * m.strength) * detail})`);
+    }
+    ctx2d.restore();
+  }
+
   const SKIN_MATERIAL = {
     organic: matOrganic, brushedMetal: matBrushedMetal, stone: matStone, charred: matCharred,
-    crystal: matCrystal, water: matWater, air: matAir, charged: matCharged,
+    crystal: matCrystal, water: matWater, air: matAir, charged: matCharged, liquid: matLiquid,
   };
 
   // Falls back to organic for any unresolved type — a second, shell-side

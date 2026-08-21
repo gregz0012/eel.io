@@ -671,4 +671,9 @@ describe("resolveMaterial", () => {
       expect(resolveMaterial(skinById(id)).type).toBe("organic");
     }
   });
+
+  it("gives Eel-symbiote its own liquid material", () => {
+    expect(resolveMaterial(skinById("symbiote")).type).toBe("liquid");
+    expect(Object.keys(MATERIALS)).toContain("liquid");
+  });
 });

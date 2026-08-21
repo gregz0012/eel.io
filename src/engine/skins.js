@@ -162,9 +162,12 @@ export const SKINS = [
   // ring would only compete with them. Barely any saturation either — the body
   // taper adds up to 18% lightness towards the head, so a saturated hue turns
   // visibly purple there instead of staying tar-black. A little sheen gives it
-  // the wet gloss tar has.
+  // the wet gloss tar has; the liquid material (the one hero not tuned from
+  // organic — see matLiquid in the shell) rides on top of that same gloss
+  // with its own slow, restrained travelling highlight.
   { id: "symbiote", tier: "hero", name: "Eel-symbiote", hue: 250, sat: 9, bodyLight: 5, headLight: 8, price: 10000,
-    minLevel: 11, sheen: 0.3, mark: ["emblem", "stare"] },
+    minLevel: 11, sheen: 0.3, mark: ["emblem", "stare"],
+    material: { type: "liquid", strength: 0.5, scale: 1 } },
   { id: "eelpool", tier: "hero",  name: "Eel-pool", hue: 354, sat: 82, bodyLight: 38, headLight: 46, price: 10000,
     minLevel: 8, accent: { hue: 0,   sat: 0,  light: 9 },  accentRatio: 0.3, mark: ["patch", "swords"],
     material: { type: "organic", strength: 0.6, scale: 1 } },
@@ -315,6 +318,7 @@ export const MATERIALS = {
   water: { strength: 0.5, scale: 1 },
   air: { strength: 0.5, scale: 1 },
   charged: { strength: 0.5, scale: 1 },
+  liquid: { strength: 0.5, scale: 1 },
 };
 
 const DEFAULT_MATERIAL = Object.freeze({ type: "organic", ...MATERIALS.organic });
