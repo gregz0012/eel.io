@@ -19,7 +19,7 @@ page, behind the button on the home screen.
 ## Your eel
 
 Every dive's score is **banked**. Spend it in the skin shop — tap "Change
-your eel" on the home screen. The shop is grouped into six sections. Volt is
+your eel" on the home screen. The shop is grouped into seven sections. Volt is
 yours from the start; after that:
 
 | Section | Skins | Price each | Opens at |
@@ -30,6 +30,7 @@ yours from the start; after that:
 | Gemstone | Emerald, Ruby, Diamond | 7,500 | level 10 |
 | Special | Bioluminescent, Toxic, Frost, X-Ray, Abyss, Lava, Ghost, Prism, Void | 6,000 – 12,500 | level 6 – 12, one per skin |
 | Heroes | Spider, Eel-wolf, Eel-symbiote, Eel-pool | 10,000 | level 8 – 11, one per skin |
+| Legends | Orbweaver, Razorback, Red Rogue, Voidbond | 12,500 – 15,000 | level 10 – 13, one per skin |
 
 Every skin opens at its own depth now, not just its section's — the four
 heroes each unlock at a different level, deepest first, so reaching the top
@@ -57,7 +58,17 @@ real zap charge, and flares the instant you fire one. Heroes are banded in
 two colours and each carries its own flourish — Spider is webbed, Eel-wolf
 has a horned cowl masked through the eyes, Eel-pool wears a masked stare and
 a pair of crossed swords on its back, and Eel-symbiote is tar-black with
-a white spider across its back, a toothy grin and a pale stare. Buying deducts the points — but a skin you have bought is yours
+a white spider across its back, a toothy grin and a pale stare.
+
+Legends are the deepest and priciest tier, and each is its own original
+creature rather than a recoloured Hero: Orbweaver is deep crimson chitin
+with fine copper silk strands and an amber many-eyed gaze; Razorback is
+burnt amber and scarred, with fin-ridged head spikes that catch the light
+when you're sprinting; Red Rogue is rust-red and deliberately lopsided —
+a worn eye patch, a single scavenged blade, one crooked strap; Voidbond
+reads almost black at rest and reveals a living indigo-and-teal shimmer
+wherever it bends, with slit eyes and a scattering of glowing sensory
+spots. Buying deducts the points — but a skin you have bought is yours
 forever, however empty the bank gets afterwards.
 
 Diving costs a few points too. If you can't cover it, the dive is free: you can
