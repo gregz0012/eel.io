@@ -1,5 +1,5 @@
 import { CONFIG } from "./config.js";
-import { weightedPick } from "./rng.js";
+import { weightedPick, randInt } from "./rng.js";
 
 // Short, screen-only positive activities, offered after a long stretch of
 // play — see engine/progress.js for when one is due. Pure: every timing or
@@ -17,8 +17,10 @@ import { weightedPick } from "./rng.js";
 // This registry is what the shell iterates to draw the offer's title/sub and
 // to wire each activity's own screen — see MINI_GAME_VIEWS in src/index.html.
 export const MINI_GAMES = [
-  { id: "breathing", title: "TAKE A BREATH", sub: "a short, calm break",     weight: 1 },
-  { id: "words",     title: "KIND WORDS",    sub: "gather a few kind words", weight: 1 },
+  { id: "breathing", title: "TAKE A BREATH",     sub: "a short, calm break",     weight: 1 },
+  { id: "words",     title: "KIND WORDS",        sub: "gather a few kind words", weight: 1 },
+  { id: "stretch",   title: "STRETCH BREAK",     sub: "a gentle moment to move", weight: 1 },
+  { id: "bubbles",   title: "GRATITUDE BUBBLES", sub: "pop a few good thoughts", weight: 1 },
 ];
 
 export function miniGameIds() {
@@ -91,4 +93,59 @@ export function isWordGameComplete(tapCount) {
 /** The words on offer. Content lives in config.js so it stays one tunable list. */
 export function wordList() {
   return W.list;
+}
+
+const ST = CONFIG.miniGames.stretch;
+const BU = CONFIG.miniGames.bubbles;
+
+/** One randomly-picked stretch, as `{id, text}`. */
+export function pickStretch(rng) {
+  return ST.list[randInt(rng, 0, ST.list.length - 1)];
+}
+
+/**
+ * A stretch's timer as a pure function of elapsed time — mirrors
+ * breathPhaseAt's shape. There is no "hold" or "phase" here, just one run
+ * to `totalMs`; tapping "Done" early is a shell-side choice (see
+ * src/index.html), not something this function needs to know about.
+ * @param {number} elapsedMs
+ * @returns {{progress:number, secondsLeft:number, done:boolean}}
+ */
+export function stretchPhaseAt(elapsedMs) {
+  const clamped = Math.max(0, elapsedMs);
+  if (clamped >= ST.totalMs) {
+    return { progress: 1, secondsLeft: 0, done: true };
+  }
+  return {
+    progress: clamped / ST.totalMs,
+    secondsLeft: Math.ceil((ST.totalMs - clamped) / 1000),
+    done: false,
+  };
+}
+
+/**
+ * `n` distinct gratitude prompts, so the same bubble is never floating
+ * twice at once. Asking for more than the list holds just returns the
+ * whole list, rather than looping or duplicating.
+ */
+export function pickBubblePrompts(rng, n) {
+  const pool = [...BU.list];
+  const picked = [];
+  const count = Math.min(Math.max(0, n ?? 0), pool.length);
+  for (let i = 0; i < count; i++) {
+    const idx = randInt(rng, 0, pool.length - 1);
+    picked.push(pool[idx]);
+    pool.splice(idx, 1);
+  }
+  return picked;
+}
+
+/** How many distinct bubbles complete the exercise. */
+export function bubblesNeeded() {
+  return BU.needed;
+}
+
+/** Has enough been tapped? */
+export function isBubbleGameComplete(tapCount) {
+  return (tapCount ?? 0) >= BU.needed;
 }
