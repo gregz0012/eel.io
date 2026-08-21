@@ -31,6 +31,7 @@ const ENGINE_MODULES = [
   "minigames.js",
   "progress.js",
   "stats.js",
+  "achievements.js",
 ];
 
 const MARKER = "/* @inject:engine */";
