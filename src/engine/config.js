@@ -48,9 +48,11 @@ export const CONFIG = {
       { kind: "points",    weight: 30, min: 40, max: 260 },
       { kind: "starfish",  weight: 20 },
       { kind: "zap",       weight: 20 },
-      { kind: "pointsLost", weight: 12, min: 30, max: 150 },
-      { kind: "predator",  weight: 12 },
-      { kind: "levelDown", weight: 6 },
+      // 15 each rather than 12: taking a level away used to carry the last 6
+      // points of "bad", and its share moved here when it was retired, so the
+      // 70/30 split above still holds.
+      { kind: "pointsLost", weight: 15, min: 30, max: 150 },
+      { kind: "predator",  weight: 15 },
     ],
   },
 

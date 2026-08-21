@@ -1,7 +1,7 @@
 import { Given, When, Then } from "@cucumber/cucumber";
 import assert from "node:assert/strict";
 import {
-  addScore, completeLevel, deductLevel, predatorTarget, isBossLevel, bossHits,
+  addScore, completeLevel, predatorTarget, isBossLevel, bossHits,
 } from "../../src/engine/scoring.js";
 
 // These steps drive the real engine, never a mock of it. They stand in for the
@@ -58,18 +58,4 @@ Then("no boss is guarding the way", function () {
 
 Then("the boss guarding level {int} takes {int} hits", function (level, hits) {
   assert.equal(bossHits(level), hits);
-});
-
-When("the player opens a present holding a level deduction", function () {
-  const after = deductLevel(this.world);
-  this.world.score = after.score;
-  this.world.level = after.level;
-  this.world.predators = predatorTarget(after.level);      // the perks go too
-  this.world.bossGuarding = isBossLevel(after.level);      // and the boss is back
-});
-
-Then("scoring another point does not give the level back", function () {
-  const before = this.world.level;
-  applyLevels(this.world, addScore(this.world, 1));
-  assert.equal(this.world.level, before);
 });

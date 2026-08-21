@@ -51,29 +51,6 @@ export function bossHits(level) {
   return Math.max(1, level);
 }
 
-/**
- * Take a level away — the one thing that can lower it.
- *
- * Below the cap, dropping the level alone would be undone by the next fish
- * eaten: addScore recomputes the level from the score and would put it straight
- * back. So down there a deduction also drops the score to the floor of the
- * level below, keeping the two consistent. At or above the cap the score no
- * longer feeds the level at all, so a plain decrement already sticks and there
- * is no reason to take a player's points as well.
- *
- * Losing a level means its boss must be beaten again — the shell re-arms it on
- * the level-up path like any other. Only a present can reach this (see
- * engine/presents.js); nothing else may call it.
- */
-export function deductLevel(state) {
-  const level = Math.max(1, state.level - 1);
-  if (level === state.level) return { score: state.score, level };
-  const score = level < CONFIG.scoreLevelCap
-    ? Math.min(state.score, (level - 1) * CONFIG.pointsPerLevel)
-    : state.score;
-  return { score, level };
-}
-
 /** How many predators should be hunting at this level. */
 export function predatorTarget(level) {
   return CONFIG.predatorsBase + Math.floor(level / CONFIG.levelsPerPredator);
