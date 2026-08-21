@@ -2894,6 +2894,48 @@
     ctx2d.restore();
   }
 
+  // ---------- skin materials ----------
+  // What a skin's surface is *made from* — as opposed to fx, which is the
+  // animated effect layered on top of it (see the doc comment on
+  // `material` in src/engine/skins.js). One dispatch table, same shape as
+  // SKIN_FX: new materials register here, nowhere else.
+
+  // organic: very subtle, slightly irregular surface variation — a few
+  // short, low-alpha ribbons whose position and width vary down the body via
+  // a hash of each slice's own arc-length `s` (not per-frame randomness), so
+  // it reads as broken skin texture rather than a second, cleaner shading
+  // band. This is the one material every eel on screen gets by default, so
+  // it stays tightly budgeted — three fills, not a repeating scale pattern.
+  function matOrganic(ctx2d, pts, bodyLength, radius, skin, nowMs, detail){
+    const n = pts.length;
+    if (n < 4) return;
+    const slices = 3;
+    for (let j = 0; j < slices; j++){
+      const lo = Math.floor((j / slices) * (n - 1));
+      const hi = Math.floor(((j + 0.6) / slices) * (n - 1));
+      if (hi <= lo) continue;
+      const hash = (((Math.sin(pts[lo].s * 0.02 + j * 3.1) * 43758.5453) % 1) + 1) % 1;
+      const side = hash > 0.5 ? 1 : -1;
+      const from = side * (0.15 + hash * 0.2);
+      const to = side * (0.35 + hash * 0.15);
+      bodyRibbon(ctx2d, pts, bodyLength, radius, from, to, "rgba(255,255,255,0.06)", lo, hi);
+    }
+  }
+
+  const SKIN_MATERIAL = { organic: matOrganic };
+
+  // Falls back to organic for any unresolved type — a second, shell-side
+  // fallback independent of Engine.resolveMaterial's own, so the two can
+  // never crash even if they briefly drift (e.g. a material lands in the
+  // catalogue before its renderer function does). `detail` is a 0..1
+  // richness knob: 1 for the player and the shop preview, lower for rivals —
+  // see the isPlayer-driven call in drawEelBody.
+  function drawSkinMaterial(ctx2d, pts, bodyLength, radius, skin, nowMs, detail){
+    const m = Engine.resolveMaterial(skin);
+    const draw = SKIN_MATERIAL[m.type] ?? SKIN_MATERIAL.organic;
+    draw(ctx2d, pts, bodyLength, radius, skin, nowMs, detail);
+  }
+
   // A pool of reused {x,y,i,s} point objects, grown on demand and never
   // shrunk — drawEelBody now builds this list unconditionally (every skin
   // gets the shading above), for up to ~15 eels a frame, so the pool is what
@@ -2972,6 +3014,9 @@
     // universal baseline shading — every skin gets this, before any themed
     // finish; sheen (below) then adds *more* shine on top of it.
     drawBodyShading(ctx, pts, body.length, radius, skin);
+    // what the surface is made from — full detail for the player, a cheaper
+    // pass for rivals (there can be up to 14 on screen at once)
+    drawSkinMaterial(ctx, pts, body.length, radius, skin, nowMs, isPlayer ? 1 : 0.5);
 
     // "web": a strand down the spine crossed by ribs, which is as much of a
     // web as reads at this size — the crosshatch is the recognisable part
@@ -3663,6 +3708,7 @@
 
     // universal baseline shading — same call, same helper, as the game body
     drawBodyShading(pctx, body, body.length, radius, skin);
+    drawSkinMaterial(pctx, body, body.length, radius, skin, previewNowMs, 1);
 
     if (marks.includes("web")){
       pctx.strokeStyle = `hsla(${hue},${Math.round(sat*0.4)}%,7%,0.6)`;

@@ -1341,6 +1341,18 @@
     //               Like gem and sheen, a skin only ever wears one finish; fx is
     //               exclusive with those two but may sit alongside accent/mark,
     //               the same way a hero's banding and flourish already do.
+    //   material    what the eel's surface is *made from* — organic, brushed
+    //               metal, stone, crystal, and so on — as opposed to fx, which is
+    //               the animated effect layered on top of it (Earth is
+    //               material:"stone" + fx:"cracks"; Gold is material:"brushedMetal"
+    //               + sheen:0.78). Unlike gem/sheen/accent/fx, which are mutually
+    //               exclusive with each other, material is orthogonal to all four
+    //               and may combine with any of them — a metal is still made of
+    //               metal whether or not it also sparkles. A bare string ("stone")
+    //               or an object ({type, strength, scale}) are both legal; see
+    //               resolveMaterial below for what each field means and what a
+    //               skin gets when it names none. Drawn by the shell's
+    //               SKIN_MATERIAL table, the same pattern SKIN_FX already uses.
     
     /**
      * Colours are HSL parts the renderer assembles, so a skin can be a metal
@@ -1348,13 +1360,21 @@
      */
     const SKINS = [
       // yours from the start
-      { id: "volt", tier: "standard",     name: "Volt",     hue: 165, sat: 70, bodyLight: 38, headLight: 58, price: 0 },
+      { id: "volt", tier: "standard",     name: "Volt",     hue: 165, sat: 70, bodyLight: 38, headLight: 58, price: 0,
+        material: "organic" },
     
-      // plain colours — an early, easy first purchase, all one price
-      { id: "coral", tier: "standard",    name: "Coral",    hue: 14,  sat: 78, bodyLight: 40, headLight: 60, price: 250 },
-      { id: "orchid", tier: "standard",   name: "Orchid",   hue: 292, sat: 62, bodyLight: 40, headLight: 60, price: 250 },
-      { id: "sky", tier: "standard",      name: "Sky",      hue: 205, sat: 74, bodyLight: 40, headLight: 60, price: 250 },
-      { id: "lime", tier: "standard",     name: "Lime",     hue: 95,  sat: 62, bodyLight: 36, headLight: 56, price: 250 },
+      // plain colours — an early, easy first purchase, all one price. Named
+      // explicitly here (every other skin defaults to it until its own PR gives
+      // it something else) so the shop's most commonly seen skins are the first
+      // proof the material system does anything at all.
+      { id: "coral", tier: "standard",    name: "Coral",    hue: 14,  sat: 78, bodyLight: 40, headLight: 60, price: 250,
+        material: "organic" },
+      { id: "orchid", tier: "standard",   name: "Orchid",   hue: 292, sat: 62, bodyLight: 40, headLight: 60, price: 250,
+        material: "organic" },
+      { id: "sky", tier: "standard",      name: "Sky",      hue: 205, sat: 74, bodyLight: 40, headLight: 60, price: 250,
+        material: "organic" },
+      { id: "lime", tier: "standard",     name: "Lime",     hue: 95,  sat: 62, bodyLight: 36, headLight: 56, price: 250,
+        material: "organic" },
     
       // the metals — sheen climbs with price, so the ladder is visible at a glance
       { id: "copper", tier: "metallic",   name: "Copper",   hue: 24,  sat: 62, bodyLight: 32, headLight: 54, price: 500,  sheen: 0.32 },
@@ -1557,7 +1577,44 @@
     
     /** Turn a bare hue (rival eels) into a skin the renderer can use. */
     function skinFromHue(hue) {
-      return { id: "rival", name: "Rival", hue, sat: 70, bodyLight: 38, headLight: 58, price: 0 };
+      return { id: "rival", name: "Rival", hue, sat: 70, bodyLight: 38, headLight: 58, price: 0,
+        material: "organic" };
+    }
+    
+    /**
+     * Canonical default parameters for each material, keyed by the same string
+     * `skin.material`/its `type` field uses. Grows as later PRs add materials;
+     * only `organic` exists yet. `strength` and `scale` are 0..1 richness/size
+     * knobs a skin's own object form can override — see resolveMaterial.
+     */
+    const MATERIALS = {
+      organic: { strength: 0.5, scale: 1 },
+    };
+    
+    const DEFAULT_MATERIAL = Object.freeze({ type: "organic", ...MATERIALS.organic });
+    
+    /**
+     * Normalise whatever a skin names as its material into `{type, strength,
+     * scale}` the renderer can rely on unconditionally. `skin.material` may be
+     * absent, a bare string ("stone"), or an object ({type, strength, scale}) —
+     * all three are legal input shapes. Anything unrecognisable (a typo, a
+     * future skin whose material hasn't shipped yet, garbage from a corrupted
+     * save) falls back to the shared frozen `organic` default rather than
+     * throwing or drawing nothing — the same "fail safely" rule fx and mark
+     * already follow.
+     */
+    function resolveMaterial(skin) {
+      const m = skin?.material;
+      if (m == null) return DEFAULT_MATERIAL;
+      if (typeof m === "string") {
+        return MATERIALS[m] ? { type: m, ...MATERIALS[m] } : DEFAULT_MATERIAL;
+      }
+      if (typeof m === "object") {
+        const base = MATERIALS[m.type];
+        if (!base) return DEFAULT_MATERIAL;
+        return { type: m.type, strength: m.strength ?? base.strength, scale: m.scale ?? base.scale };
+      }
+      return DEFAULT_MATERIAL;
     }
     
     /**
@@ -1963,7 +2020,7 @@
       return challengeProgress(challenge, stats, baselineStats) >= challenge.target;
     }
 
-    return { CONFIG, angleTo, distanceTo, seededRng, randInt, weightedPick, hash32, seedFromDate, addScore, completeLevel, bossHits, predatorTarget, isBossLevel, levelSpeed, shieldCap, tagFor, shortTagFor, rivalTag, isWellFormedTag, tagSpaceSize, validateSubmission, bestOf, rankOf, topRows, clampTopLimit, PHASES, nextPhase, canDo, isRunning, deposit, diveCost, payForDive, canAffordDive, SKINS, DEFAULT_SKIN_ID, TIERS, skinsByTier, levelFor, meetsLevel, skinById, isOwned, ownedSkins, canAfford, buySkin, wearableSkin, nextSkinToBuy, skinFromHue, skinStatus, chargeGlow, PRESENT_KINDS, rollPresent, isKindGift, MINI_GAMES, miniGameIds, miniGameById, pickMiniGame, breathPhaseAt, canTapAt, wordsNeeded, isWordGameComplete, wordList, pickStretch, stretchPhaseAt, pickBubblePrompts, bubblesNeeded, isBubbleGameComplete, pickDeed, pickScenario, isKindChoice, choiceOutcome, addPlayTime, miniGameDue, recordMiniGameReward, recordEvent, recordMax, statValue, ACHIEVEMENTS, isEarned, achievementById, checkAchievements, CHALLENGE_POOL, challengeForDate, challengeProgress, isChallengeComplete };
+    return { CONFIG, angleTo, distanceTo, seededRng, randInt, weightedPick, hash32, seedFromDate, addScore, completeLevel, bossHits, predatorTarget, isBossLevel, levelSpeed, shieldCap, tagFor, shortTagFor, rivalTag, isWellFormedTag, tagSpaceSize, validateSubmission, bestOf, rankOf, topRows, clampTopLimit, PHASES, nextPhase, canDo, isRunning, deposit, diveCost, payForDive, canAffordDive, SKINS, DEFAULT_SKIN_ID, TIERS, skinsByTier, levelFor, meetsLevel, skinById, isOwned, ownedSkins, canAfford, buySkin, wearableSkin, nextSkinToBuy, skinFromHue, MATERIALS, resolveMaterial, skinStatus, chargeGlow, PRESENT_KINDS, rollPresent, isKindGift, MINI_GAMES, miniGameIds, miniGameById, pickMiniGame, breathPhaseAt, canTapAt, wordsNeeded, isWordGameComplete, wordList, pickStretch, stretchPhaseAt, pickBubblePrompts, bubblesNeeded, isBubbleGameComplete, pickDeed, pickScenario, isKindChoice, choiceOutcome, addPlayTime, miniGameDue, recordMiniGameReward, recordEvent, recordMax, statValue, ACHIEVEMENTS, isEarned, achievementById, checkAchievements, CHALLENGE_POOL, challengeForDate, challengeProgress, isChallengeComplete };
   })();
 
   const canvas = document.getElementById("game");
@@ -4175,6 +4232,48 @@
     ctx2d.restore();
   }
 
+  // ---------- skin materials ----------
+  // What a skin's surface is *made from* — as opposed to fx, which is the
+  // animated effect layered on top of it (see the doc comment on
+  // `material` in src/engine/skins.js). One dispatch table, same shape as
+  // SKIN_FX: new materials register here, nowhere else.
+
+  // organic: very subtle, slightly irregular surface variation — a few
+  // short, low-alpha ribbons whose position and width vary down the body via
+  // a hash of each slice's own arc-length `s` (not per-frame randomness), so
+  // it reads as broken skin texture rather than a second, cleaner shading
+  // band. This is the one material every eel on screen gets by default, so
+  // it stays tightly budgeted — three fills, not a repeating scale pattern.
+  function matOrganic(ctx2d, pts, bodyLength, radius, skin, nowMs, detail){
+    const n = pts.length;
+    if (n < 4) return;
+    const slices = 3;
+    for (let j = 0; j < slices; j++){
+      const lo = Math.floor((j / slices) * (n - 1));
+      const hi = Math.floor(((j + 0.6) / slices) * (n - 1));
+      if (hi <= lo) continue;
+      const hash = (((Math.sin(pts[lo].s * 0.02 + j * 3.1) * 43758.5453) % 1) + 1) % 1;
+      const side = hash > 0.5 ? 1 : -1;
+      const from = side * (0.15 + hash * 0.2);
+      const to = side * (0.35 + hash * 0.15);
+      bodyRibbon(ctx2d, pts, bodyLength, radius, from, to, "rgba(255,255,255,0.06)", lo, hi);
+    }
+  }
+
+  const SKIN_MATERIAL = { organic: matOrganic };
+
+  // Falls back to organic for any unresolved type — a second, shell-side
+  // fallback independent of Engine.resolveMaterial's own, so the two can
+  // never crash even if they briefly drift (e.g. a material lands in the
+  // catalogue before its renderer function does). `detail` is a 0..1
+  // richness knob: 1 for the player and the shop preview, lower for rivals —
+  // see the isPlayer-driven call in drawEelBody.
+  function drawSkinMaterial(ctx2d, pts, bodyLength, radius, skin, nowMs, detail){
+    const m = Engine.resolveMaterial(skin);
+    const draw = SKIN_MATERIAL[m.type] ?? SKIN_MATERIAL.organic;
+    draw(ctx2d, pts, bodyLength, radius, skin, nowMs, detail);
+  }
+
   // A pool of reused {x,y,i,s} point objects, grown on demand and never
   // shrunk — drawEelBody now builds this list unconditionally (every skin
   // gets the shading above), for up to ~15 eels a frame, so the pool is what
@@ -4253,6 +4352,9 @@
     // universal baseline shading — every skin gets this, before any themed
     // finish; sheen (below) then adds *more* shine on top of it.
     drawBodyShading(ctx, pts, body.length, radius, skin);
+    // what the surface is made from — full detail for the player, a cheaper
+    // pass for rivals (there can be up to 14 on screen at once)
+    drawSkinMaterial(ctx, pts, body.length, radius, skin, nowMs, isPlayer ? 1 : 0.5);
 
     // "web": a strand down the spine crossed by ribs, which is as much of a
     // web as reads at this size — the crosshatch is the recognisable part
@@ -4944,6 +5046,7 @@
 
     // universal baseline shading — same call, same helper, as the game body
     drawBodyShading(pctx, body, body.length, radius, skin);
+    drawSkinMaterial(pctx, body, body.length, radius, skin, previewNowMs, 1);
 
     if (marks.includes("web")){
       pctx.strokeStyle = `hsla(${hue},${Math.round(sat*0.4)}%,7%,0.6)`;

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   SKINS, DEFAULT_SKIN_ID, TIERS, skinsByTier, skinById, isOwned, ownedSkins,
   canAfford, buySkin, wearableSkin, nextSkinToBuy, skinFromHue, skinStatus,
-  levelFor, meetsLevel, chargeGlow,
+  levelFor, meetsLevel, chargeGlow, MATERIALS, resolveMaterial,
 } from "../src/engine/skins.js";
 
 const free = SKINS.filter(s => s.price === 0);
@@ -77,7 +77,10 @@ describe("the catalogue", () => {
   it("keeps the finishes separate — no skin is two things at once", () => {
     // fx joins gem/sheen/accent as a fourth mutually-exclusive finish; a skin
     // wears exactly one of them (mark is a flourish layered on top, not a
-    // finish, so it's allowed to coexist with any of these)
+    // finish, so it's allowed to coexist with any of these). material is
+    // deliberately NOT in this list — unlike the four finishes, it's
+    // orthogonal to all of them (a metal is still made of metal whether or
+    // not it also sparkles), so it's expected to coexist freely.
     for (const s of SKINS) {
       expect([s.gem, s.sheen > 0, !!s.accent, !!s.fx].filter(Boolean).length).toBeLessThanOrEqual(1);
     }
@@ -90,6 +93,14 @@ describe("the catalogue", () => {
         "ripple", "vortex", "cracks", "ember", "arc", "spots", "slime", "sparkle", "molten",
         "fade", "afterimage", "iridescent", "stars", "xray",
       ]).toContain(s.fx);
+    }
+  });
+
+  it("only ever names a material the renderer knows how to draw", () => {
+    for (const s of SKINS) {
+      if (s.material === undefined) continue;
+      const type = typeof s.material === "string" ? s.material : s.material.type;
+      expect(Object.keys(MATERIALS)).toContain(type);
     }
   });
 
@@ -534,6 +545,49 @@ describe("chargeGlow", () => {
       expect(g).toBeGreaterThanOrEqual(0);
       expect(g).toBeLessThanOrEqual(1);
       expect(Number.isNaN(g)).toBe(false);
+    }
+  });
+});
+
+describe("resolveMaterial", () => {
+  it("resolves a skin naming no material to organic", () => {
+    expect(resolveMaterial({})).toEqual({ type: "organic", ...MATERIALS.organic });
+    expect(resolveMaterial({ material: undefined })).toEqual({ type: "organic", ...MATERIALS.organic });
+  });
+
+  it("survives a missing skin entirely", () => {
+    expect(resolveMaterial(undefined)).toEqual({ type: "organic", ...MATERIALS.organic });
+    expect(resolveMaterial(null)).toEqual({ type: "organic", ...MATERIALS.organic });
+  });
+
+  it("resolves the bare-string shorthand", () => {
+    expect(resolveMaterial({ material: "organic" })).toEqual({ type: "organic", ...MATERIALS.organic });
+  });
+
+  it("resolves the full object form, letting it override strength/scale", () => {
+    const r = resolveMaterial({ material: { type: "organic", strength: 0.9, scale: 1.4 } });
+    expect(r).toEqual({ type: "organic", strength: 0.9, scale: 1.4 });
+  });
+
+  it("falls back to the object form's own material defaults when unspecified", () => {
+    const r = resolveMaterial({ material: { type: "organic" } });
+    expect(r).toEqual({ type: "organic", ...MATERIALS.organic });
+  });
+
+  it("falls back to organic for any unrecognised or malformed material, never throwing", () => {
+    for (const bad of ["banana", null, 42, {}, { type: "nope" }, []]) {
+      expect(() => resolveMaterial({ material: bad })).not.toThrow();
+      expect(resolveMaterial({ material: bad })).toEqual({ type: "organic", ...MATERIALS.organic });
+    }
+  });
+
+  it("dresses a bare rival hue in the organic material", () => {
+    expect(resolveMaterial(skinFromHue(210))).toEqual({ type: "organic", ...MATERIALS.organic });
+  });
+
+  it("gives every Standard skin the organic material explicitly", () => {
+    for (const id of ["volt", "coral", "orchid", "sky", "lime"]) {
+      expect(skinById(id).material).toBe("organic");
     }
   });
 });
