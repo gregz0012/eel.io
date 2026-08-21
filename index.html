@@ -466,6 +466,7 @@
   <button id="startBtn">Dive in</button>
   <button id="howBtn" class="quiet">How to play</button>
   <button id="openStatsBtn" class="quiet">Lifetime stats</button>
+  <button id="muteBtn" class="quiet">🔊 Sound on</button>
   <div id="dailyChallenge">
     <h2>Today's Challenge</h2>
     <div id="challengeName"></div>
@@ -1839,6 +1840,7 @@
     const { kind, amount } = Engine.rollPresent(Math.random);
     stats = Engine.recordEvent(stats, "presentsOpened");
     burst(g.x, g.y, Engine.isKindGift(kind) ? "#ff7de0" : "#ff5d6c", 30, 6);
+    fx(Engine.isKindGift(kind) ? "presentGood" : "presentBad");
 
     if (kind === "points"){
       addScore(amount);
@@ -1936,12 +1938,13 @@
     e.dead = true;
     dropEnergyAlong(e.body, clamp(Math.round(e.len*0.7), 3, 45), e.hue);
     burst(e.x, e.y, `hsl(${e.hue},80%,60%)`, 16, 5);
-    if (byPlayer){ addScore(4 + Math.round(e.len*0.3)); stats = Engine.recordEvent(stats, "rivalEelsKilled"); }
+    if (byPlayer){ addScore(4 + Math.round(e.len*0.3)); stats = Engine.recordEvent(stats, "rivalEelsKilled"); fx("killEel"); }
   }
   function biteEel(e, idx){
     const removed = e.body.length - idx;
     if (removed <= 2) return;
     stats = Engine.recordEvent(stats, "rivalTailsBitten");
+    fx("bite");
     const frac = removed / e.body.length;
     const lost = e.len * frac;
     dropEnergyAlong(e.body.slice(idx), clamp(Math.round(lost*0.8), 1, 22), e.hue);
@@ -1960,9 +1963,9 @@
     burst(p.x, p.y, "#8ef3ff", 28, 7);
     if (byPlayer){
       addScore(Math.round(p.r)); grow(p.r*0.5);
-      // bosses are predators too, but they get their own count at the
-      // unambiguous "the way opens" moment in onBossKilled — not here
-      if (!p.boss) stats = Engine.recordEvent(stats, "predatorsKilled");
+      // bosses are predators too, but they get their own count (and sound,
+      // in onBossKilled) at the unambiguous "the way opens" moment — not here
+      if (!p.boss){ stats = Engine.recordEvent(stats, "predatorsKilled"); fx("killPredator"); }
     }
     shakeT = .3;
   }
@@ -1995,6 +1998,7 @@
   function onLevelUp(L){
     predTarget = Engine.predatorTarget(L);
     levelBanner = 2.2;
+    fx("levelUp"); vibrate([30, 40, 30]);
     if (L > bestLevel){ bestLevel = L; writeStore(STORE.bestLevel, String(bestLevel)); }
     levelStartScore = score;             // the points gate below measures from here
     // The boss does not pounce the instant you level up. First a breather, to
@@ -2009,6 +2013,7 @@
   /** The boss guarding this level is dead: through to the next one. */
   function onBossKilled(){
     stats = Engine.recordEvent(stats, "bossesKilled");
+    fx("bossKill");
     const next = Engine.completeLevel({ score, level });
     score = next.score;
     for (const L of next.levelsGained) onLevelUp(L);
@@ -2043,7 +2048,7 @@
   // ---------- zap ----------
   function tryZap(){
     if (!running) return;
-    if (zap < ZAP_COST) return;
+    if (zap < ZAP_COST){ fx("zapFizzle"); return; }
     zap = 0;
     const rad = 240 + player.len * 1.4;
     const R2 = rad * rad;
@@ -2076,6 +2081,7 @@
                        life:1, r:4, color:"#e9ffff" });
     }
     shakeT = .35; flashT = .22;
+    fx("zapFire"); vibrate(50);
   }
 
   // ---------- death ----------
@@ -2096,13 +2102,90 @@
                   stats: "voltfin.stats",           // a fresh key — never reuse `lifetime`,
                                                      // which is a number, not JSON
                   achievements: "voltfin.achievements",
-                  challengeDay: "voltfin.challengeDay" };
+                  challengeDay: "voltfin.challengeDay",
+                  muted: "voltfin.muted" };
 
   // Storage throws in private browsing and wherever it is blocked. Never let
   // that stop a kid playing the game.
   function readStore(key){ try { return localStorage.getItem(key); } catch { return null; } }
   function writeStore(key, v){ try { localStorage.setItem(key, v); } catch {} }
   function dropStore(key){ try { localStorage.removeItem(key); } catch {} }
+
+  // ---------- sound (procedural, zero assets) & haptics ----------
+  // Every browser blocks audio before a user gesture, and the sandbox that
+  // executes the shipped script (test/build.test.js) has no AudioContext or
+  // navigator at all — so both are touched only lazily, inside a function,
+  // feature-detected with typeof. A top-level reference to either would throw
+  // the instant the script loads: the exact class of bug CLAUDE.md's origin
+  // story is about.
+  let muted = readStore(STORE.muted) === "yes";
+  let audioCtx = null;
+
+  function ensureAudio(){
+    if (audioCtx){ if (audioCtx.state === "suspended") audioCtx.resume(); return audioCtx; }
+    const AC = typeof AudioContext !== "undefined" ? AudioContext
+             : typeof webkitAudioContext !== "undefined" ? webkitAudioContext : null;
+    if (!AC) return null;
+    audioCtx = new AC();
+    return audioCtx;
+  }
+
+  // One oscillator, one gain envelope — the whole synth. `freqEnd` sweeps the
+  // pitch (a zap, a death); everything else just holds and fades.
+  function tone(freq, duration, { type = "sine", gain = 0.18, freqEnd, delay = 0 } = {}){
+    if (muted) return;
+    const ctx = ensureAudio();
+    if (!ctx) return;
+    const t0 = ctx.currentTime + delay;
+    const osc = ctx.createOscillator(), g = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, t0);
+    if (freqEnd) osc.frequency.exponentialRampToValueAtTime(Math.max(1, freqEnd), t0 + duration);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(gain, t0 + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
+    osc.connect(g); g.connect(ctx.destination);
+    osc.start(t0); osc.stop(t0 + duration + 0.02);
+  }
+
+  // Every sound the game makes, in one table — the whole palette readable
+  // (and rebalanceable) in one place, rather than tone() calls scattered
+  // across every event site.
+  const SFX = {
+    fishEat:      () => tone(680, 0.07, { gain: 0.12 }),
+    energyEat:    () => tone(740, 0.06, { gain: 0.10 }),
+    feastEat:     () => { tone(520, 0.10, { gain: 0.16 }); tone(780, 0.14, { gain: 0.16, delay: 0.05 }); },
+    babyEat:      () => tone(420, 0.12, { type: "triangle", gain: 0.14, freqEnd: 900 }),
+    bite:         () => tone(160, 0.08, { type: "square", gain: 0.14 }),
+    killEel:      () => tone(120, 0.16, { type: "sawtooth", gain: 0.16, freqEnd: 40 }),
+    killPredator: () => tone(100, 0.18, { type: "sawtooth", gain: 0.18, freqEnd: 30 }),
+    bossHit:      () => tone(90, 0.12, { type: "square", gain: 0.22, freqEnd: 50 }),
+    bossKill:     () => { tone(440, 0.12, { gain: 0.20 }); tone(660, 0.14, { gain: 0.20, delay: 0.10 }); tone(880, 0.20, { gain: 0.22, delay: 0.20 }); },
+    levelUp:      () => { tone(523, 0.10, { gain: 0.18 }); tone(659, 0.10, { gain: 0.18, delay: 0.09 }); tone(784, 0.16, { gain: 0.20, delay: 0.18 }); },
+    zapFire:      () => tone(1400, 0.22, { type: "sawtooth", gain: 0.20, freqEnd: 60 }),
+    zapFizzle:    () => tone(140, 0.10, { type: "square", gain: 0.08, freqEnd: 90 }),
+    presentGood:  () => { tone(600, 0.09, { gain: 0.16 }); tone(900, 0.12, { gain: 0.16, delay: 0.07 }); },
+    presentBad:   () => tone(220, 0.18, { type: "square", gain: 0.14, freqEnd: 80 }),
+    selfCross:    () => tone(180, 0.14, { type: "square", gain: 0.14, freqEnd: 70 }),
+    shield:       () => tone(1000, 0.08, { type: "triangle", gain: 0.16, freqEnd: 1400 }),
+    death:        () => { tone(300, 0.30, { type: "sawtooth", gain: 0.20, freqEnd: 60 }); tone(160, 0.40, { type: "sawtooth", gain: 0.16, freqEnd: 30, delay: 0.15 }); },
+    click:        () => tone(500, 0.04, { type: "square", gain: 0.08 }),
+    buy:          () => { tone(700, 0.06, { gain: 0.14 }); tone(1000, 0.09, { gain: 0.16, delay: 0.06 }); },
+  };
+
+  function fx(name){ const play = SFX[name]; if (play) play(); }
+
+  // Haptics, reserved for the big moments (#40) — a buzz on every fish eaten
+  // would be noise, not feedback.
+  function vibrate(pattern){
+    if (typeof navigator === "undefined" || !navigator.vibrate) return;
+    try { navigator.vibrate(pattern); } catch {}
+  }
+
+  function setMuted(next){
+    muted = next;
+    writeStore(STORE.muted, muted ? "yes" : "no");
+  }
 
   function makeUuid(){
     if (crypto.randomUUID) return crypto.randomUUID();
@@ -2474,6 +2557,7 @@
     phase = Engine.nextPhase(phase, "die");
     running = false;
     burst(player.x, player.y, `hsl(${player.hue},80%,65%)`, 60, 7);
+    fx("death"); vibrate([60, 40, 60]);
     lastRunMs = Date.now() - runStartedAt - pausedMs;
 
     // the dive's score goes into the bank, to be spent on skins
@@ -2550,6 +2634,7 @@
           player.len = Math.max(6, player.len - lostLen);
           addScore(-Math.round(lostLen * 0.5));    // and lose points for it
           stats = Engine.recordEvent(stats, "selfCrosses");
+          fx("selfCross"); vibrate(40);
           burst(cut.x, cut.y, `hsl(${player.hue},80%,60%)`, 14, 5);
           shakeT = .3; flashT = .2; player.biteCd = 0.8;
           break;
@@ -2588,6 +2673,7 @@
       if (dist2(f.x,f.y,player.x,player.y) < grab*grab){
         addScore(1); grow(1.1);
         stats = Engine.recordEvent(stats, "fishEaten");
+        fx("fishEat");
         burst(f.x, f.y, `hsl(${f.hue},85%,62%)`, 6, 3);
         fish.splice(i,1);
       }
@@ -2635,6 +2721,7 @@
           else if (e.len > player.len*1.28){
             if (shieldCount > 0){
               shieldCount--; stats = Engine.recordEvent(stats, "shieldsConsumed");
+              fx("shield"); vibrate(40);
               killEel(e, true); burst(player.x,player.y,"#ffd166",24,5); shakeT=.25;
             }
             else { stats = Engine.recordEvent(stats, "deathsByEel"); die("a larger eel swallowed you"); return; }
@@ -2685,6 +2772,7 @@
             if (p.hitCd <= 0){
               p.hp -= 1; p.hitCd = BOSS_HIT_COOLDOWN_S;
               stats = Engine.recordEvent(stats, "bossHitsLanded");
+              fx("bossHit"); vibrate(30);
               const a = Math.atan2(p.y-player.y, p.x-player.x);
               p.x += Math.cos(a)*Engine.CONFIG.boss.ramKnockback; p.y += Math.sin(a)*Engine.CONFIG.boss.ramKnockback;
               burst(p.x, p.y, "#ffd166", 22, 6); shakeT = .25;
@@ -2702,6 +2790,7 @@
         }
         else if (shieldCount > 0){
           shieldCount--; stats = Engine.recordEvent(stats, "shieldsConsumed");
+          fx("shield"); vibrate(40);
           p.stun = SHIELD_STUN_S; p.stunMax = SHIELD_STUN_S; burst(player.x,player.y,"#ffd166",26,6); shakeT=.3;
         }
         else {
@@ -2746,6 +2835,7 @@
         zap = clamp(zap + 0.5, 0, 1);
         grow(2); addScore(3);
         stats = Engine.recordEvent(stats, "babyEelsEaten");
+        fx("babyEat");
         burst(b.x,b.y,"#f6ff8a",20,5);
         babies.splice(i,1);
       }
@@ -2766,6 +2856,7 @@
       if (d2 < grab*grab){
         grow(1.0); addScore(1);
         stats = Engine.recordEvent(stats, "energyMotesCollected");
+        fx("energyEat");
         burst(en.x, en.y, `hsl(${en.hue},85%,66%)`, 3, 2);
         energy.splice(i,1);
       }
@@ -2777,6 +2868,7 @@
       if (dist2(s.x,s.y,player.x,player.y) < (R+s.r)*(R+s.r)){
         addScore(10); grow(11);
         stats = Engine.recordEvent(stats, "feastOrbsEaten");
+        fx("feastEat");
         burst(s.x,s.y,"#6dffb0",30,6);
         burst(s.x,s.y,"#ffd166",16,4);
         flashT = 0.2;
@@ -3673,6 +3765,11 @@
     const from = phase;
     phase = next;
 
+    if (event === "dive" || event === "resume"){
+      // the browser only allows audio after a user gesture, and backgrounding
+      // a tab can suspend an already-running context — both land here
+      ensureAudio();
+    }
     if (event === "dive"){
       const fare = Engine.payForDive(banked);   // broke players dive free, never blocked
       banked = fare.banked;
@@ -3984,6 +4081,7 @@
           writeStore(STORE.owned, JSON.stringify(owned));
           skinId = pendingBuy;                // wear it straight away
           writeStore(STORE.skin, skinId);
+          fx("buy");
         }
         pendingBuy = null;
         renderSkins();
@@ -4197,6 +4295,28 @@
   document.getElementById("closeStatsBtn").addEventListener("click", () => goTo("closeStats"));
   document.getElementById("miniGameOfferBtn").addEventListener("click", () => goTo("playMiniGame"));
   document.getElementById("skipMiniGameBtn").addEventListener("click", finishMiniGame);
+
+  function renderMuteBtn(){
+    document.getElementById("muteBtn").textContent = muted ? "🔇 Sound off" : "🔊 Sound on";
+  }
+  renderMuteBtn();
+  document.getElementById("muteBtn").addEventListener("click", () => {
+    setMuted(!muted);
+    renderMuteBtn();
+  });
+
+  // One click sound for every button in the game, rather than a tone() call
+  // wired at each individual addEventListener — this also reaches buttons
+  // built later at runtime (renderSkinAction's buy/wear/cancel trio), which a
+  // one-time boot-time wiring pass would miss entirely. zapBtn and buyBtn
+  // already have their own distinct sound at the moment they're pressed, so
+  // a second generic click here would just be noise stacked on top.
+  const CLICK_SOUND_EXCLUDE = new Set(["zapBtn", "buyBtn"]);
+  document.addEventListener("click", (e) => {
+    const btn = e.target && e.target.closest ? e.target.closest("button") : null;
+    if (!btn || CLICK_SOUND_EXCLUDE.has(btn.id)) return;
+    fx("click");
+  });
 })();
 </script>
 </body>

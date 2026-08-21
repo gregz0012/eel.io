@@ -412,6 +412,15 @@ it off with `npx wrangler telemetry disable` or `WRANGLER_SEND_METRICS=false`.
 - **Tunables live in `config.js`**, not scattered as magic numbers, so tests can pin them and balance changes stay in one place.
 - **One engine module = one unit spec.** New engine file ⇒ new `test/*.test.js`. Add it to `ENGINE_MODULES` in `build.mjs` too, in dependency order.
 - **Don't unit-test the renderer.** `draw.js` is validated by eye. Keep logic *out* of it so there's nothing there worth testing.
+- **Sound and haptics are shell-only, same as the renderer.** `AudioContext` and
+  `navigator.vibrate` are banned in `engine/` for the same reason `Math.random`
+  is — and `test/build.test.js`'s sandbox has neither, so even a top-level
+  reference in the shell fails the build. Both are touched only lazily, inside
+  a function, feature-detected with `typeof`. Every sound is a named entry in
+  one `SFX` table triggered through `fx(name)`, rather than `tone()` calls
+  scattered at each event site — the whole palette stays readable, and
+  rebalanceable, in one place. `STORE.muted` follows the `joined` boolean idiom
+  exactly (absent ⇒ not muted).
 - **Anything random in `engine/` takes an `rng` argument** — `rollPresent(rng)`, never `Math.random()`. The shell passes the real thing.
 - **Determinism:** every test that touches randomness seeds the RNG. No test may depend on wall-clock time or real randomness.
 - **No runtime dependencies ship to the browser.** `vitest` and `cucumber` are `devDependencies` only. Keep it that way — `test/build.test.js` asserts the shipped file loads nothing external.
