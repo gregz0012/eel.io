@@ -32,6 +32,26 @@ describe("the catalogue", () => {
     expect(SKINS.filter(s => s.gem).map(s => s.id)).toEqual(["emerald", "ruby", "diamond"]);
   });
 
+  it("gives every gem the crystal material, on top of its gem twinkle", () => {
+    // material and gem are orthogonal (facets are fixed geometry, gem's
+    // twinkle is what moves over them) — both should be present at once
+    for (const id of ["emerald", "ruby", "diamond"]) {
+      const s = skinById(id);
+      expect(s.gem).toBe(true);
+      expect(resolveMaterial(s).type).toBe("crystal");
+    }
+  });
+
+  it("tunes Diamond to the most crystalline of the three gems", () => {
+    const diamond = resolveMaterial(skinById("diamond"));
+    const emerald = resolveMaterial(skinById("emerald"));
+    const ruby = resolveMaterial(skinById("ruby"));
+    expect(diamond.strength).toBeGreaterThan(emerald.strength);
+    expect(diamond.strength).toBeGreaterThan(ruby.strength);
+    expect(diamond.scale).toBeGreaterThan(emerald.scale);
+    expect(diamond.scale).toBeGreaterThan(ruby.scale);
+  });
+
   it("charges one price per tier — for the tiers that still share one", () => {
     // Elements and Special price per skin instead (each is its own theme,
     // priced and gated by how dramatic it is to look at, not by a shared

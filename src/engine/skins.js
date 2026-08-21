@@ -100,9 +100,17 @@ export const SKINS = [
     minLevel: 8, fx: "arc" },
 
   // the gems — all one price, all shimmering
-  { id: "emerald", tier: "gemstone",  name: "Emerald",  hue: 150, sat: 85, bodyLight: 34, headLight: 60, price: 7500, gem: true },
-  { id: "ruby", tier: "gemstone",     name: "Ruby",     hue: 350, sat: 82, bodyLight: 36, headLight: 60, price: 7500, gem: true },
-  { id: "diamond", tier: "gemstone",  name: "Diamond",  hue: 190, sat: 45, bodyLight: 58, headLight: 82, price: 7500, gem: true },
+  // material's facets and gem's own travelling twinkle are orthogonal, not
+  // duplicate effects — facets are the fixed geometry, gem is what moves
+  // over them. Diamond is tuned to the highest strength/scale of the three
+  // (most facets, most visible dispersion glint), reading as the most
+  // crystalline — the issue's own ask for it specifically.
+  { id: "emerald", tier: "gemstone",  name: "Emerald",  hue: 150, sat: 85, bodyLight: 34, headLight: 60, price: 7500, gem: true,
+    material: { type: "crystal", strength: 0.5, scale: 1.0 } },
+  { id: "ruby", tier: "gemstone",     name: "Ruby",     hue: 350, sat: 82, bodyLight: 36, headLight: 60, price: 7500, gem: true,
+    material: { type: "crystal", strength: 0.55, scale: 1.0 } },
+  { id: "diamond", tier: "gemstone",  name: "Diamond",  hue: 190, sat: 45, bodyLight: 58, headLight: 82, price: 7500, gem: true,
+    material: { type: "crystal", strength: 0.8, scale: 1.4 } },
 
   // the special finishes — the four here are each a variant of an Elements
   // effect (biolume from Water's dots, toxic from its bubble trail, frost
@@ -296,6 +304,7 @@ export const MATERIALS = {
   brushedMetal: { strength: 0.5, scale: 1 },
   stone: { strength: 0.5, scale: 1 },
   charred: { strength: 0.5, scale: 1 },
+  crystal: { strength: 0.5, scale: 1 },
 };
 
 const DEFAULT_MATERIAL = Object.freeze({ type: "organic", ...MATERIALS.organic });
