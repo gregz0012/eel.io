@@ -31,3 +31,21 @@ Feature: Calming mini-games
     And they skip the offered mini-game
     And they play for 1 more minute and die
     Then a mini-game is offered
+
+  Scenario: Asking for a different good deed pays nothing and stays on the activity
+    Given a new player
+    When they play for 15 minutes and die
+    And they ask for a different good deed
+    Then their play bank holds 0 points
+    And a good deed is still on offer
+    When they say they did it
+    Then their play bank holds 250 points
+
+  Scenario: An unkind answer costs nothing and can be tried again
+    Given a new player
+    When they play for 15 minutes and die
+    And they pick the unkind answer
+    Then their play bank holds 0 points
+    And they are gently asked to try again
+    When they pick the kind answer
+    Then their play bank holds 250 points

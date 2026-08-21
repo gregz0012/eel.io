@@ -3,6 +3,7 @@ import {
   MINI_GAMES, miniGameIds, miniGameById, pickMiniGame,
   breathPhaseAt, canTapAt, wordsNeeded, isWordGameComplete, wordList,
   pickStretch, stretchPhaseAt, pickBubblePrompts, bubblesNeeded, isBubbleGameComplete,
+  pickDeed, pickScenario, isKindChoice, choiceOutcome,
 } from "../src/engine/minigames.js";
 import { seededRng } from "../src/engine/rng.js";
 import { CONFIG } from "../src/engine/config.js";
@@ -11,6 +12,12 @@ const B = CONFIG.miniGames.breathing;
 const W = CONFIG.miniGames.words;
 const ST = CONFIG.miniGames.stretch;
 const BU = CONFIG.miniGames.bubbles;
+const DE = CONFIG.miniGames.deeds;
+const CH = CONFIG.miniGames.choices;
+
+// No strangers, no money, no leaving home — a good deed or a kind choice
+// should always be something a child can safely do right where they are.
+const BANNED = /\bstranger|\$|\bmoney\b|leave (the )?house|leave home/i;
 
 describe("MINI_GAMES", () => {
   it("gives every activity a unique id, a title, a subtitle and a positive weight", () => {
@@ -229,5 +236,81 @@ describe("bubblesNeeded / isBubbleGameComplete", () => {
   // here should ever ask a player to pause between taps.
   it("has no tap cooldown, unlike the words game", () => {
     expect(CONFIG.miniGames.bubbles.tapCooldownMs).toBeUndefined();
+  });
+});
+
+describe("pickDeed", () => {
+  it("only ever returns a listed deed", () => {
+    const rng = seededRng(2);
+    const ids = DE.list.map(d => d.id);
+    for (let i = 0; i < 50; i++) expect(ids).toContain(pickDeed(rng, null).id);
+  });
+
+  it("never returns the excluded deed once there is another to give", () => {
+    const rng = seededRng(4);
+    const first = DE.list[0];
+    for (let i = 0; i < 50; i++) expect(pickDeed(rng, first.id).id).not.toBe(first.id);
+  });
+
+  it("does not hang when only one deed is left to exclude", () => {
+    const only = [{ id: "solo", text: "The only deed" }];
+    expect(() => pickDeed(() => 0, only[0].id)).not.toThrow();
+  });
+
+  it("content guard: no strangers, no money, no leaving home", () => {
+    for (const d of DE.list) expect(d.text).not.toMatch(BANNED);
+  });
+});
+
+describe("pickScenario / isKindChoice / choiceOutcome", () => {
+  it("only ever returns a listed scenario", () => {
+    const rng = seededRng(6);
+    const ids = CH.list.map(s => s.id);
+    for (let i = 0; i < 50; i++) expect(ids).toContain(pickScenario(rng).id);
+  });
+
+  it("gives every scenario exactly one kind option, so none is unwinnable", () => {
+    for (const s of CH.list) {
+      expect(s.options.filter(o => o.kind === true)).toHaveLength(1);
+    }
+  });
+
+  it("identifies the kind option by index", () => {
+    const s = CH.list[0];
+    const kindIndex = s.options.findIndex(o => o.kind);
+    expect(isKindChoice(s, kindIndex)).toBe(true);
+    expect(isKindChoice(s, (kindIndex + 1) % s.options.length)).toBe(false);
+  });
+
+  it("completes and replies kindly on the kind option, with no points field", () => {
+    const s = CH.list[0];
+    const kindIndex = s.options.findIndex(o => o.kind);
+    const outcome = choiceOutcome(s, kindIndex);
+    expect(outcome).toEqual({ kind: true, message: CH.kindReply, complete: true });
+    expect(outcome.points).toBeUndefined();
+    expect(outcome.score).toBeUndefined();
+    expect(outcome.penalty).toBeUndefined();
+  });
+
+  it("nudges without completing or costing anything on any other option", () => {
+    const s = CH.list[0];
+    const unkindIndex = s.options.findIndex(o => !o.kind);
+    const outcome = choiceOutcome(s, unkindIndex);
+    expect(outcome).toEqual({ kind: false, message: CH.nudge, complete: false });
+    expect(outcome.points).toBeUndefined();
+  });
+
+  it("treats an out-of-range index as unkind rather than throwing", () => {
+    const s = CH.list[0];
+    expect(() => choiceOutcome(s, 999)).not.toThrow();
+    expect(choiceOutcome(s, 999).complete).toBe(false);
+    expect(choiceOutcome(s, -1).complete).toBe(false);
+  });
+
+  it("content guard: no strangers, no money, no leaving home", () => {
+    for (const s of CH.list) {
+      expect(s.prompt).not.toMatch(BANNED);
+      for (const o of s.options) expect(o.text).not.toMatch(BANNED);
+    }
   });
 });

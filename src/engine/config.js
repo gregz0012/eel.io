@@ -144,5 +144,63 @@ export const CONFIG = {
         "A small win today",
       ],
     },
+    // Rerolling is uncapped and free — the point of "give me another" is
+    // letting a player search until they find a deed they can actually do
+    // right now, so there is nothing here to tune that would cap it.
+    deeds: {
+      list: [
+        { id: "compliment", text: "Give someone a genuine compliment" },
+        { id: "tidy",       text: "Help tidy up without being asked" },
+        { id: "thanks",     text: "Say thank you to someone who helped you today" },
+        { id: "share",      text: "Share something you have with a sibling or friend" },
+        { id: "listen",     text: "Ask someone how their day was, and really listen" },
+        { id: "note",       text: "Write or draw a kind note for someone" },
+        { id: "smile",      text: "Smile and say hello to someone" },
+      ],
+    },
+    // Every scenario has exactly one option flagged kind:true — simplest to
+    // author and test, and choiceOutcome has structurally nowhere for a
+    // penalty to live on the other branch, so an unkind pick can only ever
+    // lead to a gentle nudge, never a cost.
+    choices: {
+      kindReply: "Nice choice.",
+      nudge: "What else could you try?",
+      list: [
+        {
+          id: "toy",
+          prompt: "Your sibling drops their toy and it breaks. What do you do?",
+          options: [
+            { text: "Laugh at them", kind: false },
+            { text: "Help them fix it, or find something else to play", kind: true },
+            { text: "Walk off and leave them to it", kind: false },
+          ],
+        },
+        {
+          id: "lunch",
+          prompt: "Someone in your class is sitting alone. What do you do?",
+          options: [
+            { text: "Ignore them", kind: false },
+            { text: "Invite them to sit with you", kind: true },
+          ],
+        },
+        {
+          id: "mistake",
+          prompt: "A classmate gets an answer wrong out loud. What do you do?",
+          options: [
+            { text: "Laugh", kind: false },
+            { text: "Say it's okay, everyone makes mistakes", kind: true },
+            { text: "Roll your eyes", kind: false },
+          ],
+        },
+        {
+          id: "turn",
+          prompt: "Two friends both want a turn at the same game. What do you do?",
+          options: [
+            { text: "Grab it for yourself", kind: false },
+            { text: "Suggest taking turns", kind: true },
+          ],
+        },
+      ],
+    },
   },
 };

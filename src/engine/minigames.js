@@ -21,6 +21,8 @@ export const MINI_GAMES = [
   { id: "words",     title: "KIND WORDS",        sub: "gather a few kind words", weight: 1 },
   { id: "stretch",   title: "STRETCH BREAK",     sub: "a gentle moment to move", weight: 1 },
   { id: "bubbles",   title: "GRATITUDE BUBBLES", sub: "pop a few good thoughts", weight: 1 },
+  { id: "deeds",     title: "GOOD DEED QUEST",   sub: "go and do one small kindness", weight: 1 },
+  { id: "choices",   title: "KIND CHOICES",      sub: "pick the kind thing to do", weight: 1 },
 ];
 
 export function miniGameIds() {
@@ -148,4 +150,47 @@ export function bubblesNeeded() {
 /** Has enough been tapped? */
 export function isBubbleGameComplete(tapCount) {
   return (tapCount ?? 0) >= BU.needed;
+}
+
+const DE = CONFIG.miniGames.deeds;
+const CH = CONFIG.miniGames.choices;
+
+/**
+ * One randomly-picked deed, as `{id, text}`. `excludeId` — the deed just
+ * shown — is left out of the draw so "give me another" never repeats the
+ * one a player just asked to skip; with only one deed in the whole list
+ * there's nothing left to exclude, so it's returned anyway rather than
+ * hanging.
+ */
+export function pickDeed(rng, excludeId) {
+  const pool = excludeId != null && DE.list.length > 1
+    ? DE.list.filter(d => d.id !== excludeId)
+    : DE.list;
+  return pool[randInt(rng, 0, pool.length - 1)];
+}
+
+/** One randomly-picked "what would you do" scenario, as `{id, prompt, options}`. */
+export function pickScenario(rng) {
+  return CH.list[randInt(rng, 0, CH.list.length - 1)];
+}
+
+/** Is the option at this index the scenario's kind one? */
+export function isKindChoice(scenario, index) {
+  return scenario?.options?.[index]?.kind === true;
+}
+
+/**
+ * What picking an option leads to. The kind option ends the activity and
+ * earns the reward; anything else is a gentle nudge to try again — there is
+ * no field here a penalty could ever occupy, on either branch, which is what
+ * makes "never punish" a shape rather than just an intention. An out-of-range
+ * index is treated the same as an unkind pick: nudged, never completed,
+ * never throws.
+ * @returns {{kind:boolean, message:string, complete:boolean}}
+ */
+export function choiceOutcome(scenario, index) {
+  if (isKindChoice(scenario, index)) {
+    return { kind: true, message: CH.kindReply, complete: true };
+  }
+  return { kind: false, message: CH.nudge, complete: false };
 }
