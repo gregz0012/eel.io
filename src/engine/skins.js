@@ -212,6 +212,17 @@ export const SKINS = [
   { id: "redrogue", tier: "legend", name: "Red Rogue", hue: 12, sat: 48, bodyLight: 19, headLight: 27,
     price: 14000, minLevel: 12, material: { type: "worn", strength: 0.5, scale: 1 },
     mark: ["worneye", "gear"] },
+
+  // Near-black deep indigo — reads as plain black at rest and only reveals
+  // its colour when highlights move over it, which is the whole point of
+  // reusing the liquid material (Eel-symbiote's own) at a higher
+  // strength/scale rather than forking a new one: the "living surface"
+  // detail (veins, iridescent channels, the rare tendril) all lives in the
+  // tendril fx instead, so this material change can never regress
+  // Eel-symbiote's already-shipped look.
+  { id: "voidbond", tier: "legend", name: "Voidbond", hue: 255, sat: 40, bodyLight: 5, headLight: 11,
+    price: 15000, minLevel: 13, material: { type: "liquid", strength: 0.85, scale: 1.4 },
+    fx: "tendril", mark: ["sensory"] },
 ];
 
 export const DEFAULT_SKIN_ID = "volt";
