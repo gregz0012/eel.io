@@ -3643,9 +3643,12 @@
   // canvas, where only every few points are sampled for performance, it isn't.
 
   // Metals: a bright specular streak down one flank and a dark rim down the
-  // other. Flat colour reads as plastic; this is what makes it read as a
-  // curved metal surface, and scaling it by sheen is what separates dull
-  // iron from mirror-bright platinum.
+  // other, on top of the universal shading every skin now gets from
+  // drawBodyShading (above drawEelBody) — sheen used to carry the *entire*
+  // curved-surface illusion by itself; now it only has to add the extra
+  // reflectivity a polished metal has above that shared baseline, which is
+  // why its intensities are lower than they used to be. Scaling by sheen is
+  // still what separates dull iron from mirror-bright platinum.
   function fxSheen(ctx2d, pts, bodyLength, radius, skin){
     const { hue, sat, bodyLight, headLight, sheen } = skin;
     for (let k = pts.length - 1; k >= 1; k--){
@@ -3655,14 +3658,14 @@
       const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
       const nx = -dy / len, ny = dx / len;         // unit normal to the spine
 
-      ctx2d.strokeStyle = `hsla(${hue},${sat}%,${Math.max(4, bodyLight - 20)}%,${0.55 * sheen})`;
+      ctx2d.strokeStyle = `hsla(${hue},${sat}%,${Math.max(4, bodyLight - 20)}%,${0.35 * sheen})`;
       ctx2d.lineWidth = r * 0.7;
       ctx2d.beginPath();
       ctx2d.moveTo(a.x - nx * r * 0.55, a.y - ny * r * 0.55);
       ctx2d.lineTo(b.x - nx * r * 0.55, b.y - ny * r * 0.55);
       ctx2d.stroke();
 
-      ctx2d.strokeStyle = `hsla(${hue},${Math.max(0, sat - 30)}%,${Math.min(98, headLight + 24)}%,${0.9 * sheen})`;
+      ctx2d.strokeStyle = `hsla(${hue},${Math.max(0, sat - 30)}%,${Math.min(98, headLight + 24)}%,${0.6 * sheen})`;
       ctx2d.lineWidth = r * 0.5;
       ctx2d.beginPath();
       ctx2d.moveTo(a.x + nx * r * 0.5, a.y + ny * r * 0.5);
@@ -4092,8 +4095,100 @@
     return `hsl(${bh},${bs}%,${bl}%)`;
   }
 
-  // Reused every frame rather than allocated fresh — drawEelBody runs for up
-  // to ~15 eels a frame, and this is the one array both effects above read.
+  // ---------- universal body shading ----------
+  // Every eel gets this, on top of the flat taper fill and under any sheen,
+  // gem twinkle or themed fx — it's what makes even a plain Standard skin
+  // read as a rounded, lit, faintly wet surface instead of one flat colour.
+
+  // A tapered filled ribbon: walk the body from k0 to k1 (default the whole
+  // thing) along one signed offset of each point's own local radius, then
+  // back along a second offset, close the two into one shape and fill once.
+  // Unlike a stroke, whose lineWidth is constant along its whole length, this
+  // tapers exactly with the body for free — every material later in this
+  // phase is a parameterisation of this one primitive (a grain run, a facet,
+  // a mottled patch are all just a different from/to/k0/k1). Offsets and the
+  // normal convention match fxSheen below: walking a point back toward the
+  // head is what "from"/"to" are measured against.
+  function bodyRibbon(ctx2d, pts, bodyLength, radius, from, to, style, k0, k1){
+    const lo = k0 ?? 0, hi = k1 ?? pts.length - 1;
+    if (hi <= lo) return;
+    ctx2d.fillStyle = style;
+    ctx2d.beginPath();
+    for (let k = lo; k <= hi; k++){
+      const p = pts[k], q = pts[Math.max(lo, k - 1)];
+      const t = 1 - p.i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      const x = p.x + nx * r * from, y = p.y + ny * r * from;
+      k === lo ? ctx2d.moveTo(x, y) : ctx2d.lineTo(x, y);
+    }
+    for (let k = hi; k >= lo; k--){
+      const p = pts[k], q = pts[Math.max(lo, k - 1)];
+      const t = 1 - p.i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      ctx2d.lineTo(p.x + nx * r * to, p.y + ny * r * to);
+    }
+    ctx2d.closePath();
+    ctx2d.fill();
+  }
+
+  // Three ribbons: a dark underside, a broad soft highlight, and a narrow
+  // specular streak — hue-agnostic (plain black/white alpha), so it composes
+  // for free with accent banding, fade, iridescent and bare rival hues
+  // without any of them needing to know it exists. `sheen` (fxSheen, below)
+  // adds *more* shine on top of this floor for metals and the like; it no
+  // longer carries the whole 3D effect on its own.
+  function drawBodyShading(ctx2d, pts, bodyLength, radius, skin){
+    bodyRibbon(ctx2d, pts, bodyLength, radius, -1.0, -0.5, "rgba(0,0,0,0.22)");
+    bodyRibbon(ctx2d, pts, bodyLength, radius, 0.05, 0.55, "rgba(255,255,255,0.10)");
+    bodyRibbon(ctx2d, pts, bodyLength, radius, 0.55, 0.72, "rgba(255,255,255,0.16)");
+  }
+
+  // The head is a flat filled ellipse today — left unshaded, it would read
+  // wrong once the body it's attached to isn't. Same three-band idea,
+  // adapted to a filled ellipse: clip to its silhouette, then lay dark,
+  // broad-highlight and narrow-specular ellipses inside it.
+  function drawHeadShading(ctx2d, radius, skin){
+    ctx2d.save();
+    ctx2d.beginPath();
+    ctx2d.ellipse(0, 0, radius * 1.5, radius * 1.15, 0, 0, TAU);
+    ctx2d.clip();
+
+    ctx2d.fillStyle = "rgba(0,0,0,0.22)";
+    ctx2d.beginPath();
+    ctx2d.ellipse(0, radius * 0.55, radius * 1.5, radius * 0.75, 0, 0, TAU);
+    ctx2d.fill();
+
+    ctx2d.fillStyle = "rgba(255,255,255,0.14)";
+    ctx2d.beginPath();
+    ctx2d.ellipse(-radius * 0.3, -radius * 0.5, radius * 1.1, radius * 0.55, 0, 0, TAU);
+    ctx2d.fill();
+
+    ctx2d.fillStyle = "rgba(255,255,255,0.22)";
+    ctx2d.beginPath();
+    ctx2d.ellipse(-radius * 0.35, -radius * 0.62, radius * 0.55, radius * 0.22, 0, 0, TAU);
+    ctx2d.fill();
+
+    ctx2d.restore();
+  }
+
+  // A pool of reused {x,y,i,s} point objects, grown on demand and never
+  // shrunk — drawEelBody now builds this list unconditionally (every skin
+  // gets the shading above), for up to ~15 eels a frame, so the pool is what
+  // keeps that a one-time cost rather than a permanent per-frame allocation.
+  // `s` is the point's cumulative screen-space distance from the head; later
+  // materials size structured features (facets, grain spacing) against `s`
+  // rather than `i`, because the shop preview (46 fixed points) and the game
+  // canvas (up to ~750, sampled every few) don't come out the same apparent
+  // size from `i` alone.
+  const SKIN_FX_POOL = [];
+  function poolPoint(k){
+    if (!SKIN_FX_POOL[k]) SKIN_FX_POOL[k] = { x: 0, y: 0, i: 0, s: 0 };
+    return SKIN_FX_POOL[k];
+  }
   const SKIN_FX_SCRATCH = [];
 
   function drawEelBody(body, radius, skin, glow, isPlayer){
@@ -4108,25 +4203,42 @@
     const nowMs = reduceMotion ? 0 : performance.now();
     ctx.lineCap = "round"; ctx.lineJoin = "round";
 
+    // One shared, pooled projection of the sampled body, built once and read
+    // by every pass below instead of each calling worldToScreen again — that
+    // used to mean the glow underlay, the base body pass and the web mark
+    // each saw a *different* camera-shake jitter for the same point (the
+    // shake offset in worldToScreen is randomised per call), which a crisp
+    // shading ribbon would visibly show as flicker during a boss-hit shake.
+    // Built unconditionally now that shading below applies to every skin,
+    // not just the ones with sheen/gem/fx — see SKIN_FX_POOL above.
+    SKIN_FX_SCRATCH.length = 0;
+    let travelledS = 0, prevX = null, prevY = null;
+    for (let i = 0, k = 0; i < body.length; i += step, k++){
+      const [sx, sy] = worldToScreen(body[i].x, body[i].y);
+      if (prevX !== null) travelledS += Math.hypot(sx - prevX, sy - prevY);
+      prevX = sx; prevY = sy;
+      const p = poolPoint(k);
+      p.x = sx; p.y = sy; p.i = i; p.s = travelledS;
+      SKIN_FX_SCRATCH.push(p);
+    }
+    const pts = SKIN_FX_SCRATCH;
+
     // glow underlay — gems run a little hotter than plain metal
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
     ctx.strokeStyle = `hsla(${hue},${Math.min(100, sat + 20)}%,${Math.min(80, headLight + 8)}%,${gem ? Math.min(1, glow*1.3 + 0.12) : glow})`;
     ctx.lineWidth = radius*2 + (gem ? 11 : 8);
     ctx.beginPath();
-    for (let i = 0; i < body.length; i += step){
-      const [sx,sy] = worldToScreen(body[i].x, body[i].y);
-      i === 0 ? ctx.moveTo(sx,sy) : ctx.lineTo(sx,sy);
-    }
+    pts.forEach((p, k) => k === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
     ctx.stroke();
     ctx.restore();
 
     // main body with taper — banded into two colours when the skin has an accent
-    for (let i = body.length - 1 - step; i >= 0; i -= step){
+    for (let k = pts.length - 1; k >= 1; k--){
+      const p = pts[k], q = pts[k - 1];
+      const i = p.i;
       const t = 1 - i / body.length;               // 1 at head
       const r = radius * (0.35 + 0.65 * t);
-      const [ax,ay] = worldToScreen(body[i].x, body[i].y);
-      const [bx,by] = worldToScreen(body[Math.max(0,i-step)].x, body[Math.max(0,i-step)].y);
       const band = accent && (i % BAND) < BAND * accentRatio;
       const bh = band ? accent.hue : hue;
       const bs = band ? accent.sat : sat;
@@ -4135,8 +4247,12 @@
         ? bodyFxStyle(bh, bs, bl + t*18, t, i, skin, nowMs)
         : `hsl(${bh},${bs}%,${bl + t*18}%)`;
       ctx.lineWidth = r*2;
-      ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(p.x,p.y); ctx.lineTo(q.x,q.y); ctx.stroke();
     }
+
+    // universal baseline shading — every skin gets this, before any themed
+    // finish; sheen (below) then adds *more* shine on top of it.
+    drawBodyShading(ctx, pts, body.length, radius, skin);
 
     // "web": a strand down the spine crossed by ribs, which is as much of a
     // web as reads at this size — the crosshatch is the recognisable part
@@ -4145,39 +4261,27 @@
       ctx.strokeStyle = ink;
       ctx.lineWidth = Math.max(0.7, radius*0.12);
       ctx.beginPath();
-      for (let i = 0; i < body.length; i += step){
-        const [sx,sy] = worldToScreen(body[i].x, body[i].y);
-        i === 0 ? ctx.moveTo(sx,sy) : ctx.lineTo(sx,sy);
-      }
+      pts.forEach((p, k) => k === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
       ctx.stroke();
-      for (let i = body.length - 1 - step; i >= 0; i -= step*3){
-        const t = 1 - i / body.length;
+      for (let k = pts.length - 1; k >= 1; k -= 3){
+        const p = pts[k], q = pts[Math.max(0, k - 1)];
+        const t = 1 - p.i / body.length;
         const r = radius * (0.35 + 0.65 * t);
-        const [ax,ay] = worldToScreen(body[i].x, body[i].y);
-        const [bx,by] = worldToScreen(body[Math.max(0,i-step)].x, body[Math.max(0,i-step)].y);
-        const dx = bx-ax, dy = by-ay, len = Math.hypot(dx,dy) || 1;
+        const dx = q.x-p.x, dy = q.y-p.y, len = Math.hypot(dx,dy) || 1;
         const nx = -dy/len, ny = dx/len;
         ctx.beginPath();
-        ctx.moveTo(ax - nx*r*0.95, ay - ny*r*0.95);
-        ctx.lineTo(ax + nx*r*0.95, ay + ny*r*0.95);
+        ctx.moveTo(p.x - nx*r*0.95, p.y - ny*r*0.95);
+        ctx.lineTo(p.x + nx*r*0.95, p.y + ny*r*0.95);
         ctx.stroke();
       }
     }
 
-    // sheen, a gem's twinkle and a themed fx finish all walk the same sampled
-    // points, so build them once here rather than several times over — see
-    // fxSheen/fxGemTwinkle/drawSkinFx above.
-    if (sheen > 0 || gem || skin.fx){
-      SKIN_FX_SCRATCH.length = 0;
-      for (let i = 0; i < body.length; i += step){
-        const [sx, sy] = worldToScreen(body[i].x, body[i].y);
-        SKIN_FX_SCRATCH.push({ x: sx, y: sy, i });
-      }
-      if (sheen > 0) fxSheen(ctx, SKIN_FX_SCRATCH, body.length, radius, skin);
-      if (gem) fxGemTwinkle(ctx, SKIN_FX_SCRATCH, 4, body.length, radius, skin, nowMs);
-      if (skin.fx) drawSkinFx(ctx, SKIN_FX_SCRATCH, body.length, radius, skin, nowMs,
-        skin.fx === "xray" ? Engine.chargeGlow(zap, zapFlashT / ZAP_FLASH_S) : undefined);
-    }
+    // sheen, a gem's twinkle and a themed fx finish all walk the same shared
+    // projection built above.
+    if (sheen > 0) fxSheen(ctx, pts, body.length, radius, skin);
+    if (gem) fxGemTwinkle(ctx, pts, 4, body.length, radius, skin, nowMs);
+    if (skin.fx) drawSkinFx(ctx, pts, body.length, radius, skin, nowMs,
+      skin.fx === "xray" ? Engine.chargeGlow(zap, zapFlashT / ZAP_FLASH_S) : undefined);
 
     // "swords": crossed on the back, a little way behind the head. Walk the
     // body by distance rather than by index so they sit in the same place on
@@ -4226,6 +4330,7 @@
     }
     ctx.fillStyle = `hsl(${hue},${sat}%,${headLight}%)`;
     ctx.beginPath(); ctx.ellipse(0,0,radius*1.5,radius*1.15,0,0,TAU); ctx.fill();
+    drawHeadShading(ctx, radius, skin);
     if (gem){
       // a faceted glint on the crown, standing in for a cut gem's flat faces
       ctx.save();
@@ -4783,12 +4888,17 @@
   // camera, no world coordinates, just a shape to hang a skin on
   const PREVIEW_BODY = (() => {
     const w = previewCanvas.width, h = previewCanvas.height, pts = [];
+    let s = 0, prevX = null, prevY = null;
     for (let i = 0; i < 46; i++){
       const t = i / 45;
-      // `i` rides along so PREVIEW_BODY can be passed straight into the same
-      // skin-effect helpers (fxSheen/fxGemTwinkle) drawEelBody uses — see
+      const x = w * (0.92 - t*0.84), y = h/2 + Math.sin(t*TAU*1.15) * h*0.22;
+      if (prevX !== null) s += Math.hypot(x - prevX, y - prevY);
+      prevX = x; prevY = y;
+      // `i` and `s` (cumulative distance from the head) ride along so
+      // PREVIEW_BODY can be passed straight into the same skin-effect
+      // helpers (fxSheen/fxGemTwinkle/bodyRibbon) drawEelBody uses — see
       // src/index.html's skin-effect section, above drawEelBody.
-      pts.push({ x: w * (0.92 - t*0.84), y: h/2 + Math.sin(t*TAU*1.15) * h*0.22, i });
+      pts.push({ x, y, i, s });
     }
     return pts;
   })();
@@ -4831,6 +4941,9 @@
       pctx.lineWidth = r*2;
       pctx.beginPath(); pctx.moveTo(body[i].x, body[i].y); pctx.lineTo(body[i-1].x, body[i-1].y); pctx.stroke();
     }
+
+    // universal baseline shading — same call, same helper, as the game body
+    drawBodyShading(pctx, body, body.length, radius, skin);
 
     if (marks.includes("web")){
       pctx.strokeStyle = `hsla(${hue},${Math.round(sat*0.4)}%,7%,0.6)`;
@@ -4889,6 +5002,7 @@
     }
     pctx.fillStyle = `hsl(${hue},${sat}%,${headLight}%)`;
     pctx.beginPath(); pctx.ellipse(0,0,radius*1.5,radius*1.15,0,0,TAU); pctx.fill();
+    drawHeadShading(pctx, radius, skin);
     if (gem){
       pctx.save(); pctx.globalCompositeOperation = "lighter";
       pctx.fillStyle = `hsla(${hue},${Math.min(100,sat+10)}%,96%,0.8)`;
