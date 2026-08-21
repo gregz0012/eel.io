@@ -3177,6 +3177,75 @@
     c.restore();
   }
 
+  // ---------- skin finish effects, shared by the game canvas and the shop
+  // preview ----------
+  // Both canvases draw the same eel skins, so a metal's sheen or a gem's
+  // twinkle should look identical wherever it's drawn. These take points
+  // already in the target canvas's own screen space — worldToScreen results
+  // for the game (see SKIN_FX_SCRATCH below), PREVIEW_BODY's own fixed
+  // coordinates for the shop preview — so neither helper needs a camera, and
+  // each caller supplies whatever `radius`/`nowMs` fits its own scale and
+  // clock. `pts[k].i` is the point's index in the *original* (unsampled)
+  // body, which the `t` (taper) and twinkle-phase math are defined against —
+  // for the shop preview, where every point is used, i === k; for the game
+  // canvas, where only every few points are sampled for performance, it isn't.
+
+  // Metals: a bright specular streak down one flank and a dark rim down the
+  // other. Flat colour reads as plastic; this is what makes it read as a
+  // curved metal surface, and scaling it by sheen is what separates dull
+  // iron from mirror-bright platinum.
+  function fxSheen(ctx2d, pts, bodyLength, radius, skin){
+    const { hue, sat, bodyLight, headLight, sheen } = skin;
+    for (let k = pts.length - 1; k >= 1; k--){
+      const a = pts[k], b = pts[k - 1];
+      const t = 1 - a.i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;         // unit normal to the spine
+
+      ctx2d.strokeStyle = `hsla(${hue},${sat}%,${Math.max(4, bodyLight - 20)}%,${0.55 * sheen})`;
+      ctx2d.lineWidth = r * 0.7;
+      ctx2d.beginPath();
+      ctx2d.moveTo(a.x - nx * r * 0.55, a.y - ny * r * 0.55);
+      ctx2d.lineTo(b.x - nx * r * 0.55, b.y - ny * r * 0.55);
+      ctx2d.stroke();
+
+      ctx2d.strokeStyle = `hsla(${hue},${Math.max(0, sat - 30)}%,${Math.min(98, headLight + 24)}%,${0.9 * sheen})`;
+      ctx2d.lineWidth = r * 0.5;
+      ctx2d.beginPath();
+      ctx2d.moveTo(a.x + nx * r * 0.5, a.y + ny * r * 0.5);
+      ctx2d.lineTo(b.x + nx * r * 0.5, b.y + ny * r * 0.5);
+      ctx2d.stroke();
+    }
+  }
+
+  // Gems get a travelling twinkle down the spine that plain metal never
+  // has — this is the one thing that makes the top tier look worth the
+  // price, so it stays even under reduced motion (it is a colour change,
+  // not a shake). `stride` is how many `pts` entries apart each twinkle
+  // candidate sits — the two canvases sample their own body at different
+  // densities, so each passes whatever spacing looks right at its own scale.
+  function fxGemTwinkle(ctx2d, pts, stride, bodyLength, radius, skin, nowMs){
+    if (reduceMotion) return;
+    const { hue, sat, headLight } = skin;
+    ctx2d.save();
+    ctx2d.globalCompositeOperation = "lighter";
+    for (let k = 0; k < pts.length; k += stride){
+      const p = pts[k];
+      const t = 1 - p.i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const twinkle = Math.sin(nowMs * 0.004 + p.i * 0.6);
+      if (twinkle < 0.55) continue;                 // sparkles come and go, not always-on
+      ctx2d.fillStyle = `hsla(${hue},${Math.min(100, sat + 15)}%,${Math.min(96, headLight + 22)}%,${(twinkle - 0.55) / 0.45})`;
+      ctx2d.beginPath(); ctx2d.arc(p.x, p.y - r * 0.4, Math.max(1.4, r * 0.3), 0, TAU); ctx2d.fill();
+    }
+    ctx2d.restore();
+  }
+
+  // Reused every frame rather than allocated fresh — drawEelBody runs for up
+  // to ~15 eels a frame, and this is the one array both effects above read.
+  const SKIN_FX_SCRATCH = [];
+
   function drawEelBody(body, radius, skin, glow, isPlayer){
     const { hue, sat, bodyLight, headLight, gem, sheen = 0, accent, accentRatio = 0.5 } = skin;
     if (body.length < 2) return;
@@ -3240,52 +3309,16 @@
       }
     }
 
-    // metals: a bright specular streak down one flank and a dark rim down the
-    // other. Flat colour reads as plastic; this is what makes it read as a
-    // curved metal surface, and scaling it by sheen is what separates dull
-    // iron from mirror-bright platinum.
-    if (sheen > 0){
-      for (let i = body.length - 1 - step; i >= 0; i -= step){
-        const t = 1 - i / body.length;
-        const r = radius * (0.35 + 0.65 * t);
-        const [ax,ay] = worldToScreen(body[i].x, body[i].y);
-        const [bx,by] = worldToScreen(body[Math.max(0,i-step)].x, body[Math.max(0,i-step)].y);
-        const dx = bx-ax, dy = by-ay, len = Math.hypot(dx,dy) || 1;
-        const nx = -dy/len, ny = dx/len;           // unit normal to the spine
-
-        ctx.strokeStyle = `hsla(${hue},${sat}%,${Math.max(4, bodyLight - 20)}%,${0.55*sheen})`;
-        ctx.lineWidth = r*0.7;
-        ctx.beginPath();
-        ctx.moveTo(ax - nx*r*0.55, ay - ny*r*0.55);
-        ctx.lineTo(bx - nx*r*0.55, by - ny*r*0.55);
-        ctx.stroke();
-
-        ctx.strokeStyle = `hsla(${hue},${Math.max(0,sat-30)}%,${Math.min(98, headLight + 24)}%,${0.9*sheen})`;
-        ctx.lineWidth = r*0.5;
-        ctx.beginPath();
-        ctx.moveTo(ax + nx*r*0.5, ay + ny*r*0.5);
-        ctx.lineTo(bx + nx*r*0.5, by + ny*r*0.5);
-        ctx.stroke();
+    // metals' sheen and a gem's twinkle both walk the same sampled points, so
+    // build them once here rather than twice — see fxSheen/fxGemTwinkle above.
+    if (sheen > 0 || gem){
+      SKIN_FX_SCRATCH.length = 0;
+      for (let i = 0; i < body.length; i += step){
+        const [sx, sy] = worldToScreen(body[i].x, body[i].y);
+        SKIN_FX_SCRATCH.push({ x: sx, y: sy, i });
       }
-    }
-
-    // gems get a travelling twinkle down the spine that plain metal never has —
-    // this is the one thing that makes the top tier look worth the price, so it
-    // stays even under reduced motion (it is a colour change, not a shake)
-    if (gem && !reduceMotion){
-      const now = performance.now();
-      ctx.save();
-      ctx.globalCompositeOperation = "lighter";
-      for (let i = 0; i < body.length; i += step*4){
-        const t = 1 - i / body.length;
-        const r = radius * (0.35 + 0.65*t);
-        const twinkle = Math.sin(now*0.004 + i*0.6);
-        if (twinkle < 0.55) continue;               // sparkles come and go, not always-on
-        const [sx,sy] = worldToScreen(body[i].x, body[i].y);
-        ctx.fillStyle = `hsla(${hue},${Math.min(100,sat+15)}%,${Math.min(96,headLight+22)}%,${(twinkle-0.55)/0.45})`;
-        ctx.beginPath(); ctx.arc(sx, sy - r*0.4, Math.max(1.4, r*0.3), 0, TAU); ctx.fill();
-      }
-      ctx.restore();
+      if (sheen > 0) fxSheen(ctx, SKIN_FX_SCRATCH, body.length, radius, skin);
+      if (gem) fxGemTwinkle(ctx, SKIN_FX_SCRATCH, 4, body.length, radius, skin, performance.now());
     }
 
     // "swords": crossed on the back, a little way behind the head. Walk the
@@ -3875,11 +3908,14 @@
   // ---------- skin preview ----------
   // A small, self-contained eel drawn on its own canvas so a browsing player
   // can see a skin — including a gem's shimmer — before spending anything.
-  // Deliberately not a reuse of drawEelBody: that function is coupled to the
-  // game's single camera and world coordinates, and swapping those out from
-  // under a live game loop for a second, unrelated canvas is exactly the kind
-  // of fragile cleverness this codebase avoids. A little duplicated drawing
-  // code is the simpler, safer trade.
+  // Deliberately not a reuse of drawEelBody as a whole: that function is
+  // coupled to the game's single camera and world coordinates, and swapping
+  // those out from under a live game loop for a second, unrelated canvas is
+  // exactly the kind of fragile cleverness this codebase avoids. Its finish
+  // *effects* (fxSheen, fxGemTwinkle, above drawEelBody) are shared, though —
+  // they only ever need points already in the target canvas's own screen
+  // space and a radius, never a camera, so there's nothing fragile about
+  // reusing just that part.
   const previewCanvas = document.getElementById("skinPreview");
   const pctx = previewCanvas.getContext("2d");
   let previewSkinId = null;      // null => show whatever is currently worn
@@ -3891,7 +3927,10 @@
     const w = previewCanvas.width, h = previewCanvas.height, pts = [];
     for (let i = 0; i < 46; i++){
       const t = i / 45;
-      pts.push({ x: w * (0.92 - t*0.84), y: h/2 + Math.sin(t*TAU*1.15) * h*0.22 });
+      // `i` rides along so PREVIEW_BODY can be passed straight into the same
+      // skin-effect helpers (fxSheen/fxGemTwinkle) drawEelBody uses — see
+      // src/index.html's skin-effect section, above drawEelBody.
+      pts.push({ x: w * (0.92 - t*0.84), y: h/2 + Math.sin(t*TAU*1.15) * h*0.22, i });
     }
     return pts;
   })();
@@ -3949,44 +3988,11 @@
       }
     }
 
-    // same specular treatment the game uses, so the preview is honest
-    if (sheen > 0){
-      for (let i = body.length - 1; i > 0; i--){
-        const t = 1 - i/body.length;
-        const r = radius * (0.35 + 0.65*t);
-        const ax = body[i].x, ay = body[i].y, bx = body[i-1].x, by = body[i-1].y;
-        const dx = bx-ax, dy = by-ay, len = Math.hypot(dx,dy) || 1;
-        const nx = -dy/len, ny = dx/len;
-
-        pctx.strokeStyle = `hsla(${hue},${sat}%,${Math.max(4, bodyLight - 20)}%,${0.55*sheen})`;
-        pctx.lineWidth = r*0.7;
-        pctx.beginPath();
-        pctx.moveTo(ax - nx*r*0.55, ay - ny*r*0.55);
-        pctx.lineTo(bx - nx*r*0.55, by - ny*r*0.55);
-        pctx.stroke();
-
-        pctx.strokeStyle = `hsla(${hue},${Math.max(0,sat-30)}%,${Math.min(98, headLight + 24)}%,${0.9*sheen})`;
-        pctx.lineWidth = r*0.5;
-        pctx.beginPath();
-        pctx.moveTo(ax + nx*r*0.5, ay + ny*r*0.5);
-        pctx.lineTo(bx + nx*r*0.5, by + ny*r*0.5);
-        pctx.stroke();
-      }
-    }
-
-    if (gem && !reduceMotion){
-      const now = performance.now();
-      pctx.save(); pctx.globalCompositeOperation = "lighter";
-      for (let i = 0; i < body.length; i += 3){
-        const t = 1 - i/body.length;
-        const r = radius * (0.35 + 0.65*t);
-        const twinkle = Math.sin(now*0.004 + i*0.6);
-        if (twinkle < 0.55) continue;
-        pctx.fillStyle = `hsla(${hue},${Math.min(100,sat+15)}%,${Math.min(96,headLight+22)}%,${(twinkle-0.55)/0.45})`;
-        pctx.beginPath(); pctx.arc(body[i].x, body[i].y - r*0.4, Math.max(1.4, r*0.3), 0, TAU); pctx.fill();
-      }
-      pctx.restore();
-    }
+    // same specular treatment the game uses, so the preview is honest — body
+    // here is PREVIEW_BODY itself (every point carries its own `i`, matching
+    // its array index, since the preview walks every point already)
+    if (sheen > 0) fxSheen(pctx, body, body.length, radius, skin);
+    if (gem) fxGemTwinkle(pctx, body, 3, body.length, radius, skin, performance.now());
 
     if (marks.includes("swords")){
       const at = body[7], back = body[12];
