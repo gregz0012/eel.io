@@ -118,5 +118,31 @@ export const CONFIG = {
         "confident", "peaceful", "cheerful", "thoughtful", "generous",
       ],
     },
+    stretch: {
+      totalMs: 12000,        // how long the timer runs before "Done" pays out
+      list: [
+        { id: "shoulders", text: "Roll your shoulders slowly" },
+        { id: "reach",     text: "Reach your arms up high" },
+        { id: "neck",      text: "Gently stretch your neck from side to side" },
+        { id: "wiggle",    text: "Wiggle your fingers and your toes" },
+        { id: "cat",       text: "Take a big, slow stretch like a cat" },
+        { id: "ankles",    text: "Roll your ankles, one at a time" },
+      ],
+    },
+    // Deliberately no tapCooldownMs — this is the calmest of the activities,
+    // no timer, no urgency, so nothing here should ever ask a player to wait.
+    bubbles: {
+      needed: 3,             // distinct bubbles to tap before the reward is earned
+      onScreen: 7,           // how many float at once — shell-side layout tuning
+      list: [
+        "Something that made you smile today",
+        "A person you're glad to have",
+        "A place that makes you feel calm",
+        "Something you're good at",
+        "A sound you like",
+        "Something soft or cozy",
+        "A small win today",
+      ],
+    },
   },
 };

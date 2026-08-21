@@ -297,6 +297,49 @@
     from{opacity:0;transform:translateY(8px);} to{opacity:1;transform:translateY(0);}
   }
   @media (prefers-reduced-motion:reduce){ .wordChip{animation:none;} }
+  #stretchText{font-size:16px;color:var(--ink);max-width:320px;margin:14px auto 14px;}
+  /* a visible progress bar, same recipe as the daily challenge's — an early
+     "Done" must not pay out, so the player needs to actually see how much
+     of the hold is left, not just take it on faith */
+  #stretchProgressBar{
+    margin:0 auto 8px;max-width:280px;height:10px;border-radius:6px;
+    background:rgba(4,26,38,.6);border:1px solid rgba(142,243,255,.3);overflow:hidden;
+  }
+  #stretchProgressBar>i{
+    display:block;height:100%;width:0%;
+    background:linear-gradient(90deg,var(--biolume),var(--volt));
+    transition:width .2s linear;
+  }
+  #stretchTimeLeft{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums;}
+  /* A viewport-relative width, not a percentage — every bubble inside is
+     position:absolute, so without an explicit width #bubblesField collapses
+     to near-nothing (absolutely positioned children don't contribute to a
+     block's shrink-to-fit size), and a percentage width has nothing to
+     resolve against either: #minigameScreen's flex column never stretches
+     its children by default, so the ancestor chain is auto-width all the
+     way up. min(92vw,480px) sidesteps the whole chain, the same way
+     #breathSquare's own width already does. */
+  #bubblesField{position:relative;width:min(92vw,480px);height:240px;margin:10px auto 12px;}
+  .bubble{
+    position:absolute;width:min(26vw,92px);height:min(26vw,92px);
+    font-family:inherit;font-weight:600;font-size:11px;line-height:1.25;color:var(--ink);
+    background:rgba(4,26,38,.55);border:1px solid rgba(79,230,214,.3);
+    border-radius:50%;cursor:pointer;padding:8px;
+    display:flex;align-items:center;justify-content:center;text-align:center;
+    animation:bubbleFloat 6s ease-in-out infinite;
+    transition:opacity .2s ease,border-color .2s ease;
+  }
+  .bubble:hover{border-color:rgba(79,230,214,.7);}
+  .bubble.tapped{opacity:.25;cursor:default;border-color:rgba(79,230,214,.12);}
+  #bubblesProgress{color:var(--muted);font-size:12px;}
+  /* margin-top, not transform: each bubble is also individually positioned
+     with an inline transform (translate(-50%,-50%), centring it on its grid
+     cell) — a second, animated transform here would silently overwrite that
+     every frame and drag every bubble to one corner of its cell. */
+  @keyframes bubbleFloat{
+    0%,100%{margin-top:0;} 50%{margin-top:-14px;}
+  }
+  @media (prefers-reduced-motion:reduce){ .bubble{animation:none;} }
   #wordProgress{font-size:12px;color:var(--muted);letter-spacing:.05em;}
   button.quiet{
     background:none;color:var(--biolume);border:1px solid rgba(79,230,214,.35);
@@ -590,6 +633,17 @@
     <div id="wordProgress"></div>
   </div>
 
+  <div id="stretchGame" class="hidden">
+    <div id="stretchText"></div>
+    <div id="stretchProgressBar"><i id="stretchProgressFill"></i></div>
+    <div id="stretchTimeLeft"></div>
+  </div>
+
+  <div id="bubblesGame" class="hidden">
+    <div id="bubblesField"></div>
+    <div id="bubblesProgress"></div>
+  </div>
+
   <div id="miniGameDone" class="hidden">
     <div class="final">You earned<b id="miniGameReward">250</b></div>
   </div>
@@ -722,6 +776,32 @@
             "kind", "brave", "calm", "patient", "gentle", "curious", "friendly",
             "grateful", "hopeful", "steady", "warm", "bright", "caring",
             "confident", "peaceful", "cheerful", "thoughtful", "generous",
+          ],
+        },
+        stretch: {
+          totalMs: 12000,        // how long the timer runs before "Done" pays out
+          list: [
+            { id: "shoulders", text: "Roll your shoulders slowly" },
+            { id: "reach",     text: "Reach your arms up high" },
+            { id: "neck",      text: "Gently stretch your neck from side to side" },
+            { id: "wiggle",    text: "Wiggle your fingers and your toes" },
+            { id: "cat",       text: "Take a big, slow stretch like a cat" },
+            { id: "ankles",    text: "Roll your ankles, one at a time" },
+          ],
+        },
+        // Deliberately no tapCooldownMs — this is the calmest of the activities,
+        // no timer, no urgency, so nothing here should ever ask a player to wait.
+        bubbles: {
+          needed: 3,             // distinct bubbles to tap before the reward is earned
+          onScreen: 7,           // how many float at once — shell-side layout tuning
+          list: [
+            "Something that made you smile today",
+            "A person you're glad to have",
+            "A place that makes you feel calm",
+            "Something you're good at",
+            "A sound you like",
+            "Something soft or cozy",
+            "A small win today",
           ],
         },
       },
@@ -1423,8 +1503,10 @@
     // This registry is what the shell iterates to draw the offer's title/sub and
     // to wire each activity's own screen — see MINI_GAME_VIEWS in src/index.html.
     const MINI_GAMES = [
-      { id: "breathing", title: "TAKE A BREATH", sub: "a short, calm break",     weight: 1 },
-      { id: "words",     title: "KIND WORDS",    sub: "gather a few kind words", weight: 1 },
+      { id: "breathing", title: "TAKE A BREATH",     sub: "a short, calm break",     weight: 1 },
+      { id: "words",     title: "KIND WORDS",        sub: "gather a few kind words", weight: 1 },
+      { id: "stretch",   title: "STRETCH BREAK",     sub: "a gentle moment to move", weight: 1 },
+      { id: "bubbles",   title: "GRATITUDE BUBBLES", sub: "pop a few good thoughts", weight: 1 },
     ];
     
     function miniGameIds() {
@@ -1497,6 +1579,61 @@
     /** The words on offer. Content lives in config.js so it stays one tunable list. */
     function wordList() {
       return W.list;
+    }
+    
+    const ST = CONFIG.miniGames.stretch;
+    const BU = CONFIG.miniGames.bubbles;
+    
+    /** One randomly-picked stretch, as `{id, text}`. */
+    function pickStretch(rng) {
+      return ST.list[randInt(rng, 0, ST.list.length - 1)];
+    }
+    
+    /**
+     * A stretch's timer as a pure function of elapsed time — mirrors
+     * breathPhaseAt's shape. There is no "hold" or "phase" here, just one run
+     * to `totalMs`; tapping "Done" early is a shell-side choice (see
+     * src/index.html), not something this function needs to know about.
+     * @param {number} elapsedMs
+     * @returns {{progress:number, secondsLeft:number, done:boolean}}
+     */
+    function stretchPhaseAt(elapsedMs) {
+      const clamped = Math.max(0, elapsedMs);
+      if (clamped >= ST.totalMs) {
+        return { progress: 1, secondsLeft: 0, done: true };
+      }
+      return {
+        progress: clamped / ST.totalMs,
+        secondsLeft: Math.ceil((ST.totalMs - clamped) / 1000),
+        done: false,
+      };
+    }
+    
+    /**
+     * `n` distinct gratitude prompts, so the same bubble is never floating
+     * twice at once. Asking for more than the list holds just returns the
+     * whole list, rather than looping or duplicating.
+     */
+    function pickBubblePrompts(rng, n) {
+      const pool = [...BU.list];
+      const picked = [];
+      const count = Math.min(Math.max(0, n ?? 0), pool.length);
+      for (let i = 0; i < count; i++) {
+        const idx = randInt(rng, 0, pool.length - 1);
+        picked.push(pool[idx]);
+        pool.splice(idx, 1);
+      }
+      return picked;
+    }
+    
+    /** How many distinct bubbles complete the exercise. */
+    function bubblesNeeded() {
+      return BU.needed;
+    }
+    
+    /** Has enough been tapped? */
+    function isBubbleGameComplete(tapCount) {
+      return (tapCount ?? 0) >= BU.needed;
     }
 
     // ---- src/engine/progress.js ----
@@ -1646,7 +1783,7 @@
       return challengeProgress(challenge, stats, baselineStats) >= challenge.target;
     }
 
-    return { CONFIG, angleTo, distanceTo, seededRng, randInt, weightedPick, hash32, seedFromDate, addScore, completeLevel, bossHits, predatorTarget, isBossLevel, levelSpeed, shieldCap, tagFor, shortTagFor, rivalTag, isWellFormedTag, tagSpaceSize, validateSubmission, bestOf, rankOf, topRows, clampTopLimit, PHASES, nextPhase, canDo, isRunning, deposit, diveCost, payForDive, canAffordDive, SKINS, DEFAULT_SKIN_ID, TIERS, skinsByTier, levelFor, meetsLevel, skinById, isOwned, ownedSkins, canAfford, buySkin, wearableSkin, nextSkinToBuy, skinFromHue, skinStatus, PRESENT_KINDS, rollPresent, isKindGift, MINI_GAMES, miniGameIds, miniGameById, pickMiniGame, breathPhaseAt, canTapAt, wordsNeeded, isWordGameComplete, wordList, addPlayTime, miniGameDue, recordMiniGameReward, recordEvent, recordMax, statValue, ACHIEVEMENTS, isEarned, achievementById, checkAchievements, CHALLENGE_POOL, challengeForDate, challengeProgress, isChallengeComplete };
+    return { CONFIG, angleTo, distanceTo, seededRng, randInt, weightedPick, hash32, seedFromDate, addScore, completeLevel, bossHits, predatorTarget, isBossLevel, levelSpeed, shieldCap, tagFor, shortTagFor, rivalTag, isWellFormedTag, tagSpaceSize, validateSubmission, bestOf, rankOf, topRows, clampTopLimit, PHASES, nextPhase, canDo, isRunning, deposit, diveCost, payForDive, canAffordDive, SKINS, DEFAULT_SKIN_ID, TIERS, skinsByTier, levelFor, meetsLevel, skinById, isOwned, ownedSkins, canAfford, buySkin, wearableSkin, nextSkinToBuy, skinFromHue, skinStatus, PRESENT_KINDS, rollPresent, isKindGift, MINI_GAMES, miniGameIds, miniGameById, pickMiniGame, breathPhaseAt, canTapAt, wordsNeeded, isWordGameComplete, wordList, pickStretch, stretchPhaseAt, pickBubblePrompts, bubblesNeeded, isBubbleGameComplete, addPlayTime, miniGameDue, recordMiniGameReward, recordEvent, recordMax, statValue, ACHIEVEMENTS, isEarned, achievementById, checkAchievements, CHALLENGE_POOL, challengeForDate, challengeProgress, isChallengeComplete };
   })();
 
   const canvas = document.getElementById("game");
@@ -1732,8 +1869,9 @@
   let challengeClaimed = false;   // reward already banked for today?
   let todayChallenge = null;      // recomputed from challengeDateKey, never stored
   let challengeTickHandle = null; // setInterval id while the home screen is up
-  let miniGame = null;                 // "breathing" | "words" while phase === "minigame"
+  let miniGame = null;                 // which Engine.MINI_GAMES id, while phase === "minigame"
   let miniGameStartedAt = 0, wordTaps = [], lastWordTapAt = null, miniGameLoopRunning = false;
+  let bubbleTaps = 0;
   let zap = 0;             // 0..1 charge
   const ZAP_COST = 1;      // full meter to fire
   let shieldCount = 0;   // how many shields are banked; see Engine.shieldCap
@@ -2514,6 +2652,28 @@
         document.getElementById("wordCloud").classList.toggle("waiting", waiting);
       },
     },
+    stretch: {
+      screen: "stretchGame",
+      start(){
+        document.getElementById("stretchText").textContent = Engine.pickStretch(Math.random).text;
+        document.getElementById("stretchProgressFill").style.width = "0%";
+        document.getElementById("stretchTimeLeft").textContent = "";
+      },
+      // Tapping "Skip" before this finishes leaves via the same no-reward
+      // path every other activity already has — there is no separate early
+      // "Done" button, so reaching the end here is the only way to earn it.
+      tick(elapsedMs){
+        const s = Engine.stretchPhaseAt(elapsedMs);
+        document.getElementById("stretchProgressFill").style.width = `${s.progress * 100}%`;
+        document.getElementById("stretchTimeLeft").textContent = s.secondsLeft > 0 ? `${s.secondsLeft}s` : "";
+        if (s.done) completeMiniGame();
+      },
+    },
+    bubbles: {
+      screen: "bubblesGame",
+      start(){ renderBubbleField(); },
+      tick(){},   // no timer, no urgency — purely tap-driven
+    },
   };
 
   function hideAllMiniGameSubScreens(){
@@ -2524,7 +2684,7 @@
   function startMiniGame(){
     miniGame = Engine.pickMiniGame(Math.random);
     miniGameStartedAt = Date.now();
-    wordTaps = []; lastWordTapAt = null; miniGameEarned = false;
+    wordTaps = []; lastWordTapAt = null; bubbleTaps = 0; miniGameEarned = false;
 
     hideAllMiniGameSubScreens();
     show(MINI_GAME_VIEWS[miniGame].screen, true);
@@ -2566,6 +2726,45 @@
   function updateWordProgress(){
     document.getElementById("wordProgress").textContent =
       `${wordTaps.length} of ${Engine.wordsNeeded()} tapped`;
+  }
+
+  function renderBubbleField(){
+    const field = document.getElementById("bubblesField");
+    field.textContent = "";
+    // Which prompts appear at all is Engine.pickBubblePrompts's job — pure,
+    // seeded by the shell's own Math.random. Where each one sits is laid out
+    // on a grid, one bubble per cell: fully random placement let two bubbles
+    // land on top of each other often enough that the one underneath could
+    // never be tapped, which is exactly the "recycled, always available"
+    // promise this activity is supposed to keep.
+    const prompts = Engine.pickBubblePrompts(Math.random, Engine.CONFIG.miniGames.bubbles.onScreen);
+    const cols = Math.max(1, Math.ceil(Math.sqrt(prompts.length)));
+    const rows = Math.max(1, Math.ceil(prompts.length / cols));
+    prompts.forEach((prompt, i) => {
+      const col = i % cols, row = Math.floor(i / cols);
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "bubble"; b.textContent = prompt;
+      b.style.left = `${(col + 0.5) * (100 / cols)}%`;
+      b.style.top = `${(row + 0.5) * (100 / rows)}%`;
+      b.style.transform = "translate(-50%, -50%)";   // centres the bubble on its cell
+      b.style.animationDelay = `${Math.random() * 4}s`;   // still varies when each starts floating
+      b.addEventListener("click", () => tapBubble(b));
+      field.appendChild(b);
+    });
+    updateBubbleProgress();
+  }
+
+  function tapBubble(el){
+    if (miniGameEarned || el.classList.contains("tapped")) return;
+    el.classList.add("tapped");
+    bubbleTaps++;
+    updateBubbleProgress();
+    if (Engine.isBubbleGameComplete(bubbleTaps)) completeMiniGame();
+  }
+
+  function updateBubbleProgress(){
+    document.getElementById("bubblesProgress").textContent =
+      `${bubbleTaps} of ${Engine.bubblesNeeded()} tapped`;
   }
 
   function completeMiniGame(){

@@ -2,12 +2,15 @@ import { describe, it, expect } from "vitest";
 import {
   MINI_GAMES, miniGameIds, miniGameById, pickMiniGame,
   breathPhaseAt, canTapAt, wordsNeeded, isWordGameComplete, wordList,
+  pickStretch, stretchPhaseAt, pickBubblePrompts, bubblesNeeded, isBubbleGameComplete,
 } from "../src/engine/minigames.js";
 import { seededRng } from "../src/engine/rng.js";
 import { CONFIG } from "../src/engine/config.js";
 
 const B = CONFIG.miniGames.breathing;
 const W = CONFIG.miniGames.words;
+const ST = CONFIG.miniGames.stretch;
+const BU = CONFIG.miniGames.bubbles;
 
 describe("MINI_GAMES", () => {
   it("gives every activity a unique id, a title, a subtitle and a positive weight", () => {
@@ -125,5 +128,106 @@ describe("wordList", () => {
     expect(list.length).toBeGreaterThanOrEqual(wordsNeeded());
     expect(new Set(list).size).toBe(list.length);
     for (const w of list) expect(w).toMatch(/^[a-z]+$/);
+  });
+});
+
+describe("pickStretch", () => {
+  it("only ever returns a listed stretch", () => {
+    const rng = seededRng(3);
+    const ids = ST.list.map(s => s.id);
+    for (let i = 0; i < 50; i++) expect(ids).toContain(pickStretch(rng).id);
+  });
+
+  it("is deterministic for a given roll", () => {
+    expect(pickStretch(() => 0)).toBe(ST.list[0]);
+  });
+
+  it("never asks the player to push harder or count anything", () => {
+    // gentle tone only — this is a mindful break, not a workout
+    for (const s of ST.list) {
+      expect(s.text).not.toMatch(/burn|calor|push harder|reps?\b|workout|exercise/i);
+    }
+  });
+
+  it("has no duplicate stretches", () => {
+    expect(new Set(ST.list.map(s => s.id)).size).toBe(ST.list.length);
+  });
+});
+
+describe("stretchPhaseAt", () => {
+  it("starts at no progress", () => {
+    expect(stretchPhaseAt(0).progress).toBe(0);
+    expect(stretchPhaseAt(0).done).toBe(false);
+  });
+
+  it("tracks progress toward the total", () => {
+    expect(stretchPhaseAt(ST.totalMs / 2).progress).toBeCloseTo(0.5);
+  });
+
+  it("is done only once the total has elapsed", () => {
+    expect(stretchPhaseAt(ST.totalMs - 1).done).toBe(false);
+    expect(stretchPhaseAt(ST.totalMs).done).toBe(true);
+    expect(stretchPhaseAt(ST.totalMs).progress).toBe(1);
+  });
+
+  it("counts down the seconds left", () => {
+    expect(stretchPhaseAt(0).secondsLeft).toBe(ST.totalMs / 1000);
+    expect(stretchPhaseAt(ST.totalMs).secondsLeft).toBe(0);
+  });
+
+  it("treats a negative elapsed time as zero rather than throwing", () => {
+    expect(() => stretchPhaseAt(-100)).not.toThrow();
+    expect(stretchPhaseAt(-100).progress).toBe(0);
+  });
+
+  // The whole point: nothing here needs a camera, a motion sensor, or any
+  // device API at all — it's a complete result from two plain numbers.
+  it("needs nothing but elapsed time to produce a complete result", () => {
+    const r = stretchPhaseAt(1000);
+    expect(r).toMatchObject({
+      progress: expect.any(Number), secondsLeft: expect.any(Number), done: expect.any(Boolean),
+    });
+  });
+});
+
+describe("pickBubblePrompts", () => {
+  it("returns the number asked for, all distinct", () => {
+    const picked = pickBubblePrompts(seededRng(5), 3);
+    expect(picked).toHaveLength(3);
+    expect(new Set(picked).size).toBe(3);
+  });
+
+  it("only ever returns listed prompts", () => {
+    const picked = pickBubblePrompts(seededRng(9), BU.onScreen);
+    for (const p of picked) expect(BU.list).toContain(p);
+  });
+
+  it("caps at the list length rather than looping or duplicating", () => {
+    const picked = pickBubblePrompts(seededRng(1), BU.list.length + 10);
+    expect(picked).toHaveLength(BU.list.length);
+    expect(new Set(picked).size).toBe(BU.list.length);
+  });
+
+  it("returns nothing for a non-positive or missing count", () => {
+    expect(pickBubblePrompts(seededRng(1), 0)).toEqual([]);
+    expect(pickBubblePrompts(seededRng(1), -3)).toEqual([]);
+    expect(pickBubblePrompts(seededRng(1), undefined)).toEqual([]);
+  });
+});
+
+describe("bubblesNeeded / isBubbleGameComplete", () => {
+  it("agrees on how many bubbles finish the exercise", () => {
+    expect(isBubbleGameComplete(bubblesNeeded() - 1)).toBe(false);
+    expect(isBubbleGameComplete(bubblesNeeded())).toBe(true);
+  });
+
+  it("treats a missing tap count as zero, not complete", () => {
+    expect(isBubbleGameComplete(undefined)).toBe(false);
+  });
+
+  // The calmest activity of the four has no cooldown to wait out — nothing
+  // here should ever ask a player to pause between taps.
+  it("has no tap cooldown, unlike the words game", () => {
+    expect(CONFIG.miniGames.bubbles.tapCooldownMs).toBeUndefined();
   });
 });
