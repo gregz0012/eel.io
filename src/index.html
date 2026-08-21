@@ -3116,9 +3116,37 @@
       () => `rgba(255,255,255,${0.03 + 0.04 * m.strength})`);
   }
 
+  // charged: faint, always-visible branching veins, deterministic from each
+  // point's own arc-length `s` — no strobe of their own — so Lightning has
+  // something to look at in the frames between fxArc's own strobing flashes,
+  // rather than a flat dark body waiting for the next one.
+  function matCharged(ctx2d, pts, bodyLength, radius, skin, nowMs, detail){
+    const m = Engine.resolveMaterial(skin);
+    const { hue, sat, headLight } = skin;
+    ctx2d.save();
+    ctx2d.globalCompositeOperation = "lighter";
+    for (let k = 1; k < pts.length; k += 2){
+      const p = pts[k], q = pts[k - 1];
+      const hash = (((Math.sin(p.s * 0.11) * 43758.5453) % 1) + 1) % 1;
+      if (hash < 0.6) continue;
+      const t = 1 - p.i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      const side = hash > 0.8 ? 1 : -1;
+      ctx2d.strokeStyle = `hsla(${hue},${Math.min(100, sat + 15)}%,${Math.min(90, headLight + 15)}%,${(0.12 + 0.15 * m.strength) * detail})`;
+      ctx2d.lineWidth = Math.max(0.5, r * 0.06);
+      ctx2d.beginPath();
+      ctx2d.moveTo(p.x, p.y);
+      ctx2d.lineTo(p.x + nx * r * 0.6 * side, p.y + ny * r * 0.6 * side);
+      ctx2d.stroke();
+    }
+    ctx2d.restore();
+  }
+
   const SKIN_MATERIAL = {
     organic: matOrganic, brushedMetal: matBrushedMetal, stone: matStone, charred: matCharred,
-    crystal: matCrystal, water: matWater, air: matAir,
+    crystal: matCrystal, water: matWater, air: matAir, charged: matCharged,
   };
 
   // Falls back to organic for any unresolved type — a second, shell-side

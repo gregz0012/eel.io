@@ -96,8 +96,12 @@ export const SKINS = [
   // charred's under-glow and fxEmber add on top, not the base colour
   { id: "fire", tier: "element", name: "Fire", hue: 8, sat: 30, bodyLight: 9, headLight: 15, price: 6000,
     minLevel: 7, fx: "ember", material: { type: "charred", strength: 0.65, scale: 1 } },
-  { id: "lightning", tier: "element", name: "Lightning", hue: 192, sat: 90, bodyLight: 42, headLight: 68, price: 7500,
-    minLevel: 8, fx: "arc" },
+  // dark navy/electric-blue base, not the bright cyan it was — the point is
+  // that charged's veins and fxArc's strobing arcs are the electric part,
+  // showing through a genuinely dark body rather than the whole eel already
+  // reading as "electric" before either finish fires
+  { id: "lightning", tier: "element", name: "Lightning", hue: 220, sat: 75, bodyLight: 14, headLight: 26, price: 7500,
+    minLevel: 8, fx: "arc", material: { type: "charged", strength: 0.6, scale: 1 } },
 
   // the gems — all one price, all shimmering
   // material's facets and gem's own travelling twinkle are orthogonal, not
@@ -307,6 +311,7 @@ export const MATERIALS = {
   crystal: { strength: 0.5, scale: 1 },
   water: { strength: 0.5, scale: 1 },
   air: { strength: 0.5, scale: 1 },
+  charged: { strength: 0.5, scale: 1 },
 };
 
 const DEFAULT_MATERIAL = Object.freeze({ type: "organic", ...MATERIALS.organic });

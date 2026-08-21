@@ -1402,8 +1402,12 @@
       // charred's under-glow and fxEmber add on top, not the base colour
       { id: "fire", tier: "element", name: "Fire", hue: 8, sat: 30, bodyLight: 9, headLight: 15, price: 6000,
         minLevel: 7, fx: "ember", material: { type: "charred", strength: 0.65, scale: 1 } },
-      { id: "lightning", tier: "element", name: "Lightning", hue: 192, sat: 90, bodyLight: 42, headLight: 68, price: 7500,
-        minLevel: 8, fx: "arc" },
+      // dark navy/electric-blue base, not the bright cyan it was — the point is
+      // that charged's veins and fxArc's strobing arcs are the electric part,
+      // showing through a genuinely dark body rather than the whole eel already
+      // reading as "electric" before either finish fires
+      { id: "lightning", tier: "element", name: "Lightning", hue: 220, sat: 75, bodyLight: 14, headLight: 26, price: 7500,
+        minLevel: 8, fx: "arc", material: { type: "charged", strength: 0.6, scale: 1 } },
     
       // the gems — all one price, all shimmering
       // material's facets and gem's own travelling twinkle are orthogonal, not
@@ -1613,6 +1617,7 @@
       crystal: { strength: 0.5, scale: 1 },
       water: { strength: 0.5, scale: 1 },
       air: { strength: 0.5, scale: 1 },
+      charged: { strength: 0.5, scale: 1 },
     };
     
     const DEFAULT_MATERIAL = Object.freeze({ type: "organic", ...MATERIALS.organic });
@@ -4478,9 +4483,37 @@
       () => `rgba(255,255,255,${0.03 + 0.04 * m.strength})`);
   }
 
+  // charged: faint, always-visible branching veins, deterministic from each
+  // point's own arc-length `s` — no strobe of their own — so Lightning has
+  // something to look at in the frames between fxArc's own strobing flashes,
+  // rather than a flat dark body waiting for the next one.
+  function matCharged(ctx2d, pts, bodyLength, radius, skin, nowMs, detail){
+    const m = Engine.resolveMaterial(skin);
+    const { hue, sat, headLight } = skin;
+    ctx2d.save();
+    ctx2d.globalCompositeOperation = "lighter";
+    for (let k = 1; k < pts.length; k += 2){
+      const p = pts[k], q = pts[k - 1];
+      const hash = (((Math.sin(p.s * 0.11) * 43758.5453) % 1) + 1) % 1;
+      if (hash < 0.6) continue;
+      const t = 1 - p.i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      const side = hash > 0.8 ? 1 : -1;
+      ctx2d.strokeStyle = `hsla(${hue},${Math.min(100, sat + 15)}%,${Math.min(90, headLight + 15)}%,${(0.12 + 0.15 * m.strength) * detail})`;
+      ctx2d.lineWidth = Math.max(0.5, r * 0.06);
+      ctx2d.beginPath();
+      ctx2d.moveTo(p.x, p.y);
+      ctx2d.lineTo(p.x + nx * r * 0.6 * side, p.y + ny * r * 0.6 * side);
+      ctx2d.stroke();
+    }
+    ctx2d.restore();
+  }
+
   const SKIN_MATERIAL = {
     organic: matOrganic, brushedMetal: matBrushedMetal, stone: matStone, charred: matCharred,
-    crystal: matCrystal, water: matWater, air: matAir,
+    crystal: matCrystal, water: matWater, air: matAir, charged: matCharged,
   };
 
   // Falls back to organic for any unresolved type — a second, shell-side

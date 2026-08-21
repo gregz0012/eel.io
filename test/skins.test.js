@@ -98,6 +98,14 @@ describe("the catalogue", () => {
     expect(resolveMaterial(skinById("air")).type).toBe("air");
   });
 
+  it("gives Lightning the charged material and a dark navy base, not bright cyan", () => {
+    const lightning = skinById("lightning");
+    expect(resolveMaterial(lightning).type).toBe("charged");
+    // the veins and fxArc's strobing arcs are the electric part — the base
+    // itself should read as a genuinely dark body, not already-glowing
+    expect(lightning.bodyLight).toBeLessThan(25);
+  });
+
   it("gives Fire a charcoal-dark exterior, not a red eel with orange lines", () => {
     // the heat reads through fxEmber and charred's own under-glow, not the
     // base colour — so the base itself should sit low on both saturation
