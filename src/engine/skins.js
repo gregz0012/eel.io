@@ -153,9 +153,11 @@ export const SKINS = [
   // one Level 15 gate, so reaching the top of the shop is a ladder, not a
   // single distant step.
   { id: "spider", tier: "hero",   name: "Spider",   hue: 352, sat: 84, bodyLight: 41, headLight: 49, price: 10000,
-    minLevel: 9, accent: { hue: 222, sat: 80, light: 31 }, accentRatio: 0.3, mark: "web" },
+    minLevel: 9, accent: { hue: 222, sat: 80, light: 31 }, accentRatio: 0.3, mark: "web",
+    material: { type: "organic", strength: 0.3, scale: 1 } },
   { id: "eelwolf", tier: "hero",  name: "Eel-wolf", hue: 47,  sat: 94, bodyLight: 48, headLight: 62, price: 10000,
-    minLevel: 10, accent: { hue: 226, sat: 72, light: 20 }, accentRatio: 0.42, mark: "ears" },
+    minLevel: 10, accent: { hue: 226, sat: 72, light: 20 }, accentRatio: 0.42, mark: "ears",
+    material: { type: "organic", strength: 0.35, scale: 1.1 } },
   // no banding: its white is the spider, the grin and the stare, and a banded
   // ring would only compete with them. Barely any saturation either — the body
   // taper adds up to 18% lightness towards the head, so a saturated hue turns
@@ -164,7 +166,8 @@ export const SKINS = [
   { id: "symbiote", tier: "hero", name: "Eel-symbiote", hue: 250, sat: 9, bodyLight: 5, headLight: 8, price: 10000,
     minLevel: 11, sheen: 0.3, mark: ["emblem", "stare"] },
   { id: "eelpool", tier: "hero",  name: "Eel-pool", hue: 354, sat: 82, bodyLight: 38, headLight: 46, price: 10000,
-    minLevel: 8, accent: { hue: 0,   sat: 0,  light: 9 },  accentRatio: 0.3, mark: ["patch", "swords"] },
+    minLevel: 8, accent: { hue: 0,   sat: 0,  light: 9 },  accentRatio: 0.3, mark: ["patch", "swords"],
+    material: { type: "organic", strength: 0.6, scale: 1 } },
 ];
 
 export const DEFAULT_SKIN_ID = "volt";
