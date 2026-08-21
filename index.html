@@ -418,8 +418,9 @@
     Anything that dies leaves <b>energy</b> behind — hoover it up to grow.
     Don't cross your own tail, or you'll bite yourself and shrink.
     Fish get you to <b>level 2</b>. After that a <b>boss</b> guards every level and killing it
-    is the only way on — shock it, then ram it, once for every level you're on. A level 5 boss
-    takes five hits. You get a breather after each one, so go and find a starfish.
+    is the only way on — shock it, then ram it. The hits it takes climbs every other level: a
+    level 6 boss takes four. You get a breather after each one (and some points to earn besides),
+    so go and find a starfish.
     <div class="legend">
       <span class="dot" style="color:#ff9e6d;background:#ff9e6d"></span><span>Small fish — food. Bite rival eels' tails, or eat smaller ones whole</span>
       <span class="dot" style="color:#6dffb0;background:#6dffb0"></span><span>Feast orb — a whole shoal at once, worth 10×</span>
@@ -514,13 +515,16 @@
       predatorsBase: 3,         // predators in the sea at level 1
       levelsPerPredator: 2,     // +1 predator every N levels
     
-      // The boss guarding each level. It takes as many hits as the level number,
-      // so it is the pacing of the whole game: level 2 is two hits, level 15 is
-      // fifteen. That only works because it is slow enough to swim away from —
+      // The boss guarding each level is the pacing of the whole game: it turns
+      // up after a breather, needs points earned first, and takes a rising number
+      // of hits. That only works because it is slow enough to swim away from —
       // a boss you cannot escape and cannot out-damage is just a wall.
       boss: {
         firstLevel: 2,          // levels below this are unguarded
         breatherMs: 6000,       // calm after a level-up before the next boss shows
+        pointsToSummon: 60,     // points earned within the level, on top of the
+                                 // breather, before its boss appears — a playtest
+                                 // dial, not a derived number; expect to move it
         speedFactor: 0.72,      // slower than a predator: you can always disengage
         ramKnockback: 30,       // world units the boss is pushed back per ram hit
         hitCooldownMs: 600,     // gap enforced between ram hits on a stunned boss
@@ -696,11 +700,15 @@
     }
     
     /**
-     * How many hits the boss guarding a level takes: the level number itself.
-     * Level 2 is two hits, level 15 is fifteen — the whole difficulty curve.
+     * How many hits the boss guarding a level takes.
+     *
+     * Rises every other level rather than every level: 2, 2, 3, 3, 4, 4… reaching
+     * 8 at level 15, not 15. The uncapped one-hit-per-level ramp made a long dive
+     * a grind rather than a fight — this softens it while still climbing.
      */
     function bossHits(level) {
-      return Math.max(1, level);
+      const above = Math.max(0, level - CONFIG.boss.firstLevel);
+      return 2 + Math.floor(above / 2);
     }
     
     /** How many predators should be hunting at this level. */
@@ -1385,6 +1393,8 @@
   // "none coming". The breather is the whole reason the ramp is survivable:
   // it is when you go and find a starfish and charge the zap.
   let bossPending = 0;
+  let bossReady = false;               // breather is over; waiting on the points gate
+  let levelStartScore = 0;             // score when the current level began
   let levelBanner = 0;                 // countdown on the "LEVEL N CLEARED" flash
   let bestLevel = 1;                   // deepest level ever reached; unlocks skins
   let playProgress = { playedMs: 0, lastRewardAtMs: 0 };   // cumulative play; see engine/progress.js
@@ -1492,7 +1502,8 @@
     particles = []; bubbles = [];
     score = 0; level = 1; zap = 0.35; shieldOn = false; shakeT = 0; flashT = 0;
     predTarget = PRED_BASE; bossAlert = 0; toast = null;
-    bossPending = 0; levelBanner = 0;   // every dive starts at level 1, unguarded
+    bossPending = 0; bossReady = false; levelStartScore = 0;
+    levelBanner = 0;                    // every dive starts at level 1, unguarded
     player = makeEel(WORLD.w/2, WORLD.h/2, 14, true);
     player.body = [];
     player.biteCd = 0;
@@ -1613,13 +1624,30 @@
       flashT = .35;
     }
   }
+  // Points from landing a hit on a boss you're already fighting. These must
+  // never grant a level themselves — killing the boss is the only legitimate
+  // way past it, and a mid-fight level-up would let a hit and a kill stack
+  // two level-ups (or worse, skip a level's boss outright if the cap and the
+  // boss's own first level ever drift apart). Feeding a state whose level
+  // already sits at the cap makes Engine.addScore's own math incapable of
+  // producing a gain — same guarantee `addScore` gives everywhere else, just
+  // pointed at a level that can't move.
+  function addBossHitPoints(n){
+    score = Engine.addScore({ score, level: Engine.CONFIG.scoreLevelCap }, n).score;
+    flashT = .35;
+  }
   function onLevelUp(L){
     predTarget = Engine.predatorTarget(L);
     levelBanner = 2.2;
     if (L > bestLevel){ bestLevel = L; writeStore(STORE.bestLevel, String(bestLevel)); }
-    // The boss does not pounce the instant you level up — you get a breather to
-    // find a starfish and charge the zap, because that is what the fight needs.
-    if (Engine.isBossLevel(L)) bossPending = Engine.CONFIG.boss.breatherMs / 1000;
+    levelStartScore = score;             // the points gate below measures from here
+    // The boss does not pounce the instant you level up. First a breather, to
+    // find a starfish and charge the zap — then it still waits on points
+    // earned in the level, so the pacing isn't purely a clock (see update()).
+    if (Engine.isBossLevel(L)){
+      bossPending = Engine.CONFIG.boss.breatherMs / 1000;
+      bossReady = false;
+    }
   }
 
   /** The boss guarding this level is dead: through to the next one. */
@@ -1637,7 +1665,7 @@
     // while the current boss is still swimming, and silently skipping the
     // spawn would strand the player on a level with no boss left to kill and
     // therefore no way up, forever.
-    if (predators.some(p => p.boss && !p.dead)){ bossPending = 1; return; }
+    if (predators.some(p => p.boss && !p.dead)){ bossPending = 1; bossReady = false; return; }
     const p = spawnAwayFromPlayer(950);
     const hp = Engine.bossHits(L);
     predators.push({ x:p.x, y:p.y, a:rand(0,TAU),
@@ -2166,8 +2194,8 @@
               const a = Math.atan2(p.y-player.y, p.x-player.x);
               p.x += Math.cos(a)*Engine.CONFIG.boss.ramKnockback; p.y += Math.sin(a)*Engine.CONFIG.boss.ramKnockback;
               burst(p.x, p.y, "#ffd166", 22, 6); shakeT = .25;
-              grow(4); addScore(10);
-              // as many hits as the level number, then the way opens
+              grow(4); addBossHitPoints(10);
+              // hp counts down to Engine.bossHits(L); at zero, the way opens
               if (p.hp <= 0){ killPredator(p, true); onBossKilled(); }
             }
           } else {
@@ -2287,12 +2315,17 @@
     if (levelBanner > 0) levelBanner -= dt;
     if (bossPending > 0){
       bossPending -= dt;
-      if (bossPending <= 0){
-        bossPending = 0;
-        // check the level again on arrival: cheap insurance against the
-        // guarded-level boundary ever moving underneath a pending breather
-        if (Engine.isBossLevel(level)) spawnBoss(level);
-      }
+      if (bossPending <= 0){ bossPending = 0; bossReady = true; }
+    }
+    // The breather alone used to decide when the boss shows, so a player who
+    // stood still for it got ambushed the instant it ended. Now it also waits
+    // on points earned within the level — pacing you can affect, not just a
+    // clock. check the level again on arrival: cheap insurance against the
+    // guarded-level boundary ever moving underneath a pending breather.
+    if (bossReady && Engine.isBossLevel(level) &&
+        score - levelStartScore >= Engine.CONFIG.boss.pointsToSummon){
+      bossReady = false;
+      spawnBoss(level);
     }
 
     // HUD
@@ -2821,9 +2854,9 @@
           ctx.stroke();
         }
         ctx.restore();
-        // A boss takes as many hits as its level, so by level 10 a row of pips
-        // would be wider than the boss. Pips while they still read at a glance,
-        // a bar with a count after that.
+        // The hits a boss takes climbs with level, so by level 12 a row of
+        // pips would be wider than the boss. Pips while they still read at a
+        // glance, a bar with a count after that.
         const maxHp = p.maxHp ?? p.hp;
         const pipY = sy - p.r*1.75;
         if (maxHp <= 6){

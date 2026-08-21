@@ -88,18 +88,32 @@ describe("completeLevel", () => {
 });
 
 describe("bossHits", () => {
-  it("takes as many hits as the level number", () => {
-    expect(bossHits(2)).toBe(2);
-    expect(bossHits(15)).toBe(15);
+  const first = CONFIG.boss.firstLevel;
+
+  it("takes two hits at the first guarded level", () => {
+    expect(bossHits(first)).toBe(2);
   });
 
-  it("never asks for fewer than one hit", () => {
-    expect(bossHits(0)).toBe(1);
-    expect(bossHits(-3)).toBe(1);
+  it("rises by one every two levels, not every level", () => {
+    expect(bossHits(first)).toBe(2);
+    expect(bossHits(first + 1)).toBe(2);
+    expect(bossHits(first + 2)).toBe(3);
+    expect(bossHits(first + 3)).toBe(3);
+    expect(bossHits(first + 4)).toBe(4);
   });
 
-  it("rises by exactly one per level, so the ramp has no cliff", () => {
-    for (let L = 2; L < 30; L++) expect(bossHits(L + 1) - bossHits(L)).toBe(1);
+  it("reaches 8 hits by level 15, not 15", () => {
+    expect(bossHits(15)).toBe(8);
+  });
+
+  it("never asks for fewer than two hits, even below the first guarded level", () => {
+    expect(bossHits(first)).toBe(2);
+    expect(bossHits(0)).toBe(2);
+    expect(bossHits(-3)).toBe(2);
+  });
+
+  it("never drops as the level rises", () => {
+    for (let L = 0; L < 30; L++) expect(bossHits(L + 1)).toBeGreaterThanOrEqual(bossHits(L));
   });
 });
 

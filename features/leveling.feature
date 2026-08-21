@@ -1,7 +1,7 @@
 Feature: Levelling and the difficulty ramp
   Points get a young eel as far as its first boss and no further. After that
-  the only way up is killing the boss guarding the level you are on, and each
-  one takes as many hits as its level number. Levels are sticky — losing points
+  the only way up is killing the boss guarding the level you are on, and the
+  hits it takes rises every other level. Levels are sticky — losing points
   never takes a level, and the perks that came with it, back off the player.
 
   Scenario: Eating enough fish reaches the first boss
@@ -21,10 +21,10 @@ Feature: Levelling and the difficulty ramp
     And the player kills the boss
     Then the player is on level 3
 
-  Scenario: Each boss takes as many hits as its level
+  Scenario: The hits a boss takes rises every other level
     Given a new game
     Then the boss guarding level 2 takes 2 hits
-    And the boss guarding level 15 takes 15 hits
+    And the boss guarding level 15 takes 8 hits
 
   Scenario: The first level is unguarded
     Given a new game

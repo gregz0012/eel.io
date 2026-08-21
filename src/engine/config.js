@@ -17,13 +17,16 @@ export const CONFIG = {
   predatorsBase: 3,         // predators in the sea at level 1
   levelsPerPredator: 2,     // +1 predator every N levels
 
-  // The boss guarding each level. It takes as many hits as the level number,
-  // so it is the pacing of the whole game: level 2 is two hits, level 15 is
-  // fifteen. That only works because it is slow enough to swim away from —
+  // The boss guarding each level is the pacing of the whole game: it turns
+  // up after a breather, needs points earned first, and takes a rising number
+  // of hits. That only works because it is slow enough to swim away from —
   // a boss you cannot escape and cannot out-damage is just a wall.
   boss: {
     firstLevel: 2,          // levels below this are unguarded
     breatherMs: 6000,       // calm after a level-up before the next boss shows
+    pointsToSummon: 60,     // points earned within the level, on top of the
+                             // breather, before its boss appears — a playtest
+                             // dial, not a derived number; expect to move it
     speedFactor: 0.72,      // slower than a predator: you can always disengage
     ramKnockback: 30,       // world units the boss is pushed back per ram hit
     hitCooldownMs: 600,     // gap enforced between ram hits on a stunned boss
