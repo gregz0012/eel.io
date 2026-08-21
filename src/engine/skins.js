@@ -35,6 +35,18 @@
 //               Like gem and sheen, a skin only ever wears one finish; fx is
 //               exclusive with those two but may sit alongside accent/mark,
 //               the same way a hero's banding and flourish already do.
+//   material    what the eel's surface is *made from* — organic, brushed
+//               metal, stone, crystal, and so on — as opposed to fx, which is
+//               the animated effect layered on top of it (Earth is
+//               material:"stone" + fx:"cracks"; Gold is material:"brushedMetal"
+//               + sheen:0.78). Unlike gem/sheen/accent/fx, which are mutually
+//               exclusive with each other, material is orthogonal to all four
+//               and may combine with any of them — a metal is still made of
+//               metal whether or not it also sparkles. A bare string ("stone")
+//               or an object ({type, strength, scale}) are both legal; see
+//               resolveMaterial below for what each field means and what a
+//               skin gets when it names none. Drawn by the shell's
+//               SKIN_MATERIAL table, the same pattern SKIN_FX already uses.
 
 /**
  * Colours are HSL parts the renderer assembles, so a skin can be a metal
@@ -42,13 +54,21 @@
  */
 export const SKINS = [
   // yours from the start
-  { id: "volt", tier: "standard",     name: "Volt",     hue: 165, sat: 70, bodyLight: 38, headLight: 58, price: 0 },
+  { id: "volt", tier: "standard",     name: "Volt",     hue: 165, sat: 70, bodyLight: 38, headLight: 58, price: 0,
+    material: "organic" },
 
-  // plain colours — an early, easy first purchase, all one price
-  { id: "coral", tier: "standard",    name: "Coral",    hue: 14,  sat: 78, bodyLight: 40, headLight: 60, price: 250 },
-  { id: "orchid", tier: "standard",   name: "Orchid",   hue: 292, sat: 62, bodyLight: 40, headLight: 60, price: 250 },
-  { id: "sky", tier: "standard",      name: "Sky",      hue: 205, sat: 74, bodyLight: 40, headLight: 60, price: 250 },
-  { id: "lime", tier: "standard",     name: "Lime",     hue: 95,  sat: 62, bodyLight: 36, headLight: 56, price: 250 },
+  // plain colours — an early, easy first purchase, all one price. Named
+  // explicitly here (every other skin defaults to it until its own PR gives
+  // it something else) so the shop's most commonly seen skins are the first
+  // proof the material system does anything at all.
+  { id: "coral", tier: "standard",    name: "Coral",    hue: 14,  sat: 78, bodyLight: 40, headLight: 60, price: 250,
+    material: "organic" },
+  { id: "orchid", tier: "standard",   name: "Orchid",   hue: 292, sat: 62, bodyLight: 40, headLight: 60, price: 250,
+    material: "organic" },
+  { id: "sky", tier: "standard",      name: "Sky",      hue: 205, sat: 74, bodyLight: 40, headLight: 60, price: 250,
+    material: "organic" },
+  { id: "lime", tier: "standard",     name: "Lime",     hue: 95,  sat: 62, bodyLight: 36, headLight: 56, price: 250,
+    material: "organic" },
 
   // the metals — sheen climbs with price, so the ladder is visible at a glance
   { id: "copper", tier: "metallic",   name: "Copper",   hue: 24,  sat: 62, bodyLight: 32, headLight: 54, price: 500,  sheen: 0.32 },
@@ -251,7 +271,44 @@ export function nextSkinToBuy(banked, owned, bestLevel) {
 
 /** Turn a bare hue (rival eels) into a skin the renderer can use. */
 export function skinFromHue(hue) {
-  return { id: "rival", name: "Rival", hue, sat: 70, bodyLight: 38, headLight: 58, price: 0 };
+  return { id: "rival", name: "Rival", hue, sat: 70, bodyLight: 38, headLight: 58, price: 0,
+    material: "organic" };
+}
+
+/**
+ * Canonical default parameters for each material, keyed by the same string
+ * `skin.material`/its `type` field uses. Grows as later PRs add materials;
+ * only `organic` exists yet. `strength` and `scale` are 0..1 richness/size
+ * knobs a skin's own object form can override — see resolveMaterial.
+ */
+export const MATERIALS = {
+  organic: { strength: 0.5, scale: 1 },
+};
+
+const DEFAULT_MATERIAL = Object.freeze({ type: "organic", ...MATERIALS.organic });
+
+/**
+ * Normalise whatever a skin names as its material into `{type, strength,
+ * scale}` the renderer can rely on unconditionally. `skin.material` may be
+ * absent, a bare string ("stone"), or an object ({type, strength, scale}) —
+ * all three are legal input shapes. Anything unrecognisable (a typo, a
+ * future skin whose material hasn't shipped yet, garbage from a corrupted
+ * save) falls back to the shared frozen `organic` default rather than
+ * throwing or drawing nothing — the same "fail safely" rule fx and mark
+ * already follow.
+ */
+export function resolveMaterial(skin) {
+  const m = skin?.material;
+  if (m == null) return DEFAULT_MATERIAL;
+  if (typeof m === "string") {
+    return MATERIALS[m] ? { type: m, ...MATERIALS[m] } : DEFAULT_MATERIAL;
+  }
+  if (typeof m === "object") {
+    const base = MATERIALS[m.type];
+    if (!base) return DEFAULT_MATERIAL;
+    return { type: m.type, strength: m.strength ?? base.strength, scale: m.scale ?? base.scale };
+  }
+  return DEFAULT_MATERIAL;
 }
 
 /**
