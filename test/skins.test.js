@@ -68,6 +68,30 @@ describe("the catalogue", () => {
     }
   });
 
+  it("gives Earth the stone material and Fire the charred material", () => {
+    expect(resolveMaterial(skinById("earth")).type).toBe("stone");
+    expect(resolveMaterial(skinById("fire")).type).toBe("charred");
+  });
+
+  it("gives Fire a charcoal-dark exterior, not a red eel with orange lines", () => {
+    // the heat reads through fxEmber and charred's own under-glow, not the
+    // base colour — so the base itself should sit low on both saturation
+    // and lightness, per the issue's explicit requirement
+    const fire = skinById("fire");
+    expect(fire.sat).toBeLessThan(40);
+    expect(fire.bodyLight).toBeLessThan(15);
+  });
+
+  it("keeps Fire's shop chip distinct from Void and Abyss once it darkens", () => {
+    // the shop grid's flat swatch reads hue/sat/headLight directly — a hue
+    // far enough from the near-black special skins is what keeps a very
+    // dark Fire from reading as "just another dark blob" in the grid
+    const fire = skinById("fire"), abyss = skinById("abyss"), voidSkin = skinById("void");
+    const hueDist = (a, b) => Math.min(Math.abs(a - b), 360 - Math.abs(a - b));
+    expect(hueDist(fire.hue, abyss.hue)).toBeGreaterThan(60);
+    expect(hueDist(fire.hue, voidSkin.hue)).toBeGreaterThan(60);
+  });
+
   it("gives every banded hero a second colour to band with", () => {
     // Eel-symbiote is deliberately unbanded — banding colours whole
     // cross-sections, so on a black skin it reads as white rings rather than

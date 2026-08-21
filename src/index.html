@@ -2944,7 +2944,84 @@
     }
   }
 
-  const SKIN_MATERIAL = { organic: matOrganic, brushedMetal: matBrushedMetal };
+  // Short, hashed ribbon patches — irregular value variation across the
+  // surface, positioned and sized from a hash of each patch's own index (not
+  // per-frame randomness). Shared base for stone and charred: stone renders
+  // it in low-contrast greys, charred renders the same patches near-black.
+  // `styleFor(hash)` lets each material pick its own colour per patch from
+  // that same hash, so the two never have to duplicate the placement logic.
+  function mottlePatches(ctx2d, pts, bodyLength, radius, count, styleFor){
+    const n = pts.length;
+    if (n < 6) return;
+    for (let j = 0; j < count; j++){
+      const hash = (((Math.sin(j * 17.23 + bodyLength * 0.007) * 12958.35) % 1) + 1) % 1;
+      const lo = Math.max(0, Math.min(n - 2, Math.floor(hash * (n - 3))));
+      const hi = Math.min(n - 1, lo + 1 + Math.floor(hash * 3));
+      if (hi <= lo) continue;
+      const side = hash > 0.5 ? 1 : -1;
+      const from = side * (0.1 + hash * 0.3);
+      const to = side * (0.3 + hash * 0.3);
+      bodyRibbon(ctx2d, pts, bodyLength, radius, from, to, styleFor(hash), lo, hi);
+    }
+  }
+
+  // A thin dark stroke walking the exact same path fxCracks/fxEmber's own
+  // crack lines will draw on top — same jitter formula, same `p.i`-keyed
+  // hash, deliberately duplicated rather than shared so this stays a
+  // self-contained function of its own inputs like every other material.
+  // Wider and darker than the crack itself, so the later, thinner, brighter
+  // stroke sits centred inside it — that's what reads as a crack cut into
+  // rock rather than a bright line painted over a flat body.
+  function drawCrackLips(ctx2d, pts, bodyLength, radius, style){
+    for (let k = 1; k < pts.length; k += 2){
+      const p = pts[k], q = pts[k - 1];
+      const jitter = (((Math.sin(p.i * 12.9898) * 43758.5453) % 1) + 1) % 1;
+      if (jitter < 0.5) continue;
+      const t = 1 - p.i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      const side = jitter > 0.75 ? 1 : -1;
+      ctx2d.strokeStyle = style;
+      ctx2d.lineWidth = Math.max(1.2, r * 0.16);
+      ctx2d.beginPath();
+      ctx2d.moveTo(p.x, p.y);
+      ctx2d.lineTo(p.x + nx * r * 0.7 * side, p.y + ny * r * 0.7 * side);
+      ctx2d.stroke();
+    }
+  }
+
+  // stone: mottled, low-contrast grey/brown patches plus dark lips under
+  // where fxCracks will land its own bright lines, so the cracks read as
+  // embedded in rock rather than painted over a flat brown body.
+  function matStone(ctx2d, pts, bodyLength, radius, skin, nowMs, detail){
+    const m = Engine.resolveMaterial(skin);
+    const count = Math.max(3, Math.round(6 * m.strength * detail));
+    mottlePatches(ctx2d, pts, bodyLength, radius, count, hash =>
+      hash > 0.5 ? `rgba(0,0,0,${0.08 + 0.10 * m.strength})` : `rgba(255,255,255,${0.05 + 0.08 * m.strength})`);
+    drawCrackLips(ctx2d, pts, bodyLength, radius, "rgba(0,0,0,0.35)");
+  }
+
+  // charred: the same mottle idea as stone, rendered near-black, plus a hot
+  // under-glow layer — a charcoal crust with heat showing through, not a red
+  // eel with orange lines painted on it. fxEmber (called after this) adds
+  // the rising embers and pulsing crack brightness on top.
+  function matCharred(ctx2d, pts, bodyLength, radius, skin, nowMs, detail){
+    const m = Engine.resolveMaterial(skin);
+    const count = Math.max(3, Math.round(6 * m.strength * detail));
+    mottlePatches(ctx2d, pts, bodyLength, radius, count, () =>
+      `rgba(0,0,0,${0.18 + 0.12 * m.strength})`);
+    ctx2d.save();
+    ctx2d.globalCompositeOperation = "lighter";
+    mottlePatches(ctx2d, pts, bodyLength, radius, Math.max(2, Math.round(3 * m.strength * detail)), () =>
+      `hsla(20,90%,45%,${0.08 + 0.10 * m.strength})`);
+    ctx2d.restore();
+    drawCrackLips(ctx2d, pts, bodyLength, radius, "rgba(0,0,0,0.4)");
+  }
+
+  const SKIN_MATERIAL = {
+    organic: matOrganic, brushedMetal: matBrushedMetal, stone: matStone, charred: matCharred,
+  };
 
   // Falls back to organic for any unresolved type — a second, shell-side
   // fallback independent of Engine.resolveMaterial's own, so the two can
