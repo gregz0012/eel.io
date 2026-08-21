@@ -146,7 +146,7 @@ export const SKINS = [
   // gameplay state of its own beyond what the shell already tracks, so it
   // stays a normal catalogue row; only the fx wiring is bespoke.
   { id: "xray", tier: "special", name: "X-Ray", hue: 190, sat: 55, bodyLight: 12, headLight: 20, price: 8000,
-    minLevel: 8, fx: "xray" },
+    minLevel: 8, fx: "xray", mark: "skull" },
   // the remaining four special finishes change the body-drawing pass itself
   // rather than layering an effect on top of it — fade dims the stroke
   // toward the tail, iridescent drifts its hue — so a bug here disfigures
