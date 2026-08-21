@@ -68,6 +68,7 @@ eel.io/
 │   │   ├── minigames.js  # square breathing, the kind-words tap game (pure)
 │   │   ├── progress.js   # cumulative playtime; when a mini-game is due (pure)
 │   │   ├── stats.js      # lifetime counters, folded in as events happen (pure)
+│   │   ├── achievements.js # a fixed catalogue checked against stats.js (pure)
 │   │   ├── collision.js  # geometry: head-vs-body, tail-bite index, self-cross detection
 │   │   ├── entities.js   # factories: makeEel, makeFish, makePredator, makeBoss, ...
 │   │   ├── spawn.js      # spawn rules (takes rng + config, returns entities)
@@ -94,6 +95,7 @@ eel.io/
 │   ├── skins.test.js
 │   ├── vector.test.js
 │   ├── stats.test.js
+│   ├── achievements.test.js
 │   ├── worker.test.js    # the Worker's decisions, against a stubbed D1
 │   └── build.test.js     # the build output stays in sync and actually executes
 ├── cucumber.js
@@ -101,9 +103,9 @@ eel.io/
 ```
 
 `config.js`, `rng.js`, `scoring.js`, `identity.js`, `leaderboard.js`, `session.js`,
-`bank.js`, `skins.js`, `presents.js`, `minigames.js`, `progress.js`, `vector.js`
-and `stats.js` exist so far. The rest is the destination, not a description of
-today — see §9.
+`bank.js`, `skins.js`, `presents.js`, `minigames.js`, `progress.js`, `vector.js`,
+`stats.js` and `achievements.js` exist so far. The rest is the destination, not
+a description of today — see §9.
 
 ### Why a build step
 

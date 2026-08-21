@@ -214,6 +214,24 @@
   #statsRows .label{color:var(--muted);}
   #statsRows .value{color:var(--volt);font-weight:700;font-variant-numeric:tabular-nums;text-align:right;}
 
+  /* achievements */
+  #achievementsCard{
+    max-width:360px;width:100%;background:rgba(4,26,38,.5);
+    border:1px solid rgba(79,230,214,.2);border-radius:16px;
+    padding:14px 16px;font-size:13px;margin-top:12px;
+  }
+  #achievementsCard h2{
+    font-size:11px;letter-spacing:.32em;text-transform:uppercase;
+    color:var(--biolume);font-weight:700;margin-bottom:10px;
+  }
+  #achievementRows{display:flex;flex-direction:column;gap:10px;text-align:left;}
+  .achievement{display:flex;align-items:flex-start;gap:10px;}
+  .achievement:not(.earned){opacity:.5;}
+  .achievement .icon{font-size:17px;line-height:1.3;}
+  .achievement .name{font-weight:700;color:var(--ink);}
+  .achievement.earned .name{color:var(--volt);}
+  .achievement .desc{font-size:11px;color:var(--muted);}
+
   /* calming mini-games */
   #minigameScreen .final{margin-bottom:8px;}
   #minigameScreen .final b::before{content:"+";}
@@ -443,6 +461,10 @@
 <div id="statsScreen" class="overlay hidden">
   <h1>LIFETIME STATS<span class="sub">every dive, added up</span></h1>
   <div id="statsCard"><div id="statsRows"></div></div>
+  <div id="achievementsCard">
+    <h2>Achievements</h2>
+    <div id="achievementRows"></div>
+  </div>
   <button id="closeStatsBtn">Done</button>
 </div>
 
@@ -610,6 +632,10 @@
   let playProgress = { playedMs: 0, lastRewardAtMs: 0 };   // cumulative play; see engine/progress.js
   let stats = {};           // lifetime counters; see engine/stats.js
   let diveMaxLen = 0;       // this dive's peak length, folded into stats.maxLength on death
+  let unlockedAchievements = [];  // ids ever earned; see engine/achievements.js
+  let achievementQueue = [];      // ids waiting to show their unlock banner
+  let achievementBanner = null;   // {name, t} — the one currently showing
+  let achCheckT = 0;              // re-checked periodically, not every frame — see update()
   let miniGame = null;                 // "breathing" | "words" while phase === "minigame"
   let miniGameStartedAt = 0, wordTaps = [], lastWordTapAt = null, miniGameLoopRunning = false;
   let zap = 0;             // 0..1 charge
@@ -717,6 +743,7 @@
     bossPending = 0; bossReady = false; levelStartScore = 0;
     levelBanner = 0;                    // every dive starts at level 1, unguarded
     diveMaxLen = 0;
+    achCheckT = 0;   // re-sync achievements right away, not just once a second in
     player = makeEel(WORLD.w/2, WORLD.h/2, 14, true);
     player.body = [];
     player.biteCd = 0;
@@ -782,6 +809,19 @@
   }
 
   function showToast(text, colour){ toast = { text, colour, t: 2.2 }; }
+
+  // Re-check the achievement catalogue against the current lifetime stats.
+  // Called periodically during play (not every frame — a filter over the
+  // whole catalogue plus rebuilding the unlocked-ids array is cheap, but not
+  // 60-times-a-second cheap) and once more right before a dive ends, so a
+  // threshold crossed by the final death-time stat flush isn't missed.
+  function syncAchievements(){
+    const result = Engine.checkAchievements(stats, unlockedAchievements);
+    if (!result.newlyUnlocked.length) return;
+    unlockedAchievements = result.unlockedIds;
+    writeStore(STORE.achievements, JSON.stringify(unlockedAchievements));
+    for (const id of result.newlyUnlocked) achievementQueue.push(id);
+  }
 
   // Grant a shield, respecting the level-derived stack cap. A pickup while
   // already at the cap is wasted — better to say so than to have it vanish
@@ -968,8 +1008,9 @@
                   bestLevel: "voltfin.bestLevel",
                   playedMs: "voltfin.playedMs", rewardAtMs: "voltfin.miniGameRewardAtMs",
                   lifetime: "voltfin.lifetime",     // retired, read once to migrate
-                  stats: "voltfin.stats" };         // a fresh key — never reuse `lifetime`,
+                  stats: "voltfin.stats",           // a fresh key — never reuse `lifetime`,
                                                      // which is a number, not JSON
+                  achievements: "voltfin.achievements" };
 
   // Storage throws in private browsing and wherever it is blocked. Never let
   // that stop a kid playing the game.
@@ -1047,6 +1088,25 @@
       const v = document.createElement("div"); v.className = "value";
       v.textContent = Math.round(Engine.statValue(stats, key)).toLocaleString();
       el.appendChild(l); el.appendChild(v);
+    }
+  }
+
+  function renderAchievements(){
+    const el = document.getElementById("achievementRows");
+    el.textContent = "";
+    const unlocked = new Set(unlockedAchievements);   // a persisted fact, not recomputed live
+    for (const a of Engine.ACHIEVEMENTS){
+      const earned = unlocked.has(a.id);
+      const row = document.createElement("div");
+      row.className = earned ? "achievement earned" : "achievement";
+      const icon = document.createElement("div");
+      icon.className = "icon"; icon.textContent = earned ? "🏆" : "🔒";
+      const text = document.createElement("div");
+      const name = document.createElement("div"); name.className = "name"; name.textContent = a.name;
+      const desc = document.createElement("div"); desc.className = "desc"; desc.textContent = a.desc;
+      text.appendChild(name); text.appendChild(desc);
+      row.appendChild(icon); row.appendChild(text);
+      el.appendChild(row);
     }
   }
 
@@ -1292,6 +1352,7 @@
     stats = Engine.recordEvent(stats, "lifetimePoints", Math.round(score));
     stats = Engine.recordMax(stats, "maxLength", diveMaxLen);
     writeStore(STORE.stats, JSON.stringify(stats));
+    syncAchievements();   // catches anything only this final flush crossed
 
     show("hud", false); show("powerbar", false); show("zapBtn", false); show("pauseBtn", false);
     show("sonar", false);
@@ -1619,6 +1680,18 @@
         score - levelStartScore >= Engine.CONFIG.boss.pointsToSummon){
       bossReady = false;
       spawnBoss(level);
+    }
+
+    // achievements: check roughly once a second, show one banner at a time
+    achCheckT -= dt;
+    if (achCheckT <= 0){ achCheckT = 1; syncAchievements(); }
+    if (!achievementBanner && achievementQueue.length){
+      const a = Engine.achievementById(achievementQueue.shift());
+      if (a) achievementBanner = { name: a.name, t: 3.5 };
+    }
+    if (achievementBanner){
+      achievementBanner.t -= dt;
+      if (achievementBanner.t <= 0) achievementBanner = null;
     }
 
     // HUD
@@ -2238,6 +2311,25 @@
     ctx.restore();
   }
 
+  // Fixed screen pixels, not H-proportional like the level/boss banners —
+  // this sits just under the HUD stat panels (~72px tall) rather than
+  // competing with the mid-screen celebrations for the same vertical band.
+  function drawAchievementBanner(){
+    if (!achievementBanner) return;
+    const fade = Math.min(1, achievementBanner.t / 0.6);
+    ctx.save();
+    ctx.globalAlpha = fade;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = "#ffd166";
+    ctx.shadowColor = "rgba(255,209,102,0.85)"; ctx.shadowBlur = 16;
+    ctx.font = "800 12px Trebuchet MS,sans-serif";
+    ctx.fillText("ACHIEVEMENT UNLOCKED", W/2, 96);
+    ctx.font = "700 17px Trebuchet MS,sans-serif";
+    ctx.fillStyle = "#fff5db";
+    ctx.fillText(achievementBanner.name, W/2, 119);
+    ctx.restore();
+  }
+
   function drawStars(){
     for (const s of stars){
       const [sx,sy] = worldToScreen(s.x,s.y);
@@ -2378,6 +2470,7 @@
     }
 
     drawToast();
+    drawAchievementBanner();
 
     if (bossAlert > 0){
       ctx.save();
@@ -2907,6 +3000,8 @@
   if (!Array.isArray(owned)) owned = [];
   try { stats = JSON.parse(readStore(STORE.stats)) ?? {}; } catch { stats = {}; }
   if (stats === null || typeof stats !== "object" || Array.isArray(stats)) stats = {};
+  try { unlockedAchievements = JSON.parse(readStore(STORE.achievements)) ?? []; } catch { unlockedAchievements = []; }
+  if (!Array.isArray(unlockedAchievements)) unlockedAchievements = [];
 
   // One-off migration from the earlier unlock-by-lifetime-points scheme: keep
   // the skins that had been earned, and bank the total.
@@ -2935,7 +3030,7 @@
   document.getElementById("closeHowBtn").addEventListener("click", () => goTo("closeHow"));
   document.getElementById("openBoardBtn").addEventListener("click", () => { goTo("openBoard"); refreshFullBoard(); });
   document.getElementById("closeBoardBtn").addEventListener("click", () => goTo("closeBoard"));
-  document.getElementById("openStatsBtn").addEventListener("click", () => { goTo("openStats"); renderStats(); });
+  document.getElementById("openStatsBtn").addEventListener("click", () => { goTo("openStats"); renderStats(); renderAchievements(); });
   document.getElementById("closeStatsBtn").addEventListener("click", () => goTo("closeStats"));
   document.getElementById("miniGameOfferBtn").addEventListener("click", () => goTo("playMiniGame"));
   document.getElementById("skipMiniGameBtn").addEventListener("click", finishMiniGame);
