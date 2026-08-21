@@ -42,3 +42,26 @@ export function weightedPick(rng, entries) {
   }
   return entries[entries.length - 1];      // only reachable on floating point slop
 }
+
+// FNV-1a, 32-bit. Small, fast and deterministic — not a security hash, and it
+// does not need to be. Used to turn an arbitrary string (a player id, a date)
+// into a seed; the string is the secret or the calendar, this is only a mix.
+export function hash32(s) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h >>> 0;
+}
+
+/**
+ * A seed derived from a calendar date, so every player computing the same
+ * date gets the same seed — and so the same daily challenge — without any
+ * server involved. Pass a UTC date key (e.g. "2026-08-21"), never a
+ * locale-sensitive date string: two players in different timezones must
+ * agree on which day it is for "the same challenge, everywhere" to hold.
+ */
+export function seedFromDate(isoDate) {
+  return hash32(String(isoDate));
+}

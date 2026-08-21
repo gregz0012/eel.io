@@ -32,6 +32,7 @@ const ENGINE_MODULES = [
   "progress.js",
   "stats.js",
   "achievements.js",
+  "challenges.js",
 ];
 
 const MARKER = "/* @inject:engine */";

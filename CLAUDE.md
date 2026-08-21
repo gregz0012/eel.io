@@ -69,6 +69,7 @@ eel.io/
 │   │   ├── progress.js   # cumulative playtime; when a mini-game is due (pure)
 │   │   ├── stats.js      # lifetime counters, folded in as events happen (pure)
 │   │   ├── achievements.js # a fixed catalogue checked against stats.js (pure)
+│   │   ├── challenges.js # the daily challenge: date-seeded, same for everyone (pure)
 │   │   ├── collision.js  # geometry: head-vs-body, tail-bite index, self-cross detection
 │   │   ├── entities.js   # factories: makeEel, makeFish, makePredator, makeBoss, ...
 │   │   ├── spawn.js      # spawn rules (takes rng + config, returns entities)
@@ -96,6 +97,7 @@ eel.io/
 │   ├── vector.test.js
 │   ├── stats.test.js
 │   ├── achievements.test.js
+│   ├── challenges.test.js
 │   ├── worker.test.js    # the Worker's decisions, against a stubbed D1
 │   └── build.test.js     # the build output stays in sync and actually executes
 ├── cucumber.js
@@ -104,7 +106,7 @@ eel.io/
 
 `config.js`, `rng.js`, `scoring.js`, `identity.js`, `leaderboard.js`, `session.js`,
 `bank.js`, `skins.js`, `presents.js`, `minigames.js`, `progress.js`, `vector.js`,
-`stats.js` and `achievements.js` exist so far. The rest is the destination, not
+`stats.js`, `achievements.js` and `challenges.js` exist so far. The rest is the destination, not
 a description of today — see §9.
 
 ### Why a build step
@@ -462,4 +464,5 @@ Honest list of what this architecture does not yet cover:
 - **No lint or formatter.** Fine for now; the codebase is small and consistent.
 - **The bank and owned skins are local-only.** Clearing site data loses them, and they do not follow a player to another device. Nothing validates a balance either — an edited store is an edited store. Syncing them would need an account, which §1 rules out — so this is a trade we accept, not a bug to fix.
 - **Surfacing instead of dying loses that dive's stats, same as it already loses the score and playtime.** `stats.js`'s per-event counters only persist at `die()`; a `paused -> home` "surface" skips that entirely. `dives` is the one exception — it's counted and written the instant a dive starts, so "you dove" is never lost even when the rest of that dive's tally is.
+- **The daily challenge is shared without a server, which is also its limit.** Every player computing the same UTC date gets the identical challenge (`engine/challenges.js`'s `challengeForDate` is pure and date-seeded) — that is real sharing, not a trick. What it cannot do is show one player how another is doing: progress is tracked purely against that browser's own `stats`, so "competition" here means everyone chasing the same goal, not a visible leaderboard for it. Adding one would need the server this feature deliberately avoids.
 - **`src/index.html` is still a monolith** — everything except the extracted engine modules. That is expected; see §9.
