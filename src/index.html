@@ -2903,6 +2903,104 @@
     ctx2d.restore();
   }
 
+  // The head: cowl, base ellipse, shading, gem crown, face mask band and the
+  // eye chain — needs no camera, just points and a radius, the same
+  // criterion that put fxSheen here. Assumes the context is already
+  // translated to the head position and rotated to face it; shared verbatim
+  // between drawEelBody and drawPreviewEel, which used to carry this ~90
+  // lines each.
+  function drawEelHead(ctx2d, radius, skin, marks){
+    const { hue, sat, headLight, gem, accent } = skin;
+    // "ears": a pointed cowl swept back off the head, drawn under it so the
+    // head reads as sitting inside the mask
+    if (marks.includes("ears") && accent){
+      ctx2d.fillStyle = `hsl(${accent.hue},${accent.sat}%,${accent.light + 20}%)`;
+      for (const s of [-1, 1]){
+        ctx2d.beginPath();
+        ctx2d.moveTo(radius*0.30, s*radius*0.60);
+        ctx2d.lineTo(-radius*1.3, s*radius*2.25);   // tip: swept back, but still clear of the body
+        ctx2d.lineTo(-radius*1.0,  s*radius*0.35);
+        ctx2d.closePath(); ctx2d.fill();
+      }
+    }
+    ctx2d.fillStyle = `hsl(${hue},${sat}%,${headLight}%)`;
+    ctx2d.beginPath(); ctx2d.ellipse(0,0,radius*1.5,radius*1.15,0,0,TAU); ctx2d.fill();
+    drawHeadShading(ctx2d, radius, skin);
+    if (gem){
+      // a faceted glint on the crown, standing in for a cut gem's flat faces
+      ctx2d.save();
+      ctx2d.globalCompositeOperation = "lighter";
+      ctx2d.fillStyle = `hsla(${hue},${Math.min(100,sat+10)}%,96%,0.8)`;
+      ctx2d.beginPath();
+      ctx2d.moveTo(-radius*0.15, -radius*0.85);
+      ctx2d.lineTo(radius*0.35, -radius*0.55);
+      ctx2d.lineTo(-radius*0.05, -radius*0.35);
+      ctx2d.closePath(); ctx2d.fill();
+      ctx2d.restore();
+    }
+    // "ears" masks the face too: a band of the cowl colour across the eyes,
+    // clipped to the head so it runs right out to the edge and meets the
+    // horns — mask and cowl then read as one piece rather than two
+    if (marks.includes("ears") && accent){
+      ctx2d.save();
+      ctx2d.beginPath(); ctx2d.ellipse(0,0,radius*1.5,radius*1.15,0,0,TAU); ctx2d.clip();
+      ctx2d.fillStyle = `hsl(${accent.hue},${accent.sat}%,${accent.light + 20}%)`;
+      ctx2d.beginPath(); ctx2d.ellipse(radius*0.28, 0, radius*0.74, radius*1.6, 0, 0, TAU); ctx2d.fill();
+      ctx2d.restore();
+    }
+
+    // "patch": a dark mask panel behind each eye, so the whites read as the
+    // cut-outs of a mask rather than as plain eyes
+    if (marks.includes("patch") && accent){
+      // a mask, not eyes: black panels with small angled eye holes and no
+      // pupils, which is what reads as a masked stare rather than a face
+      ctx2d.fillStyle = `hsl(${accent.hue},${accent.sat}%,${accent.light}%)`;
+      for (const s of [-1, 1]){
+        ctx2d.beginPath();
+        ctx2d.ellipse(radius*0.52, s*radius*0.56, radius*0.80, radius*0.66, 0, 0, TAU);
+        ctx2d.fill();
+      }
+      ctx2d.fillStyle = "#eaffff";
+      for (const s of [-1, 1]){
+        ctx2d.beginPath();
+        ctx2d.ellipse(radius*0.56, s*radius*0.56, radius*0.30, radius*0.18, s*-0.35, 0, TAU);
+        ctx2d.fill();
+      }
+    } else if (marks.includes("stare")){
+      // Venom's eye, mapped onto a head seen from above: wide and flared at
+      // the snout end, sweeping back and inward to a fine point near the
+      // centreline, so the dark between the pair opens out into a V towards
+      // the front. These are the whole face — the logo is nothing else.
+      ctx2d.fillStyle = "#f4f8fa";
+      for (const s of [-1, 1]){
+        ctx2d.beginPath();
+        ctx2d.moveTo(-radius*1.02, s*radius*0.10);                   // fine point, at the back
+        ctx2d.quadraticCurveTo(-radius*0.20, s*radius*0.72,
+                            radius*0.58, s*radius*0.92);          // outer edge, bowed out
+        ctx2d.quadraticCurveTo(radius*0.94, s*radius*0.88,
+                            radius*1.00, s*radius*0.46);          // flared cap at the snout
+        ctx2d.quadraticCurveTo(radius*0.15, s*radius*0.48,
+                           -radius*1.02, s*radius*0.10);          // inner edge, held close to slim it
+        ctx2d.closePath(); ctx2d.fill();
+      }
+    } else if (marks.includes("ears") && accent){
+      ctx2d.fillStyle = "#eaffff";
+      for (const s of [-1, 1]){
+        ctx2d.beginPath();
+        ctx2d.ellipse(radius*0.54, s*radius*0.55, radius*0.34, radius*0.22, s*-0.3, 0, TAU);
+        ctx2d.fill();
+      }
+    } else {
+      // eyes
+      ctx2d.fillStyle = "#eaffff";
+      ctx2d.beginPath(); ctx2d.arc(radius*0.5,-radius*0.55,radius*0.42,0,TAU); ctx2d.fill();
+      ctx2d.beginPath(); ctx2d.arc(radius*0.5, radius*0.55,radius*0.42,0,TAU); ctx2d.fill();
+      ctx2d.fillStyle = "#04202c";
+      ctx2d.beginPath(); ctx2d.arc(radius*0.65,-radius*0.55,radius*0.2,0,TAU); ctx2d.fill();
+      ctx2d.beginPath(); ctx2d.arc(radius*0.65, radius*0.55,radius*0.2,0,TAU); ctx2d.fill();
+    }
+  }
+
   // ---------- skin materials ----------
   // What a skin's surface is *made from* — as opposed to fx, which is the
   // animated effect layered on top of it (see the doc comment on
@@ -3305,94 +3403,7 @@
                            body[0].x - body[Math.min(6,body.length-1)].x);
     ctx.save();
     ctx.translate(hx,hy); ctx.rotate(ang);
-    // "ears": a pointed cowl swept back off the head, drawn under it so the
-    // head reads as sitting inside the mask
-    if (marks.includes("ears") && accent){
-      ctx.fillStyle = `hsl(${accent.hue},${accent.sat}%,${accent.light + 20}%)`;
-      for (const s of [-1, 1]){
-        ctx.beginPath();
-        ctx.moveTo(radius*0.30, s*radius*0.60);
-        ctx.lineTo(-radius*1.3, s*radius*2.25);   // tip: swept back, but still clear of the body
-        ctx.lineTo(-radius*1.0,  s*radius*0.35);
-        ctx.closePath(); ctx.fill();
-      }
-    }
-    ctx.fillStyle = `hsl(${hue},${sat}%,${headLight}%)`;
-    ctx.beginPath(); ctx.ellipse(0,0,radius*1.5,radius*1.15,0,0,TAU); ctx.fill();
-    drawHeadShading(ctx, radius, skin);
-    if (gem){
-      // a faceted glint on the crown, standing in for a cut gem's flat faces
-      ctx.save();
-      ctx.globalCompositeOperation = "lighter";
-      ctx.fillStyle = `hsla(${hue},${Math.min(100,sat+10)}%,96%,0.8)`;
-      ctx.beginPath();
-      ctx.moveTo(-radius*0.15, -radius*0.85);
-      ctx.lineTo(radius*0.35, -radius*0.55);
-      ctx.lineTo(-radius*0.05, -radius*0.35);
-      ctx.closePath(); ctx.fill();
-      ctx.restore();
-    }
-    // "ears" masks the face too: a band of the cowl colour across the eyes,
-    // clipped to the head so it runs right out to the edge and meets the
-    // horns — mask and cowl then read as one piece rather than two
-    if (marks.includes("ears") && accent){
-      ctx.save();
-      ctx.beginPath(); ctx.ellipse(0,0,radius*1.5,radius*1.15,0,0,TAU); ctx.clip();
-      ctx.fillStyle = `hsl(${accent.hue},${accent.sat}%,${accent.light + 20}%)`;
-      ctx.beginPath(); ctx.ellipse(radius*0.28, 0, radius*0.74, radius*1.6, 0, 0, TAU); ctx.fill();
-      ctx.restore();
-    }
-
-    // "patch": a dark mask panel behind each eye, so the whites read as the
-    // cut-outs of a mask rather than as plain eyes
-    if (marks.includes("patch") && accent){
-      // a mask, not eyes: black panels with small angled eye holes and no
-      // pupils, which is what reads as a masked stare rather than a face
-      ctx.fillStyle = `hsl(${accent.hue},${accent.sat}%,${accent.light}%)`;
-      for (const s of [-1, 1]){
-        ctx.beginPath();
-        ctx.ellipse(radius*0.52, s*radius*0.56, radius*0.80, radius*0.66, 0, 0, TAU);
-        ctx.fill();
-      }
-      ctx.fillStyle = "#eaffff";
-      for (const s of [-1, 1]){
-        ctx.beginPath();
-        ctx.ellipse(radius*0.56, s*radius*0.56, radius*0.30, radius*0.18, s*-0.35, 0, TAU);
-        ctx.fill();
-      }
-    } else if (marks.includes("stare")){
-      // Venom's eye, mapped onto a head seen from above: wide and flared at
-      // the snout end, sweeping back and inward to a fine point near the
-      // centreline, so the dark between the pair opens out into a V towards
-      // the front. These are the whole face — the logo is nothing else.
-      ctx.fillStyle = "#f4f8fa";
-      for (const s of [-1, 1]){
-        ctx.beginPath();
-        ctx.moveTo(-radius*1.02, s*radius*0.10);                   // fine point, at the back
-        ctx.quadraticCurveTo(-radius*0.20, s*radius*0.72,
-                            radius*0.58, s*radius*0.92);          // outer edge, bowed out
-        ctx.quadraticCurveTo(radius*0.94, s*radius*0.88,
-                            radius*1.00, s*radius*0.46);          // flared cap at the snout
-        ctx.quadraticCurveTo(radius*0.15, s*radius*0.48,
-                           -radius*1.02, s*radius*0.10);          // inner edge, held close to slim it
-        ctx.closePath(); ctx.fill();
-      }
-    } else if (marks.includes("ears") && accent){
-      ctx.fillStyle = "#eaffff";
-      for (const s of [-1, 1]){
-        ctx.beginPath();
-        ctx.ellipse(radius*0.54, s*radius*0.55, radius*0.34, radius*0.22, s*-0.3, 0, TAU);
-        ctx.fill();
-      }
-    } else {
-      // eyes
-      ctx.fillStyle = "#eaffff";
-      ctx.beginPath(); ctx.arc(radius*0.5,-radius*0.55,radius*0.42,0,TAU); ctx.fill();
-      ctx.beginPath(); ctx.arc(radius*0.5, radius*0.55,radius*0.42,0,TAU); ctx.fill();
-      ctx.fillStyle = "#04202c";
-      ctx.beginPath(); ctx.arc(radius*0.65,-radius*0.55,radius*0.2,0,TAU); ctx.fill();
-      ctx.beginPath(); ctx.arc(radius*0.65, radius*0.55,radius*0.2,0,TAU); ctx.fill();
-    }
+    drawEelHead(ctx, radius, skin, marks);
     ctx.restore();
   }
 
@@ -3980,81 +3991,7 @@
     const ang = Math.atan2(head.y - neck.y, head.x - neck.x);
     pctx.save();
     pctx.translate(head.x, head.y); pctx.rotate(ang);
-    if (marks.includes("ears") && accent){
-      pctx.fillStyle = `hsl(${accent.hue},${accent.sat}%,${accent.light + 20}%)`;
-      for (const s of [-1, 1]){
-        pctx.beginPath();
-        pctx.moveTo(radius*0.30, s*radius*0.60);
-        pctx.lineTo(-radius*1.3, s*radius*2.25);   // tip: swept back, but still clear of the body
-        pctx.lineTo(-radius*1.0,  s*radius*0.35);
-        pctx.closePath(); pctx.fill();
-      }
-    }
-    pctx.fillStyle = `hsl(${hue},${sat}%,${headLight}%)`;
-    pctx.beginPath(); pctx.ellipse(0,0,radius*1.5,radius*1.15,0,0,TAU); pctx.fill();
-    drawHeadShading(pctx, radius, skin);
-    if (gem){
-      pctx.save(); pctx.globalCompositeOperation = "lighter";
-      pctx.fillStyle = `hsla(${hue},${Math.min(100,sat+10)}%,96%,0.8)`;
-      pctx.beginPath();
-      pctx.moveTo(-radius*0.15, -radius*0.85);
-      pctx.lineTo(radius*0.35, -radius*0.55);
-      pctx.lineTo(-radius*0.05, -radius*0.35);
-      pctx.closePath(); pctx.fill();
-      pctx.restore();
-    }
-    // "ears" masks the face too: a band of the cowl colour across the eyes,
-    // clipped to the head so it runs right out to the edge and meets the
-    // horns — mask and cowl then read as one piece rather than two
-    if (marks.includes("ears") && accent){
-      pctx.save();
-      pctx.beginPath(); pctx.ellipse(0,0,radius*1.5,radius*1.15,0,0,TAU); pctx.clip();
-      pctx.fillStyle = `hsl(${accent.hue},${accent.sat}%,${accent.light + 20}%)`;
-      pctx.beginPath(); pctx.ellipse(radius*0.28, 0, radius*0.74, radius*1.6, 0, 0, TAU); pctx.fill();
-      pctx.restore();
-    }
-
-    if (marks.includes("patch") && accent){
-      pctx.fillStyle = `hsl(${accent.hue},${accent.sat}%,${accent.light}%)`;
-      for (const s of [-1, 1]){
-        pctx.beginPath();
-        pctx.ellipse(radius*0.52, s*radius*0.56, radius*0.80, radius*0.66, 0, 0, TAU);
-        pctx.fill();
-      }
-      pctx.fillStyle = "#eaffff";
-      for (const s of [-1, 1]){
-        pctx.beginPath();
-        pctx.ellipse(radius*0.56, s*radius*0.56, radius*0.30, radius*0.18, s*-0.35, 0, TAU);
-        pctx.fill();
-      }
-    } else if (marks.includes("stare")){
-      pctx.fillStyle = "#f4f8fa";
-      for (const s of [-1, 1]){
-        pctx.beginPath();
-        pctx.moveTo(-radius*1.02, s*radius*0.10);                   // fine point, at the back
-        pctx.quadraticCurveTo(-radius*0.20, s*radius*0.72,
-                            radius*0.58, s*radius*0.92);          // outer edge, bowed out
-        pctx.quadraticCurveTo(radius*0.94, s*radius*0.88,
-                            radius*1.00, s*radius*0.46);          // flared cap at the snout
-        pctx.quadraticCurveTo(radius*0.15, s*radius*0.48,
-                           -radius*1.02, s*radius*0.10);          // inner edge, held close to slim it
-        pctx.closePath(); pctx.fill();
-      }
-    } else if (marks.includes("ears") && accent){
-      pctx.fillStyle = "#eaffff";
-      for (const s of [-1, 1]){
-        pctx.beginPath();
-        pctx.ellipse(radius*0.54, s*radius*0.55, radius*0.34, radius*0.22, s*-0.3, 0, TAU);
-        pctx.fill();
-      }
-    } else {
-      pctx.fillStyle = "#eaffff";
-      pctx.beginPath(); pctx.arc(radius*0.5,-radius*0.55,radius*0.42,0,TAU); pctx.fill();
-      pctx.beginPath(); pctx.arc(radius*0.5, radius*0.55,radius*0.42,0,TAU); pctx.fill();
-      pctx.fillStyle = "#04202c";
-      pctx.beginPath(); pctx.arc(radius*0.65,-radius*0.55,radius*0.2,0,TAU); pctx.fill();
-      pctx.beginPath(); pctx.arc(radius*0.65, radius*0.55,radius*0.2,0,TAU); pctx.fill();
-    }
+    drawEelHead(pctx, radius, skin, marks);
     pctx.restore();
   }
 
