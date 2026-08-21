@@ -91,9 +91,11 @@ export const SKINS = [
   { id: "air", tier: "element", name: "Air", hue: 200, sat: 20, bodyLight: 62, headLight: 86, price: 4000,
     minLevel: 5, fx: "vortex" },
   { id: "earth", tier: "element", name: "Earth", hue: 28, sat: 35, bodyLight: 22, headLight: 34, price: 5000,
-    minLevel: 6, fx: "cracks" },
-  { id: "fire", tier: "element", name: "Fire", hue: 8, sat: 55, bodyLight: 16, headLight: 24, price: 6000,
-    minLevel: 7, fx: "ember" },
+    minLevel: 6, fx: "cracks", material: { type: "stone", strength: 0.6, scale: 1 } },
+  // charcoal exterior, not a red eel with orange lines — the heat is what
+  // charred's under-glow and fxEmber add on top, not the base colour
+  { id: "fire", tier: "element", name: "Fire", hue: 8, sat: 30, bodyLight: 9, headLight: 15, price: 6000,
+    minLevel: 7, fx: "ember", material: { type: "charred", strength: 0.65, scale: 1 } },
   { id: "lightning", tier: "element", name: "Lightning", hue: 192, sat: 90, bodyLight: 42, headLight: 68, price: 7500,
     minLevel: 8, fx: "arc" },
 
@@ -292,6 +294,8 @@ export function skinFromHue(hue) {
 export const MATERIALS = {
   organic: { strength: 0.5, scale: 1 },
   brushedMetal: { strength: 0.5, scale: 1 },
+  stone: { strength: 0.5, scale: 1 },
+  charred: { strength: 0.5, scale: 1 },
 };
 
 const DEFAULT_MATERIAL = Object.freeze({ type: "organic", ...MATERIALS.organic });
