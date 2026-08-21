@@ -197,6 +197,13 @@ export const SKINS = [
   { id: "orbweaver", tier: "legend", name: "Orbweaver", hue: 350, sat: 58, bodyLight: 20, headLight: 28,
     price: 12500, minLevel: 10, material: { type: "chitin", strength: 0.5, scale: 1 },
     fx: "silk", mark: ["orbweave", "manyeyes"] },
+
+  // Burnt amber/ochre over graphite/near-black — deliberately not a
+  // yellow-and-blue palette. No accent: the small steel slash marks come
+  // from the scarred material itself, not a second banded colour.
+  { id: "razorback", tier: "legend", name: "Razorback", hue: 34, sat: 52, bodyLight: 22, headLight: 32,
+    price: 13500, minLevel: 11, material: { type: "scarred", strength: 0.55, scale: 1 },
+    fx: "feral", mark: ["finridge"] },
 ];
 
 export const DEFAULT_SKIN_ID = "volt";
@@ -347,6 +354,7 @@ export const MATERIALS = {
   charged: { strength: 0.5, scale: 1 },
   liquid: { strength: 0.5, scale: 1 },
   chitin: { strength: 0.5, scale: 1 },
+  scarred: { strength: 0.5, scale: 1 },
 };
 
 const DEFAULT_MATERIAL = Object.freeze({ type: "organic", ...MATERIALS.organic });

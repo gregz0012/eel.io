@@ -25,7 +25,7 @@ describe("the catalogue", () => {
       "emerald", "ruby", "diamond",
       "biolume", "toxic", "frost", "xray", "abyss", "lava", "ghost", "prism", "void",
       "spider", "eelwolf", "symbiote", "eelpool",
-      "orbweaver",
+      "orbweaver", "razorback",
     ]);
   });
 
@@ -155,7 +155,7 @@ describe("the catalogue", () => {
       if (s.fx === undefined) continue;
       expect([
         "ripple", "vortex", "cracks", "ember", "arc", "spots", "slime", "sparkle", "molten",
-        "fade", "afterimage", "iridescent", "stars", "xray", "silk",
+        "fade", "afterimage", "iridescent", "stars", "xray", "silk", "feral",
       ]).toContain(s.fx);
     }
   });
@@ -207,7 +207,7 @@ describe("the catalogue", () => {
       for (const mark of [].concat(s.mark ?? [])) {
         expect([
           "web", "ears", "patch", "swords", "emblem", "stare",
-          "orbweave", "manyeyes",
+          "orbweave", "manyeyes", "finridge",
         ]).toContain(mark);
       }
     }
@@ -219,6 +219,12 @@ describe("the catalogue", () => {
 
   it("gives Orbweaver both its dorsal marking and its eye treatment", () => {
     expect([].concat(skinById("orbweaver").mark)).toEqual(["orbweave", "manyeyes"]);
+  });
+
+  it("gives Razorback its head fin/ridge marking and no accent to band", () => {
+    const razorback = skinById("razorback");
+    expect([].concat(razorback.mark)).toEqual(["finridge"]);
+    expect(razorback.accent).toBeUndefined();
   });
 
   it("keeps Eel-symbiote black, with nothing banded to lighten it", () => {
@@ -689,6 +695,11 @@ describe("resolveMaterial", () => {
     expect(resolveMaterial(skinById("orbweaver")).type).toBe("chitin");
     expect(Object.keys(MATERIALS)).toContain("chitin");
   });
+
+  it("gives Razorback its own scarred material", () => {
+    expect(resolveMaterial(skinById("razorback")).type).toBe("scarred");
+    expect(Object.keys(MATERIALS)).toContain("scarred");
+  });
 });
 
 describe("the Legends tier", () => {
@@ -697,6 +708,13 @@ describe("the Legends tier", () => {
     expect(orbweaver.tier).toBe("legend");
     expect(orbweaver.price).toBe(12500);
     expect(levelFor(orbweaver)).toBe(10);
+  });
+
+  it("prices and gates Razorback at 13,500 points and level 11", () => {
+    const razorback = skinById("razorback");
+    expect(razorback.tier).toBe("legend");
+    expect(razorback.price).toBe(13500);
+    expect(levelFor(razorback)).toBe(11);
   });
 
   it("keeps every existing Hero skin's id, price and level untouched", () => {
