@@ -17,10 +17,11 @@ describe("the catalogue", () => {
     expect(free[0].id).toBe(DEFAULT_SKIN_ID);
   });
 
-  it("sells the rest: colours, then metals, then gems, then heroes", () => {
+  it("sells the rest: colours, then metals, then elements, then gems, then heroes", () => {
     expect(paid.map(s => s.id)).toEqual([
       "coral", "orchid", "sky", "lime",
       "copper", "iron", "gold", "platinum",
+      "water", "air", "earth", "fire", "lightning",
       "emerald", "ruby", "diamond",
       "spider", "eelwolf", "symbiote", "eelpool",
     ]);
@@ -30,7 +31,10 @@ describe("the catalogue", () => {
     expect(SKINS.filter(s => s.gem).map(s => s.id)).toEqual(["emerald", "ruby", "diamond"]);
   });
 
-  it("charges one price per tier", () => {
+  it("charges one price per tier — for the tiers that still share one", () => {
+    // Elements and Special price per skin instead (each is its own theme,
+    // priced and gated by how dramatic it is to look at, not by a shared
+    // ladder position) — see the Elements-specific price/level tests below.
     const priceOf = id => skinById(id).price;
     for (const id of ["coral", "orchid", "sky", "lime"]) expect(priceOf(id)).toBe(250);
     for (const id of ["emerald", "ruby", "diamond"]) expect(priceOf(id)).toBe(7500);
@@ -70,8 +74,18 @@ describe("the catalogue", () => {
   });
 
   it("keeps the finishes separate — no skin is two things at once", () => {
+    // fx joins gem/sheen/accent as a fourth mutually-exclusive finish; a skin
+    // wears exactly one of them (mark is a flourish layered on top, not a
+    // finish, so it's allowed to coexist with any of these)
     for (const s of SKINS) {
-      expect([s.gem, s.sheen > 0, !!s.accent].filter(Boolean).length).toBeLessThanOrEqual(1);
+      expect([s.gem, s.sheen > 0, !!s.accent, !!s.fx].filter(Boolean).length).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("only ever names an fx the renderer knows how to draw", () => {
+    for (const s of SKINS) {
+      if (s.fx === undefined) continue;
+      expect(["ripple", "vortex", "cracks", "ember", "arc"]).toContain(s.fx);
     }
   });
 
@@ -87,10 +101,17 @@ describe("the catalogue", () => {
       .toEqual(["volt", "coral", "orchid", "sky", "lime"]);
     expect(skinsByTier("metallic").map(s => s.id))
       .toEqual(["copper", "iron", "gold", "platinum"]);
+    expect(skinsByTier("element").map(s => s.id))
+      .toEqual(["water", "air", "earth", "fire", "lightning"]);
     expect(skinsByTier("gemstone").map(s => s.id))
       .toEqual(["emerald", "ruby", "diamond"]);
     expect(skinsByTier("hero").map(s => s.id))
       .toEqual(["spider", "eelwolf", "symbiote", "eelpool"]);
+  });
+
+  it("lists the shop's sections in the order a player browses them", () => {
+    expect(TIERS.map(t => t.id))
+      .toEqual(["standard", "metallic", "element", "gemstone", "hero"]);
   });
 
   it("keeps Eel-symbiote with the heroes despite its sheen", () => {
@@ -131,9 +152,22 @@ describe("the catalogue", () => {
     }
   });
 
-  it("prices them in the order they are listed", () => {
-    const prices = paid.map(s => s.price);
-    expect([...prices].sort((a, b) => a - b)).toEqual(prices);
+  it("prices ascend within each section, in listing order", () => {
+    // no longer true of the whole shop at once — Water (element, 3,000) sits
+    // below Platinum (metallic, 5,000) — but within any one section, the
+    // skin listed second never costs less than the one listed first
+    for (const tier of TIERS) {
+      const prices = skinsByTier(tier.id).map(s => s.price);
+      expect([...prices].sort((a, b) => a - b)).toEqual(prices);
+    }
+  });
+
+  it("deepens each element as it gets more dramatic to look at", () => {
+    // price and level ascend together within the section, same shape as the
+    // per-section price test above, but for the depth requirement
+    const levels = skinsByTier("element").map(s => s.minLevel);
+    expect([...levels].sort((a, b) => a - b)).toEqual(levels);
+    for (const s of skinsByTier("element")) expect(s.minLevel).toEqual(expect.any(Number));
   });
 
   it("has no duplicate ids", () => {
@@ -195,6 +229,26 @@ describe("per-skin level gating", () => {
     expect(wearableSkin("symbiote", ["symbiote"]).id).toBe("symbiote");
     expect(meetsLevel(skinById("symbiote"), 1)).toBe(false); // couldn't buy it at level 1...
     expect(wearableSkin("symbiote", ["symbiote"]).id).toBe("symbiote"); // ...but still wears it
+  });
+
+  it("opens each element at its own depth", () => {
+    expect(levelFor(skinById("water"))).toBe(4);
+    expect(levelFor(skinById("air"))).toBe(5);
+    expect(levelFor(skinById("earth"))).toBe(6);
+    expect(levelFor(skinById("fire"))).toBe(7);
+    expect(levelFor(skinById("lightning"))).toBe(8);
+  });
+
+  it("refuses Lightning below level 8 and quotes its own level", () => {
+    const r = buySkin({ banked: 1e9, owned: [], bestLevel: 7 }, "lightning");
+    expect(r.bought).toBe(false);
+    expect(r.reason).toContain("level 8");
+  });
+
+  it("sells Water the moment level 4 is reached, well below the metallic tier's own gate", () => {
+    const water = skinById("water");
+    const r = buySkin({ banked: water.price, owned: [], bestLevel: 4 }, "water");
+    expect(r.bought).toBe(true);
   });
 });
 
