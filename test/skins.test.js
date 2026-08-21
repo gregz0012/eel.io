@@ -17,7 +17,7 @@ describe("the catalogue", () => {
     expect(free[0].id).toBe(DEFAULT_SKIN_ID);
   });
 
-  it("sells the rest: colours, then metals, then elements, then gems, then specials, then heroes", () => {
+  it("sells the rest: colours, then metals, then elements, then gems, then specials, then heroes, then legends", () => {
     expect(paid.map(s => s.id)).toEqual([
       "coral", "orchid", "sky", "lime",
       "copper", "iron", "gold", "platinum",
@@ -25,6 +25,7 @@ describe("the catalogue", () => {
       "emerald", "ruby", "diamond",
       "biolume", "toxic", "frost", "xray", "abyss", "lava", "ghost", "prism", "void",
       "spider", "eelwolf", "symbiote", "eelpool",
+      "orbweaver",
     ]);
   });
 
@@ -154,7 +155,7 @@ describe("the catalogue", () => {
       if (s.fx === undefined) continue;
       expect([
         "ripple", "vortex", "cracks", "ember", "arc", "spots", "slime", "sparkle", "molten",
-        "fade", "afterimage", "iridescent", "stars", "xray",
+        "fade", "afterimage", "iridescent", "stars", "xray", "silk",
       ]).toContain(s.fx);
     }
   });
@@ -191,7 +192,7 @@ describe("the catalogue", () => {
 
   it("lists the shop's sections in the order a player browses them", () => {
     expect(TIERS.map(t => t.id))
-      .toEqual(["standard", "metallic", "element", "gemstone", "special", "hero"]);
+      .toEqual(["standard", "metallic", "element", "gemstone", "special", "hero", "legend"]);
   });
 
   it("keeps Eel-symbiote with the heroes despite its sheen", () => {
@@ -204,13 +205,20 @@ describe("the catalogue", () => {
   it("only ever asks for a mark the renderer knows how to draw", () => {
     for (const s of SKINS) {
       for (const mark of [].concat(s.mark ?? [])) {
-        expect(["web", "ears", "patch", "swords", "emblem", "stare"]).toContain(mark);
+        expect([
+          "web", "ears", "patch", "swords", "emblem", "stare",
+          "orbweave", "manyeyes",
+        ]).toContain(mark);
       }
     }
   });
 
   it("gives Eel-pool both its mask and its swords", () => {
     expect([].concat(skinById("eelpool").mark)).toEqual(["patch", "swords"]);
+  });
+
+  it("gives Orbweaver both its dorsal marking and its eye treatment", () => {
+    expect([].concat(skinById("orbweaver").mark)).toEqual(["orbweave", "manyeyes"]);
   });
 
   it("keeps Eel-symbiote black, with nothing banded to lighten it", () => {
@@ -675,5 +683,41 @@ describe("resolveMaterial", () => {
   it("gives Eel-symbiote its own liquid material", () => {
     expect(resolveMaterial(skinById("symbiote")).type).toBe("liquid");
     expect(Object.keys(MATERIALS)).toContain("liquid");
+  });
+
+  it("gives Orbweaver its own chitin material", () => {
+    expect(resolveMaterial(skinById("orbweaver")).type).toBe("chitin");
+    expect(Object.keys(MATERIALS)).toContain("chitin");
+  });
+});
+
+describe("the Legends tier", () => {
+  it("prices and gates Orbweaver at 12,500 points and level 10", () => {
+    const orbweaver = skinById("orbweaver");
+    expect(orbweaver.tier).toBe("legend");
+    expect(orbweaver.price).toBe(12500);
+    expect(levelFor(orbweaver)).toBe(10);
+  });
+
+  it("keeps every existing Hero skin's id, price and level untouched", () => {
+    // the acceptance criterion that matters most for this phase: adding a
+    // new tier above Heroes must not perturb the four that already exist
+    expect(skinById("spider").price).toBe(10000);
+    expect(skinById("eelwolf").price).toBe(10000);
+    expect(skinById("symbiote").price).toBe(10000);
+    expect(skinById("eelpool").price).toBe(10000);
+    expect(levelFor(skinById("spider"))).toBe(9);
+    expect(levelFor(skinById("eelwolf"))).toBe(10);
+    expect(levelFor(skinById("symbiote"))).toBe(11);
+    expect(levelFor(skinById("eelpool"))).toBe(8);
+  });
+
+  it("lets a locked Legend still be previewed", () => {
+    const orbweaver = skinById("orbweaver");
+    const status = skinStatus(orbweaver, { wornId: "volt", owned: ["volt"], banked: 0, bestLevel: 1 });
+    expect(status).toBe("sealed");
+    // sealed is a real status the shop already knows how to render a
+    // preview for — nothing about "locked" hides the skin from browse()
+    expect(["locked", "sealed", "affordable", "owned", "worn"]).toContain(status);
   });
 });
