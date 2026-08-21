@@ -93,6 +93,11 @@ describe("the catalogue", () => {
     expect(resolveMaterial(skinById("fire")).type).toBe("charred");
   });
 
+  it("gives Water the water material and Air the air material", () => {
+    expect(resolveMaterial(skinById("water")).type).toBe("water");
+    expect(resolveMaterial(skinById("air")).type).toBe("air");
+  });
+
   it("gives Fire a charcoal-dark exterior, not a red eel with orange lines", () => {
     // the heat reads through fxEmber and charred's own under-glow, not the
     // base colour — so the base itself should sit low on both saturation

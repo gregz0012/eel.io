@@ -87,9 +87,9 @@ export const SKINS = [
   // the elements — each its own price and its own depth, deepening as the
   // element gets more dramatic to look at rather than climbing a flat ladder
   { id: "water", tier: "element", name: "Water", hue: 195, sat: 70, bodyLight: 30, headLight: 52, price: 3000,
-    minLevel: 4, fx: "ripple" },
+    minLevel: 4, fx: "ripple", material: { type: "water", strength: 0.6, scale: 1 } },
   { id: "air", tier: "element", name: "Air", hue: 200, sat: 20, bodyLight: 62, headLight: 86, price: 4000,
-    minLevel: 5, fx: "vortex" },
+    minLevel: 5, fx: "vortex", material: { type: "air", strength: 0.4, scale: 1 } },
   { id: "earth", tier: "element", name: "Earth", hue: 28, sat: 35, bodyLight: 22, headLight: 34, price: 5000,
     minLevel: 6, fx: "cracks", material: { type: "stone", strength: 0.6, scale: 1 } },
   // charcoal exterior, not a red eel with orange lines — the heat is what
@@ -305,6 +305,8 @@ export const MATERIALS = {
   stone: { strength: 0.5, scale: 1 },
   charred: { strength: 0.5, scale: 1 },
   crystal: { strength: 0.5, scale: 1 },
+  water: { strength: 0.5, scale: 1 },
+  air: { strength: 0.5, scale: 1 },
 };
 
 const DEFAULT_MATERIAL = Object.freeze({ type: "organic", ...MATERIALS.organic });

@@ -2467,13 +2467,18 @@
   }
 
   // A misty, low-opacity halo the whole length of the body, with a few tiny
-  // spirals unwinding along the flank — ethereal rather than solid.
+  // spirals unwinding along the flank — ethereal rather than solid. Narrower
+  // and fainter than its first pass: at 1.6x radius it was thickening Air's
+  // silhouette past what the collision hitbox actually is, which the issue
+  // is explicit a themed finish must never do — matAir (below) adds its own
+  // restrained flow underneath this instead of relying on the halo alone to
+  // carry Air's identity.
   function fxVortex(ctx2d, pts, bodyLength, radius, skin, nowMs){
     const { hue, sat, headLight } = skin;
     ctx2d.save();
     ctx2d.globalCompositeOperation = "lighter";
-    ctx2d.strokeStyle = `hsla(${hue},${Math.max(0, sat - 20)}%,${Math.min(96, headLight + 20)}%,0.14)`;
-    ctx2d.lineWidth = radius * 1.6;
+    ctx2d.strokeStyle = `hsla(${hue},${Math.max(0, sat - 20)}%,${Math.min(96, headLight + 20)}%,0.10)`;
+    ctx2d.lineWidth = radius * 0.9;
     ctx2d.beginPath();
     pts.forEach((p, k) => k === 0 ? ctx2d.moveTo(p.x, p.y) : ctx2d.lineTo(p.x, p.y));
     ctx2d.stroke();
@@ -3078,9 +3083,42 @@
     ctx2d.restore();
   }
 
+  // Shared by water and air: long, low-alpha ribbons at phase-shifted
+  // offsets that drift with `nowMs`, giving a layered translucent flow
+  // underneath each skin's own existing fx (fxWater's highlight/bubbles,
+  // fxVortex's spirals). `bandCount` and each band's fill colour are left to
+  // the caller, so one function backs two very different-looking materials.
+  function matFlow(ctx2d, pts, bodyLength, radius, nowMs, bandCount, styleFor){
+    for (let b = 0; b < bandCount; b++){
+      const phase = (b / bandCount) * TAU;
+      const offset = Math.sin(nowMs * 0.00025 + phase) * 0.5;
+      bodyRibbon(ctx2d, pts, bodyLength, radius, offset - 0.08, offset + 0.08, styleFor(b));
+    }
+  }
+
+  // water: a deeper blue/cyan base than the flat colour alone gives, with
+  // slow caustic-like bands moving underneath fxWater's own travelling
+  // highlight and bubble trail.
+  function matWater(ctx2d, pts, bodyLength, radius, skin, nowMs, detail){
+    const m = Engine.resolveMaterial(skin);
+    const bands = Math.max(2, Math.round(4 * m.strength * detail));
+    matFlow(ctx2d, pts, bodyLength, radius, nowMs, bands,
+      () => `rgba(40,140,190,${0.05 + 0.05 * m.strength})`);
+  }
+
+  // air: pearl/silver, fewer and softer bands than water's — restrained on
+  // purpose, since fxVortex's own halo (dialed back alongside this material)
+  // already adds width, and an eel's silhouette needs to stay readable.
+  function matAir(ctx2d, pts, bodyLength, radius, skin, nowMs, detail){
+    const m = Engine.resolveMaterial(skin);
+    const bands = Math.max(1, Math.round(2 * m.strength * detail));
+    matFlow(ctx2d, pts, bodyLength, radius, nowMs, bands,
+      () => `rgba(255,255,255,${0.03 + 0.04 * m.strength})`);
+  }
+
   const SKIN_MATERIAL = {
     organic: matOrganic, brushedMetal: matBrushedMetal, stone: matStone, charred: matCharred,
-    crystal: matCrystal,
+    crystal: matCrystal, water: matWater, air: matAir,
   };
 
   // Falls back to organic for any unresolved type — a second, shell-side
