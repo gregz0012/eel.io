@@ -97,21 +97,39 @@ describe("phases", () => {
     }
   });
 
-  it("keeps the three home screens apart", () => {
+  it("opens and closes lifetime stats from home", () => {
+    expect(nextPhase("home", "openStats")).toBe("stats");
+    expect(nextPhase("stats", "closeStats")).toBe("home");
+  });
+
+  it("cannot open lifetime stats except from home", () => {
+    for (const phase of ["playing", "paused", "over", "skins", "howto", "board"]) {
+      expect(nextPhase(phase, "openStats")).toBe(phase);
+    }
+  });
+
+  it("keeps the four home screens apart", () => {
     // no side door leads to another side door, only back to home
     expect(nextPhase("skins", "openHow")).toBe("skins");
     expect(nextPhase("skins", "openBoard")).toBe("skins");
+    expect(nextPhase("skins", "openStats")).toBe("skins");
     expect(nextPhase("howto", "openSkins")).toBe("howto");
     expect(nextPhase("howto", "openBoard")).toBe("howto");
+    expect(nextPhase("howto", "openStats")).toBe("howto");
     expect(nextPhase("board", "openSkins")).toBe("board");
     expect(nextPhase("board", "openHow")).toBe("board");
+    expect(nextPhase("board", "openStats")).toBe("board");
+    expect(nextPhase("stats", "openSkins")).toBe("stats");
+    expect(nextPhase("stats", "openHow")).toBe("stats");
+    expect(nextPhase("stats", "openBoard")).toBe("stats");
   });
 
   it("only ever lands on a known phase", () => {
     for (const phase of PHASES) {
       for (const event of ["dive", "pause", "resume", "die", "surface",
                            "openSkins", "closeSkins", "openHow", "closeHow",
-                           "openBoard", "closeBoard", "playMiniGame", "finishMiniGame"]) {
+                           "openBoard", "closeBoard", "openStats", "closeStats",
+                           "playMiniGame", "finishMiniGame"]) {
         expect(PHASES).toContain(nextPhase(phase, event));
       }
     }
@@ -132,6 +150,6 @@ describe("canDo", () => {
 describe("isRunning", () => {
   it("advances the world only while playing", () => {
     expect(isRunning("playing")).toBe(true);
-    for (const phase of ["home", "paused", "over", "skins", "howto", "board", "minigame"]) expect(isRunning(phase)).toBe(false);
+    for (const phase of ["home", "paused", "over", "skins", "howto", "board", "stats", "minigame"]) expect(isRunning(phase)).toBe(false);
   });
 });
