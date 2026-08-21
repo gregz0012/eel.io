@@ -25,7 +25,7 @@ describe("the catalogue", () => {
       "emerald", "ruby", "diamond",
       "biolume", "toxic", "frost", "xray", "abyss", "lava", "ghost", "prism", "void",
       "spider", "eelwolf", "symbiote", "eelpool",
-      "orbweaver", "razorback",
+      "orbweaver", "razorback", "redrogue",
     ]);
   });
 
@@ -207,7 +207,7 @@ describe("the catalogue", () => {
       for (const mark of [].concat(s.mark ?? [])) {
         expect([
           "web", "ears", "patch", "swords", "emblem", "stare",
-          "orbweave", "manyeyes", "finridge",
+          "orbweave", "manyeyes", "finridge", "worneye", "gear",
         ]).toContain(mark);
       }
     }
@@ -225,6 +225,12 @@ describe("the catalogue", () => {
     const razorback = skinById("razorback");
     expect([].concat(razorback.mark)).toEqual(["finridge"]);
     expect(razorback.accent).toBeUndefined();
+  });
+
+  it("gives Red Rogue both its eye treatment and its gear, and no fx", () => {
+    const redrogue = skinById("redrogue");
+    expect([].concat(redrogue.mark)).toEqual(["worneye", "gear"]);
+    expect(redrogue.fx).toBeUndefined();
   });
 
   it("keeps Eel-symbiote black, with nothing banded to lighten it", () => {
@@ -700,6 +706,11 @@ describe("resolveMaterial", () => {
     expect(resolveMaterial(skinById("razorback")).type).toBe("scarred");
     expect(Object.keys(MATERIALS)).toContain("scarred");
   });
+
+  it("gives Red Rogue its own worn material", () => {
+    expect(resolveMaterial(skinById("redrogue")).type).toBe("worn");
+    expect(Object.keys(MATERIALS)).toContain("worn");
+  });
 });
 
 describe("the Legends tier", () => {
@@ -715,6 +726,13 @@ describe("the Legends tier", () => {
     expect(razorback.tier).toBe("legend");
     expect(razorback.price).toBe(13500);
     expect(levelFor(razorback)).toBe(11);
+  });
+
+  it("prices and gates Red Rogue at 14,000 points and level 12", () => {
+    const redrogue = skinById("redrogue");
+    expect(redrogue.tier).toBe("legend");
+    expect(redrogue.price).toBe(14000);
+    expect(levelFor(redrogue)).toBe(12);
   });
 
   it("keeps every existing Hero skin's id, price and level untouched", () => {
