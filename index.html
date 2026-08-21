@@ -55,6 +55,8 @@
      since #hud is pointer-events:none the button still worked, so the only
      symptom was an unreadable score. */
   #right-stats{display:flex;gap:10px;align-items:flex-start;margin-right:48px;}
+  #left-stats{display:flex;gap:10px;align-items:flex-start;}
+  #shieldStat .value{color:var(--gold);letter-spacing:.12em;}
 
   /* ---- power meter ---- */
   #powerbar{
@@ -111,6 +113,26 @@
      which is the more natural reading anyway (the meter belongs to the
      button it charges). */
   @media (max-width:588px){ #powerbar{bottom:142px;} }
+
+  /* ---- boss sonar: a small blip, only while a boss is alive ---- */
+  #sonar{
+    position:absolute;left:20px;bottom:26px;
+    width:76px;height:76px;border-radius:50%;
+    background:rgba(4,26,38,.55);
+    border:1px solid rgba(230,80,200,.45);
+    backdrop-filter:blur(6px);
+    pointer-events:none;
+  }
+  #sonar::after{
+    content:"";position:absolute;left:50%;top:50%;width:6px;height:6px;
+    margin-left:-3px;margin-top:-3px;border-radius:50%;
+    background:rgba(142,243,255,.9);box-shadow:0 0 6px rgba(142,243,255,.8);
+  }
+  #sonarBlip{
+    position:absolute;left:50%;top:50%;width:9px;height:9px;
+    margin-left:-4.5px;margin-top:-4.5px;border-radius:50%;
+    background:#ff9ee0;box-shadow:0 0 8px rgba(255,158,224,.9);
+  }
 
   /* ---- overlays ---- */
   .overlay{
@@ -347,9 +369,15 @@
 <canvas id="game"></canvas>
 
 <div id="hud" class="hidden">
-  <div class="stat">
-    <div class="label">Length</div>
-    <div class="value" id="len">0</div>
+  <div id="left-stats">
+    <div class="stat">
+      <div class="label">Length</div>
+      <div class="value" id="len">0</div>
+    </div>
+    <div class="stat hidden" id="shieldStat">
+      <div class="label">Shield</div>
+      <div class="value" id="shieldPips">●</div>
+    </div>
   </div>
   <div id="right-stats">
     <div class="stat">
@@ -362,6 +390,8 @@
     </div>
   </div>
 </div>
+
+<div id="sonar" class="hidden"><div id="sonarBlip"></div></div>
 
 <div id="powerbar" class="hidden">
   <div id="charge"><i></i></div>
@@ -546,6 +576,15 @@
       levelSpeedPerLevel: 0.015,
       levelSpeedMax: 1.4,
     
+      // Shields: a starfish or a present grants one. Below stackLevel a second
+      // pickup while already carrying one is wasted — from stackLevel on, the cap
+      // rises so a rough patch right after a save doesn't cost a life for want of
+      // a moment to spend the first shield.
+      shield: {
+        stackLevel: 8,   // level at which the cap rises above 1
+        maxStacked: 2,   // the cap from stackLevel on
+      },
+    
       // growth: how long the player's eel can get. Uncapped growth eventually
       // turns the body-trail array into real per-frame cost (hundreds of segments
       // at 60fps) and makes the eel unwieldy to steer well before that — a cap
@@ -608,6 +647,25 @@
         },
       },
     };
+
+    // ---- src/engine/vector.js ----
+    // Pure 2D point math for anything the shell needs a bearing or a distance
+    // for. No DOM, no random, no clock — same rule as the rest of engine/.
+    //
+    // This is deliberately the first slice of the vector.js extraction CLAUDE.md
+    // §9 already names as the step after scoring — just the one function a new
+    // feature (the boss sonar, #45) needs. The shell's own inline dist2/angLerp/
+    // clamp helpers stay put; migrating those is a separate, larger slice.
+    
+    /** The angle from one point to another, in radians (Math.atan2 convention). */
+    function angleTo(fromX, fromY, toX, toY) {
+      return Math.atan2(toY - fromY, toX - fromX);
+    }
+    
+    /** Straight-line distance between two points. */
+    function distanceTo(fromX, fromY, toX, toY) {
+      return Math.hypot(toX - fromX, toY - fromY);
+    }
 
     // ---- src/engine/rng.js ----
     // Seeded randomness.
@@ -724,6 +782,11 @@
     /** Speed multiplier earned by reaching this level. */
     function levelSpeed(level) {
       return Math.min(1 + (level - 1) * CONFIG.levelSpeedPerLevel, CONFIG.levelSpeedMax);
+    }
+    
+    /** How many shields a player can hold at once. */
+    function shieldCap(level) {
+      return level >= CONFIG.shield.stackLevel ? CONFIG.shield.maxStacked : 1;
     }
 
     // ---- src/engine/identity.js ----
@@ -1326,7 +1389,7 @@
       return { playedMs: state?.playedMs ?? 0, lastRewardAtMs: state?.playedMs ?? 0 };
     }
 
-    return { CONFIG, seededRng, randInt, weightedPick, addScore, completeLevel, bossHits, predatorTarget, isBossLevel, levelSpeed, tagFor, shortTagFor, rivalTag, isWellFormedTag, tagSpaceSize, validateSubmission, bestOf, rankOf, topRows, clampTopLimit, PHASES, nextPhase, canDo, isRunning, deposit, diveCost, payForDive, canAffordDive, SKINS, DEFAULT_SKIN_ID, TIERS, skinsByTier, levelFor, meetsLevel, skinById, isOwned, ownedSkins, canAfford, buySkin, wearableSkin, nextSkinToBuy, skinFromHue, skinStatus, PRESENT_KINDS, rollPresent, isKindGift, pickMiniGame, breathPhaseAt, canTapAt, wordsNeeded, isWordGameComplete, wordList, addPlayTime, miniGameDue, recordMiniGameReward };
+    return { CONFIG, angleTo, distanceTo, seededRng, randInt, weightedPick, addScore, completeLevel, bossHits, predatorTarget, isBossLevel, levelSpeed, shieldCap, tagFor, shortTagFor, rivalTag, isWellFormedTag, tagSpaceSize, validateSubmission, bestOf, rankOf, topRows, clampTopLimit, PHASES, nextPhase, canDo, isRunning, deposit, diveCost, payForDive, canAffordDive, SKINS, DEFAULT_SKIN_ID, TIERS, skinsByTier, levelFor, meetsLevel, skinById, isOwned, ownedSkins, canAfford, buySkin, wearableSkin, nextSkinToBuy, skinFromHue, skinStatus, PRESENT_KINDS, rollPresent, isKindGift, pickMiniGame, breathPhaseAt, canTapAt, wordsNeeded, isWordGameComplete, wordList, addPlayTime, miniGameDue, recordMiniGameReward };
   })();
 
   const canvas = document.getElementById("game");
@@ -1402,7 +1465,7 @@
   let miniGameStartedAt = 0, wordTaps = [], lastWordTapAt = null, miniGameLoopRunning = false;
   let zap = 0;             // 0..1 charge
   const ZAP_COST = 1;      // full meter to fire
-  let shieldOn = false;
+  let shieldCount = 0;   // how many shields are banked; see Engine.shieldCap
   let shakeT = 0, flashT = 0;
   let toast = null;            // {text, colour, t} — what the last present held
 
@@ -1500,7 +1563,7 @@
   function reset(){
     fish = []; eels = []; predators = []; stars = []; babies = []; feasts = []; presents = []; energy = [];
     particles = []; bubbles = [];
-    score = 0; level = 1; zap = 0.35; shieldOn = false; shakeT = 0; flashT = 0;
+    score = 0; level = 1; zap = 0.35; shieldCount = 0; shakeT = 0; flashT = 0;
     predTarget = PRED_BASE; bossAlert = 0; toast = null;
     bossPending = 0; bossReady = false; levelStartScore = 0;
     levelBanner = 0;                    // every dive starts at level 1, unguarded
@@ -1553,8 +1616,7 @@
       addScore(amount);
       showToast(`+${amount} points!`, "#8ef3ff");
     } else if (kind === "starfish"){
-      shieldOn = true;
-      showToast("A shield!", "#ffd166");
+      grantShield();
     } else if (kind === "zap"){
       zap = 1;
       showToast("Zap charged!", "#f6ff8a");
@@ -1569,6 +1631,18 @@
   }
 
   function showToast(text, colour){ toast = { text, colour, t: 2.2 }; }
+
+  // Grant a shield, respecting the level-derived stack cap. A pickup while
+  // already at the cap is wasted — better to say so than to have it vanish
+  // silently, since that reads as a bug rather than "you're already full."
+  function grantShield(){
+    if (shieldCount >= Engine.shieldCap(level)){
+      showToast("Shield already full", "#ffd166");
+      return;
+    }
+    shieldCount++;
+    showToast(shieldCount > 1 ? `${shieldCount} shields!` : "A shield!", "#ffd166");
+  }
 
   // A present's predator arrives close enough to be frightening, far enough to
   // be escapable — being eaten the instant you open a box is not fair.
@@ -2018,6 +2092,7 @@
     show("miniGameOfferBtn", Engine.miniGameDue(playProgress));
 
     show("hud", false); show("powerbar", false); show("zapBtn", false); show("pauseBtn", false);
+    show("sonar", false);
     setTimeout(() => show("over", true), 550);
   }
 
@@ -2143,7 +2218,7 @@
           // head-to-head: the bigger eel wins
           if (player.len > e.len*1.1){ grow(e.len*0.3); killEel(e, true); }
           else if (e.len > player.len*1.28){
-            if (shieldOn){ shieldOn = false; killEel(e, true); burst(player.x,player.y,"#ffd166",24,5); shakeT=.25; }
+            if (shieldCount > 0){ shieldCount--; killEel(e, true); burst(player.x,player.y,"#ffd166",24,5); shakeT=.25; }
             else { die("a larger eel swallowed you"); return; }
           }
           // similar size: they just brush past
@@ -2206,7 +2281,7 @@
           // a stun just wore off with the player still on top of it — neither
           // a kill nor a free hit; give a beat to swim clear (#29)
         }
-        else if (shieldOn){ shieldOn = false; p.stun = SHIELD_STUN_S; p.stunMax = SHIELD_STUN_S; burst(player.x,player.y,"#ffd166",26,6); shakeT=.3; }
+        else if (shieldCount > 0){ shieldCount--; p.stun = SHIELD_STUN_S; p.stunMax = SHIELD_STUN_S; burst(player.x,player.y,"#ffd166",26,6); shakeT=.3; }
         else { die(p.boss ? "the boss devoured you" : "a predator got you"); return; }
       }
     }
@@ -2216,7 +2291,7 @@
     for (let i = stars.length-1; i>=0; i--){
       const s = stars[i]; s.spin += dt; s.pulse += dt*4;
       if (dist2(s.x,s.y,player.x,player.y) < (R+s.r)*(R+s.r)){
-        shieldOn = true;
+        grantShield();
         burst(s.x,s.y,"#ffd166",22,5);
         stars.splice(i,1);
       }
@@ -2342,6 +2417,24 @@
     } else {
       zapBtn.classList.remove("ready");
       document.getElementById("zapPct").textContent = Math.round(zap*100) + "%";
+    }
+
+    document.getElementById("shieldStat").classList.toggle("hidden", shieldCount === 0);
+    document.getElementById("shieldPips").textContent = "●".repeat(shieldCount);
+
+    // sonar: only while a boss is out there to point at (#45)
+    const boss = predators.find(p => p.boss && !p.dead);
+    const sonarEl = document.getElementById("sonar");
+    if (boss){
+      sonarEl.style.display = "";
+      const angle = Engine.angleTo(player.x, player.y, boss.x, boss.y);
+      const dist = Engine.distanceTo(player.x, player.y, boss.x, boss.y);
+      const frac = clamp(dist / Math.hypot(WORLD.w, WORLD.h), 0.18, 0.92);
+      const ringR = 26; // px the blip can travel inside the 76px sonar dial
+      document.getElementById("sonarBlip").style.transform =
+        `translate(${Math.cos(angle) * ringR * frac}px, ${Math.sin(angle) * ringR * frac}px)`;
+    } else {
+      sonarEl.style.display = "none";
     }
   }
 
@@ -2737,14 +2830,18 @@
 
   function drawPlayer(){
     const r = playerRadius();
-    if (shieldOn){
+    if (shieldCount > 0){
       const [hx,hy] = worldToScreen(player.x, player.y);
       ctx.save();
       ctx.globalCompositeOperation = "lighter";
       const pulse = 1 + Math.sin(performance.now()*0.008)*0.08;
       ctx.strokeStyle = "rgba(255,209,102,0.75)";
       ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(hx,hy, r*2.4*pulse, 0, TAU); ctx.stroke();
+      // one ring per banked shield — a stack reads as a thicker aura, not a
+      // number you have to glance away from the fight to read
+      for (let i = 0; i < shieldCount; i++){
+        ctx.beginPath(); ctx.arc(hx,hy, r*(2.4 + i*0.35)*pulse, 0, TAU); ctx.stroke();
+      }
       ctx.restore();
     }
     const glow = zap >= 1 ? 0.5 : 0.28;
@@ -3153,6 +3250,7 @@
     show("powerbar", inDive);
     show("zapBtn", inDive);
     show("pauseBtn", inDive);
+    show("sonar", inDive);   // per-frame boss-exists toggle happens in update()
   }
 
   // ---------- skin picker / shop ----------

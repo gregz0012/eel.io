@@ -69,3 +69,8 @@ export function isBossLevel(level) {
 export function levelSpeed(level) {
   return Math.min(1 + (level - 1) * CONFIG.levelSpeedPerLevel, CONFIG.levelSpeedMax);
 }
+
+/** How many shields a player can hold at once. */
+export function shieldCap(level) {
+  return level >= CONFIG.shield.stackLevel ? CONFIG.shield.maxStacked : 1;
+}

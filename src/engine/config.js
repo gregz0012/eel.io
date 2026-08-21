@@ -48,6 +48,15 @@ export const CONFIG = {
   levelSpeedPerLevel: 0.015,
   levelSpeedMax: 1.4,
 
+  // Shields: a starfish or a present grants one. Below stackLevel a second
+  // pickup while already carrying one is wasted — from stackLevel on, the cap
+  // rises so a rough patch right after a save doesn't cost a life for want of
+  // a moment to spend the first shield.
+  shield: {
+    stackLevel: 8,   // level at which the cap rises above 1
+    maxStacked: 2,   // the cap from stackLevel on
+  },
+
   // growth: how long the player's eel can get. Uncapped growth eventually
   // turns the body-trail array into real per-frame cost (hundreds of segments
   // at 60fps) and makes the eel unwieldy to steer well before that — a cap

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  addScore, completeLevel, bossHits, predatorTarget, isBossLevel, levelSpeed,
+  addScore, completeLevel, bossHits, predatorTarget, isBossLevel, levelSpeed, shieldCap,
 } from "../src/engine/scoring.js";
 import { CONFIG } from "../src/engine/config.js";
 
@@ -128,5 +128,17 @@ describe("levelSpeed", () => {
 
   it("stays capped so the eel remains controllable", () => {
     expect(levelSpeed(500)).toBe(CONFIG.levelSpeedMax);
+  });
+});
+
+describe("shieldCap", () => {
+  it("caps a shield at one below the stacking level", () => {
+    expect(shieldCap(1)).toBe(1);
+    expect(shieldCap(CONFIG.shield.stackLevel - 1)).toBe(1);
+  });
+
+  it("raises the cap from the stacking level on", () => {
+    expect(shieldCap(CONFIG.shield.stackLevel)).toBe(CONFIG.shield.maxStacked);
+    expect(shieldCap(CONFIG.shield.stackLevel + 5)).toBe(CONFIG.shield.maxStacked);
   });
 });
