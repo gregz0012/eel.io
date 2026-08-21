@@ -109,6 +109,12 @@ eel.io/
 `stats.js`, `achievements.js` and `challenges.js` exist so far. The rest is the destination, not
 a description of today — see §9.
 
+A `capacitor/` directory also exists, outside this tree entirely: an optional
+native iOS/Android wrapper around the built `index.html`, with its own
+`package.json` so its dependencies (real ones — a native WebView shell) never
+touch what ships to the browser. See `capacitor/README.md`. It has no bearing
+on anything above; the web version is still the primary target.
+
 ### Why a build step
 
 The engine is written as ES modules so Node can import it directly in tests. Browsers refuse to load ES modules over `file://`, and design value #2 says Eel Shock stays a single file you can double-click or email to a kid. Those two facts are irreconcilable without a build.

@@ -1,0 +1,20 @@
+{
+  "name": "eel-shock-native",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Native iOS/Android wrapper for Eel Shock (Capacitor). Wraps the built root index.html in a WebView — does not touch src/**, build.mjs, or the test suite, and is not part of the browser build.",
+  "scripts": {
+    "sync-web": "node sync-web.mjs",
+    "sync": "npm run sync-web && npx cap sync",
+    "open:ios": "npm run sync && npx cap open ios",
+    "open:android": "npm run sync && npx cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.0.0",
+    "@capacitor/core": "^6.0.0",
+    "@capacitor/ios": "^6.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.0.0"
+  }
+}
