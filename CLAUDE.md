@@ -336,6 +336,20 @@ of the same pattern. `drawSkinMaterial`'s `detail` parameter (1 for the
 player and the shop preview, lower for a rival) is the same "gracefully
 simplify as a last resort" idea `fx` cheapening already uses for the
 up-to-14-rivals-on-screen case.
+
+The Legends tier (Orbweaver, Razorback, Red Rogue, Voidbond — above Heroes,
+`tier: "legend"`) is where this all generalised past the skins the material
+system was originally built for: three genuinely new materials (`chitin`,
+`scarred`, `worn`), one material reused unmodified at a different
+`strength`/`scale` (Voidbond's `liquid`, proving the reuse rather than a
+fork), and the first skins to routinely carry **two** independent marks —
+one body-marks-section decoration, one `drawEelHead` eye-chain treatment —
+the same way Eel-symbiote's `["emblem", "stare"]` already did, rather than
+fusing unrelated visual concerns into a single flag. Legends are also
+player-only in the same sense every hero and bespoke `fx` already is:
+`skinFromHue` (what rivals wear) never sets `material` beyond `organic`,
+so a Legend's cost is paid by at most one eel on screen a frame, never all
+fourteen.
 `wearableSkin` stays deliberately level-blind, so nothing a player already owns
 can ever be taken back off them, and Volt — which sits in the "standard" tier —
 never locks a new player out of their own eel. When a skin is both too deep and
