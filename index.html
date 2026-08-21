@@ -1503,6 +1503,13 @@
       { id: "orbweaver", tier: "legend", name: "Orbweaver", hue: 350, sat: 58, bodyLight: 20, headLight: 28,
         price: 12500, minLevel: 10, material: { type: "chitin", strength: 0.5, scale: 1 },
         fx: "silk", mark: ["orbweave", "manyeyes"] },
+    
+      // Burnt amber/ochre over graphite/near-black — deliberately not a
+      // yellow-and-blue palette. No accent: the small steel slash marks come
+      // from the scarred material itself, not a second banded colour.
+      { id: "razorback", tier: "legend", name: "Razorback", hue: 34, sat: 52, bodyLight: 22, headLight: 32,
+        price: 13500, minLevel: 11, material: { type: "scarred", strength: 0.55, scale: 1 },
+        fx: "feral", mark: ["finridge"] },
     ];
     
     const DEFAULT_SKIN_ID = "volt";
@@ -1653,6 +1660,7 @@
       charged: { strength: 0.5, scale: 1 },
       liquid: { strength: 0.5, scale: 1 },
       chitin: { strength: 0.5, scale: 1 },
+      scarred: { strength: 0.5, scale: 1 },
     };
     
     const DEFAULT_MATERIAL = Object.freeze({ type: "organic", ...MATERIALS.organic });
@@ -4278,6 +4286,22 @@
     }
   }
 
+  // feral (Razorback): when boosting, the slash markings briefly read
+  // brighter/higher-contrast — cosmetic only, an instant toggle on
+  // `pointer.boosting` threaded through the same `glow` slot X-Ray's
+  // chargeGlow already uses, not an eased ramp (the issue asks for "a
+  // brief increase... is enough," not a transition). Not an animation of
+  // its own — no travelling or pulsing component — so reduced motion needs
+  // no special-casing here at all; the brightness itself isn't motion.
+  function fxFeral(ctx2d, pts, bodyLength, radius, skin, nowMs, glow = 0){
+    if (!glow) return;
+    const m = Engine.resolveMaterial(skin);
+    ctx2d.save();
+    ctx2d.globalCompositeOperation = "lighter";
+    drawRazorbackSlashes(ctx2d, pts, bodyLength, radius, m.strength, true);
+    ctx2d.restore();
+  }
+
   // One dispatch table for every themed finish — new skin.fx values register
   // here, nowhere else. Keyed by the exact string skins.js's catalogue uses.
   // `fade` and `iridescent` are deliberately absent: they modulate the body's
@@ -4285,6 +4309,7 @@
   // bodyFxStyle beside the colour math they change, not here.
   const SKIN_FX = {
     ripple: fxWater, vortex: fxVortex, cracks: fxCracks, ember: fxEmber, arc: fxArc, silk: fxSilk,
+    feral: fxFeral,
     spots: fxSpots, slime: fxSlime, sparkle: fxSparkle, molten: fxMolten,
     afterimage: fxAfterimage, stars: fxStars, xray: fxXray,
   };
@@ -4406,6 +4431,27 @@
         ctx2d.lineTo(-radius*1.0,  s*radius*0.35);
         ctx2d.closePath(); ctx2d.fill();
       }
+    }
+    // "finridge": short swept-back fin/ridge shapes integrated into the head
+    // silhouette — Razorback's more aggressive profile. Drawn under the head
+    // fill so it reads as part of the head rather than sitting on top of it,
+    // and stays within the head ellipse's own footprint, so nothing about
+    // the hitbox changes (collision reads the body/point radius, never the
+    // drawn silhouette).
+    if (marks.includes("finridge")){
+      ctx2d.fillStyle = `hsl(${hue},${Math.max(0,sat-10)}%,${Math.max(6,headLight-14)}%)`;
+      for (const s of [-1, 1]){
+        ctx2d.beginPath();
+        ctx2d.moveTo(-radius*0.15, s*radius*0.75);
+        ctx2d.lineTo(-radius*0.85, s*radius*1.35);
+        ctx2d.lineTo(-radius*0.55, s*radius*0.65);
+        ctx2d.closePath(); ctx2d.fill();
+      }
+      ctx2d.beginPath();
+      ctx2d.moveTo(radius*0.1, -radius*0.95);
+      ctx2d.lineTo(-radius*0.15, -radius*1.5);
+      ctx2d.lineTo(-radius*0.35, -radius*0.9);
+      ctx2d.closePath(); ctx2d.fill();
     }
     ctx2d.fillStyle = `hsl(${hue},${sat}%,${headLight}%)`;
     ctx2d.beginPath(); ctx2d.ellipse(0,0,radius*1.5,radius*1.15,0,0,TAU); ctx2d.fill();
@@ -4811,10 +4857,53 @@
       hash > 0.5 ? `hsla(28,55%,42%,${0.08 + 0.09 * m.strength})` : `rgba(0,0,0,${0.06 + 0.08 * m.strength})`);
   }
 
+  // Razorback's slash/scar markings — irregular-count per group (1, 2 or 4,
+  // never a fixed three, the direct answer to the issue's explicit "do not
+  // repeatedly use an iconic arrangement of three parallel claws"), each a
+  // short diagonal bodyRibbon slice in a small steel/silver tone. Shared by
+  // matScarred (the base, always-present read) and fxFeral (an identical
+  // second pass at higher alpha when boosting) — calling the same function
+  // twice keeps the two passes trivially aligned, rather than duplicating
+  // the placement hash the way drawCrackLips deliberately does for cracks.
+  function drawRazorbackSlashes(ctx2d, pts, bodyLength, radius, strength, boosted){
+    const n = pts.length;
+    if (n < 8) return;
+    const groups = Math.max(2, Math.round(n / 30));
+    const alpha = boosted ? Math.min(0.9, 0.3 + 0.35 * strength) : Math.min(0.5, 0.08 + 0.12 * strength);
+    const style = boosted ? `rgba(224,230,234,${alpha})` : `rgba(190,196,200,${alpha})`;
+    for (let j = 0; j < groups; j++){
+      const hash = (((Math.sin(j * 21.4 + bodyLength * 0.009) * 33421.7) % 1) + 1) % 1;
+      const count = hash < 0.4 ? 1 : hash < 0.75 ? 2 : 4;
+      const lo = Math.max(0, Math.min(n - 6, Math.floor(hash * (n - 7))));
+      for (let s = 0; s < count; s++){
+        const sub = (((Math.sin(j * 7.7 + s * 13.3) * 9127.3) % 1) + 1) % 1;
+        const k0 = Math.min(n - 2, lo + Math.floor(sub * 4));
+        const k1 = Math.min(n - 1, k0 + 2);
+        if (k1 <= k0) continue;
+        const side = sub > 0.5 ? 1 : -1;
+        const near = side * (0.15 + sub * 0.2), far = side * (0.45 + sub * 0.2);
+        bodyRibbon(ctx2d, pts, bodyLength, radius, Math.min(near, far), Math.max(near, far), style, k0, k1);
+      }
+    }
+  }
+
+  // scarred (Razorback): dark mottled patches (mottlePatches, PR X) plus a
+  // dorsal stripe down the spine, plus the slash marks above — rougher and
+  // more irregular than any other material, per the issue's "noticeably
+  // rougher than the Standard skins."
+  function matScarred(ctx2d, pts, bodyLength, radius, skin, nowMs, detail){
+    const m = Engine.resolveMaterial(skin);
+    const count = Math.max(3, Math.round(6 * m.strength * detail));
+    mottlePatches(ctx2d, pts, bodyLength, radius, count, hash =>
+      hash > 0.5 ? `rgba(0,0,0,${0.10 + 0.10 * m.strength})` : `rgba(255,255,255,${0.04 + 0.05 * m.strength})`);
+    bodyRibbon(ctx2d, pts, bodyLength, radius, -0.1, 0.1, `hsla(25,35%,14%,${0.18 * m.strength})`);
+    drawRazorbackSlashes(ctx2d, pts, bodyLength, radius, m.strength * detail, false);
+  }
+
   const SKIN_MATERIAL = {
     organic: matOrganic, brushedMetal: matBrushedMetal, stone: matStone, charred: matCharred,
     crystal: matCrystal, water: matWater, air: matAir, charged: matCharged, liquid: matLiquid,
-    chitin: matChitin,
+    chitin: matChitin, scarred: matScarred,
   };
 
   // Falls back to organic for any unresolved type — a second, shell-side
@@ -4944,7 +5033,9 @@
     if (sheen > 0) fxSheen(ctx, pts, body.length, radius, skin);
     if (gem) fxGemTwinkle(ctx, pts, 4, body.length, radius, skin, nowMs);
     if (skin.fx) drawSkinFx(ctx, pts, body.length, radius, skin, nowMs,
-      skin.fx === "xray" ? Engine.chargeGlow(zap, zapFlashT / ZAP_FLASH_S) : undefined);
+      skin.fx === "xray" ? Engine.chargeGlow(zap, zapFlashT / ZAP_FLASH_S)
+      : skin.fx === "feral" ? (pointer.boosting ? 1 : 0)
+      : undefined);
 
     // "swords": crossed on the back, a little way behind the head. Walk the
     // body by distance rather than by index so they sit in the same place on
@@ -5563,9 +5654,12 @@
     if (sheen > 0) fxSheen(pctx, body, body.length, radius, skin);
     if (gem) fxGemTwinkle(pctx, body, 3, body.length, radius, skin, previewNowMs);
     if (skin.fx) drawSkinFx(pctx, body, body.length, radius, skin, previewNowMs,
-      // no real zap in the shop — a synthetic, slowly-oscillating charge lets
-      // the signature skin visibly breathe rather than sit at one brightness
-      skin.fx === "xray" ? Engine.chargeGlow(0.5 + 0.5 * Math.sin(previewNowMs * 0.0006), 0) : undefined);
+      // no real zap or boost in the shop — synthetic, slowly-cycling values
+      // let both skins visibly demonstrate their fx rather than sitting at
+      // one brightness or never showing it at all
+      skin.fx === "xray" ? Engine.chargeGlow(0.5 + 0.5 * Math.sin(previewNowMs * 0.0006), 0)
+      : skin.fx === "feral" ? (Math.sin(previewNowMs * 0.0009) > 0 ? 1 : 0)
+      : undefined);
 
     if (marks.includes("swords")){
       const at = body[7], back = body[12];
