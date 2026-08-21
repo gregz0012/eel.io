@@ -64,19 +64,19 @@ sent anywhere.
 | 🦈 Predators | They'll eat you — dodge them, or shock them and swim in to devour |
 | ⭐ Starfish | A shield that absorbs one hit |
 | ⚡ Baby electric eel | Charges your zap meter |
-| 🎁 Present | Could be points, a shield or a full zap meter — or lost points, a predator on your tail, or a level taken off you |
-| 👑 Boss | Guards every level from 2 on — slower than a predator, but takes as many hits as the level number |
+| 🎁 Present | Could be points, a shield or a full zap meter — or lost points, or a predator on your tail |
+| 👑 Boss | Guards every level from 2 on — slower than a predator, and takes more hits every other level |
 
 ## Mechanics
 
 - **Growth = power.** As you get longer you move slightly faster, so you can always run down smaller eels but never bigger ones. Past a certain size, predators and rivals stop hunting you.
 - **Your body is a weapon.** A rival eel that crashes head-first into your body dies.
 - **Bite, don't just swallow.** Hitting a rival's tail chops it off — the rival shrinks and swims on, and the severed piece becomes energy.
-- **The zap stuns everything** nearby (any predator, any eel) for a few seconds. Stun a predator, then ram it to eat it. A boss needs one stun-and-ram per hit, so a level 5 boss is five of them — or take the hits behind a starfish.
-- **Bosses are the way up.** Points get you to level 2. After that the only way to level is killing the boss guarding the one you are on, and it takes as many hits as the level number. Each level-up buys you a breather before the next boss arrives — use it to find a starfish and charge the zap.
+- **The zap stuns everything** nearby (any predator, any eel) for a few seconds. Stun a predator, then ram it to eat it. A boss needs one stun-and-ram per hit, and that count rises every other level — or take the hits behind a starfish.
+- **Bosses are the way up.** Points get you to level 2. After that the only way to level is killing the boss guarding the one you are on. Each level-up buys you a breather before the next boss arrives, and it also waits on points earned in the level — use the gap to find a starfish and charge the zap.
 - **Levels ramp difficulty.** A new predator joins every 2 levels.
 - **Your deepest level is remembered** between dives, even though every dive starts again at level 1.
-- **Presents are a gamble.** Most are a treat. Some are not — and one of them is the only thing in the game that can take a level off you.
+- **Presents are a gamble.** Most are a treat; some are not — a nasty one costs you points or drops a predator on your tail, but nothing in a present can ever take a level off you.
 - **Mind your own tail.** Cross over yourself and you'll bite your own tail off, losing length and points.
 - **Getting eaten takes you back to the surface**, not straight into another dive — so you can change your eel before you go again.
 - **A calming break, every so often.** After about fifteen minutes of play, dying offers a short exercise — square breathing, or gathering a few kind words — worth 250 banked points. It's optional, never added to a run's score, and skipping it just leaves it waiting for next time.

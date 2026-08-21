@@ -27,7 +27,7 @@ Design values, in priority order:
 - **Zap:** when charged, stuns **everything** nearby (predators and eels, any size) for a few seconds; nearby fish burst into energy.
 - **Self-cross:** crossing your own tail bites it off — you lose length and points (with a short cooldown and a generous "neck" buffer so ordinary tight turns are safe).
 - **Presents:** a wrapped box holding one of five things — points, a shield, a full zap meter, lost points, or a predator spawned nearby. Kind outcomes outweigh cruel ones roughly 7 to 3.
-- **Levelling:** points carry you to level 2 and no further — from there **killing the boss guarding your level is the only way up**. Levels are **sticky** (never fall). `+1 predator every 2 levels`. Every level from 2 on has a boss: slower than a predator so you can always disengage, but it takes **as many hits as the level number** (level 2 = two hits, level 15 = fifteen), each one needing a stun or a shield. A **breather** follows every level-up before the next boss arrives — that gap is when you find a starfish and recharge, and the fight is balanced around it existing.
+- **Levelling:** points carry you to level 2 and no further — from there **killing the boss guarding your level is the only way up**. Levels are **sticky** (never fall). `+1 predator every 2 levels`. Every level from 2 on has a boss: slower than a predator so you can always disengage, and the hits it takes **rises every other level** (2, 2, 3, 3, 4, 4… reaching 8 by level 15), each one needing a stun or a shield. A **breather** follows every level-up before the next boss arrives, and it must also earn some points in the level first — that gap is when you find a starfish and recharge, and the fight is balanced around it existing.
 
 ---
 

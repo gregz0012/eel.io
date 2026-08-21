@@ -44,11 +44,15 @@ export function completeLevel(state) {
 }
 
 /**
- * How many hits the boss guarding a level takes: the level number itself.
- * Level 2 is two hits, level 15 is fifteen — the whole difficulty curve.
+ * How many hits the boss guarding a level takes.
+ *
+ * Rises every other level rather than every level: 2, 2, 3, 3, 4, 4… reaching
+ * 8 at level 15, not 15. The uncapped one-hit-per-level ramp made a long dive
+ * a grind rather than a fight — this softens it while still climbing.
  */
 export function bossHits(level) {
-  return Math.max(1, level);
+  const above = Math.max(0, level - CONFIG.boss.firstLevel);
+  return 2 + Math.floor(above / 2);
 }
 
 /** How many predators should be hunting at this level. */
