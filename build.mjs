@@ -19,6 +19,7 @@ const root = dirname(fileURLToPath(import.meta.url));
 // Dependency order, shallowest first. Add a module here when you extract one.
 const ENGINE_MODULES = [
   "config.js",
+  "vector.js",
   "rng.js",
   "scoring.js",
   "identity.js",

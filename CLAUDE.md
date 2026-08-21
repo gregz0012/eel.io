@@ -54,7 +54,10 @@ eel.io/
 │   ├── engine/           # PURE game core — no DOM, no canvas, no globals, no wall-clock, no Math.random
 │   │   ├── rng.js        # seeded RNG (deterministic; injected everywhere randomness is needed)
 │   │   ├── presents.js   # what a present holds, rolled from an injected rng (pure)
-│   │   ├── vector.js     # pure math: dist, angleLerp, clamp, etc.
+│   │   ├── vector.js     # pure math: angleTo/distanceTo so far (for the boss
+│   │   │                 #   sonar); dist2/angLerp/clamp still live inline in
+│   │   │                 #   the shell — see §9, this is new behaviour riding
+│   │   │                 #   the module's name, not the extraction slice yet
 │   │   ├── config.js     # tunables: speeds, spawn targets, thresholds, level rules
 │   │   ├── scoring.js    # addScore, level rules, difficulty ramp (pure)
 │   │   ├── identity.js   # anonymous player tag: id -> "AmberLantern-4721" (pure)
@@ -95,8 +98,8 @@ eel.io/
 ```
 
 `config.js`, `rng.js`, `scoring.js`, `identity.js`, `leaderboard.js`, `session.js`,
-`bank.js`, `skins.js`, `presents.js`, `minigames.js` and `progress.js` exist so far.
-The rest is the destination, not a description of today — see §9.
+`bank.js`, `skins.js`, `presents.js`, `minigames.js`, `progress.js` and `vector.js`
+exist so far. The rest is the destination, not a description of today — see §9.
 
 ### Why a build step
 
@@ -413,6 +416,10 @@ One slice at a time, never all at once:
 Extraction order — each step only depends on earlier ones:
 
 `vector` → **`scoring` ✅ done** → `collision` → `entities` → `spawn` → `world.step`
+
+`vector.js` exists, but only as new functions a feature needed (the boss sonar's
+`angleTo`/`distanceTo`) — the shell's own `dist2`/`angLerp`/`clamp` are still
+inline and waiting for their slice, same as before. Existing, not extracted.
 
 `identity`, `leaderboard`, `session`, `bank`, `skins`, `minigames` and `progress` sit
 outside that chain: they were new behaviour rather than extracted monolith, so they
