@@ -30,6 +30,11 @@
 //               "swords" for crossed katanas on the back, "emblem" for a
 //               spider spread across the back, "stare" for a pair of wide
 //               pupil-less eyes.
+//   fx: "…"     a themed finish — ripples, cracks, arcs, that sort of thing —
+//               drawn by the matching function in the shell's SKIN_FX table.
+//               Like gem and sheen, a skin only ever wears one finish; fx is
+//               exclusive with those two but may sit alongside accent/mark,
+//               the same way a hero's banding and flourish already do.
 
 /**
  * Colours are HSL parts the renderer assembles, so a skin can be a metal
@@ -50,6 +55,19 @@ export const SKINS = [
   { id: "iron", tier: "metallic",     name: "Iron",     hue: 210, sat: 10, bodyLight: 38, headLight: 64, price: 1000, sheen: 0.52 },
   { id: "gold", tier: "metallic",     name: "Gold",     hue: 45,  sat: 78, bodyLight: 40, headLight: 66, price: 2000, sheen: 0.78 },
   { id: "platinum", tier: "metallic", name: "Platinum", hue: 205, sat: 14, bodyLight: 56, headLight: 90, price: 5000, sheen: 1 },
+
+  // the elements — each its own price and its own depth, deepening as the
+  // element gets more dramatic to look at rather than climbing a flat ladder
+  { id: "water", tier: "element", name: "Water", hue: 195, sat: 70, bodyLight: 30, headLight: 52, price: 3000,
+    minLevel: 4, fx: "ripple" },
+  { id: "air", tier: "element", name: "Air", hue: 200, sat: 20, bodyLight: 62, headLight: 86, price: 4000,
+    minLevel: 5, fx: "vortex" },
+  { id: "earth", tier: "element", name: "Earth", hue: 28, sat: 35, bodyLight: 22, headLight: 34, price: 5000,
+    minLevel: 6, fx: "cracks" },
+  { id: "fire", tier: "element", name: "Fire", hue: 8, sat: 55, bodyLight: 16, headLight: 24, price: 6000,
+    minLevel: 7, fx: "ember" },
+  { id: "lightning", tier: "element", name: "Lightning", hue: 192, sat: 90, bodyLight: 42, headLight: 68, price: 7500,
+    minLevel: 8, fx: "arc" },
 
   // the gems — all one price, all shimmering
   { id: "emerald", tier: "gemstone",  name: "Emerald",  hue: 150, sat: 85, bodyLight: 34, headLight: 60, price: 7500, gem: true },
@@ -91,6 +109,7 @@ export const DEFAULT_SKIN_ID = "volt";
 export const TIERS = [
   { id: "standard", label: "Standard", minLevel: 2 },
   { id: "metallic", label: "Metallic", minLevel: 5 },
+  { id: "element",  label: "Elements", minLevel: 4 },
   { id: "gemstone", label: "Gemstone", minLevel: 10 },
   { id: "hero",     label: "Heroes",   minLevel: 15 },
 ];

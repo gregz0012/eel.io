@@ -275,16 +275,26 @@ is worth that. If you ever make the fare a hard requirement, you need a way back
 in — a daily allowance, a free dive, something.
 
 **Skins are gated on depth as well as money.** Each tier in `skins.js` carries a
-`minLevel` — standard 2, metallic 5, gemstone 10, hero 15 — checked against the
-deepest level the player has ever reached, so the shop is a reason to go down
-rather than to grind fish in the shallows. A skin's own `minLevel`, when it has
-one, wins over its tier's — the four Hero skins each open at their own depth
-(8/9/10/11) rather than sharing the tier's single Level 15 gate, so the shop's
-top is a ladder, not one distant step. `levelFor(skin)` is the one place this
+`minLevel` — checked against the deepest level the player has ever reached, so
+the shop is a reason to go down rather than to grind fish in the shallows. A
+skin's own `minLevel`, when it has one, wins over its tier's — the four Hero
+skins each open at their own depth (8/9/10/11) rather than sharing the tier's
+single Level 15 gate, and every Elements skin (`element` tier, between
+Metallic and Gemstone) does the same, deepening with how dramatic its finish
+is rather than climbing a flat ladder. `levelFor(skin)` is the one place this
 is decided; everything else (`buySkin`, `skinStatus`, `nextSkinToBuy`) already
 routes through it and needed no change when the per-skin override was added.
 Two rules keep the gate from turning cruel: it is on *buying* only, and the
 free starting skin is exempt.
+
+A themed finish (`skin.fx`, e.g. Water's `"ripple"`) works the same way `gem`
+and `sheen` already do: pure data in `skins.js`, drawn by a matching function
+in the shell's `SKIN_FX` table (`src/index.html`, above `drawEelBody`). Every
+one of those functions is a stateless function of `nowMs` and a point's own
+index — no stored state, no `Math.random` — which is what lets the shop's
+small preview canvas run the exact same function as the live game and get an
+identical result, and what keeps reduced motion showing one still frame
+instead of going blank.
 `wearableSkin` stays deliberately level-blind, so nothing a player already owns
 can ever be taken back off them, and Volt — which sits in the "standard" tier —
 never locks a new player out of their own eel. When a skin is both too deep and

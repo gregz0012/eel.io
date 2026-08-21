@@ -2215,6 +2215,179 @@
     ctx2d.restore();
   }
 
+  // Themed finishes (skin.fx) — the Elements tier and beyond. Same rules as
+  // fxSheen/fxGemTwinkle: every one of these is a stateless function of
+  // `nowMs` and a point's own index, never storing state of its own, which is
+  // what keeps them cheap and lets the shop preview run them unmodified.
+  // Under reduced motion, callers pass a frozen `nowMs` (see drawEelBody and
+  // drawPreviewEel below) rather than skip these entirely — a still frame of
+  // a themed finish beats fourteen skins going blank for that preference.
+
+  // A slow band of light travelling down the flank, plus a sparse trail of
+  // small bubbles drifting up and fading — restrained on purpose, so a
+  // moving eel stays easy to track against the sea behind it.
+  function fxWater(ctx2d, pts, bodyLength, radius, skin, nowMs){
+    const { hue, sat, headLight } = skin;
+    for (let k = 1; k < pts.length; k++){
+      const p = pts[k], q = pts[k - 1];
+      const wave = Math.sin(nowMs * 0.0015 - p.i * 0.25);
+      if (wave < 0.5) continue;
+      const t = 1 - p.i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      ctx2d.strokeStyle = `hsla(${hue},${Math.min(100, sat + 10)}%,${Math.min(92, headLight + 18)}%,${(wave - 0.5)})`;
+      ctx2d.lineWidth = r * 0.5;
+      ctx2d.beginPath();
+      ctx2d.moveTo(p.x - nx * r * 0.5, p.y - ny * r * 0.5);
+      ctx2d.lineTo(q.x - nx * r * 0.5, q.y - ny * r * 0.5);
+      ctx2d.stroke();
+    }
+    ctx2d.save();
+    ctx2d.globalCompositeOperation = "lighter";
+    for (let k = 0; k < pts.length; k += 5){
+      const p = pts[k];
+      const t = 1 - p.i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const loopMs = 1400;
+      const bubbleT = ((nowMs * 0.6 + p.i * 137) % loopMs) / loopMs;
+      const alpha = Math.sin(bubbleT * Math.PI);
+      if (alpha < 0.15) continue;
+      ctx2d.fillStyle = `hsla(${hue},${Math.min(100, sat + 20)}%,95%,${alpha * 0.6})`;
+      ctx2d.beginPath();
+      ctx2d.arc(p.x, p.y - r * 0.6 - bubbleT * r * 1.4, Math.max(1, r * 0.14), 0, TAU);
+      ctx2d.fill();
+    }
+    ctx2d.restore();
+  }
+
+  // A misty, low-opacity halo the whole length of the body, with a few tiny
+  // spirals unwinding along the flank — ethereal rather than solid.
+  function fxVortex(ctx2d, pts, bodyLength, radius, skin, nowMs){
+    const { hue, sat, headLight } = skin;
+    ctx2d.save();
+    ctx2d.globalCompositeOperation = "lighter";
+    ctx2d.strokeStyle = `hsla(${hue},${Math.max(0, sat - 20)}%,${Math.min(96, headLight + 20)}%,0.14)`;
+    ctx2d.lineWidth = radius * 1.6;
+    ctx2d.beginPath();
+    pts.forEach((p, k) => k === 0 ? ctx2d.moveTo(p.x, p.y) : ctx2d.lineTo(p.x, p.y));
+    ctx2d.stroke();
+    for (let k = 0; k < pts.length; k += 6){
+      const p = pts[k];
+      const t = 1 - p.i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t) * 0.9;
+      const spin = nowMs * 0.003 + p.i * 0.5;
+      ctx2d.strokeStyle = `hsla(${hue},${Math.min(100, sat + 10)}%,96%,0.5)`;
+      ctx2d.lineWidth = Math.max(0.6, r * 0.08);
+      ctx2d.beginPath();
+      for (let a = 0; a <= TAU * 1.4; a += 0.4){
+        const rad = r * 0.5 * (a / (TAU * 1.4));
+        const x = p.x + Math.cos(a + spin) * rad, y = p.y + Math.sin(a + spin) * rad * 0.6;
+        a === 0 ? ctx2d.moveTo(x, y) : ctx2d.lineTo(x, y);
+      }
+      ctx2d.stroke();
+    }
+    ctx2d.restore();
+  }
+
+  // Glowing cracks branching off the spine — where each one sits is fixed
+  // (a hash of the point's own index, not the frame), only its brightness
+  // pulses, so the rock reads as veined stone rather than flickering static.
+  function fxCracks(ctx2d, pts, bodyLength, radius, skin, nowMs){
+    const { hue, sat, headLight } = skin;
+    ctx2d.save();
+    ctx2d.globalCompositeOperation = "lighter";
+    for (let k = 1; k < pts.length; k += 2){
+      const p = pts[k], q = pts[k - 1];
+      const jitter = (((Math.sin(p.i * 12.9898) * 43758.5453) % 1) + 1) % 1;
+      if (jitter < 0.5) continue;
+      const t = 1 - p.i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const pulse = 0.5 + 0.5 * Math.sin(nowMs * 0.003 + p.i * 0.4);
+      const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      const side = jitter > 0.75 ? 1 : -1;
+      ctx2d.strokeStyle = `hsla(${hue},${Math.min(100, sat + 25)}%,${Math.min(85, headLight + 20)}%,${0.35 + 0.45 * pulse})`;
+      ctx2d.lineWidth = Math.max(0.8, r * 0.12);
+      ctx2d.beginPath();
+      ctx2d.moveTo(p.x, p.y);
+      ctx2d.lineTo(p.x + nx * r * 0.7 * side, p.y + ny * r * 0.7 * side);
+      ctx2d.stroke();
+    }
+    ctx2d.restore();
+  }
+
+  // The same glowing-crack idea as Earth, hotter and denser, plus embers
+  // rising off the body — fire is meant to look more alive than stone.
+  function fxEmber(ctx2d, pts, bodyLength, radius, skin, nowMs){
+    const { hue, sat, headLight } = skin;
+    for (let k = 1; k < pts.length; k += 2){
+      const p = pts[k], q = pts[k - 1];
+      const t = 1 - p.i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const pulse = 0.5 + 0.5 * Math.sin(nowMs * 0.006 + p.i * 0.5);
+      ctx2d.strokeStyle = `hsla(${hue},${Math.min(100, sat + 15)}%,${Math.min(80, headLight + 15 + pulse * 15)}%,${0.4 + 0.4 * pulse})`;
+      ctx2d.lineWidth = Math.max(0.8, r * 0.22);
+      ctx2d.beginPath();
+      ctx2d.moveTo(p.x, p.y); ctx2d.lineTo(q.x, q.y);
+      ctx2d.stroke();
+    }
+    ctx2d.save();
+    ctx2d.globalCompositeOperation = "lighter";
+    for (let k = 0; k < pts.length; k += 5){
+      const p = pts[k];
+      const t = 1 - p.i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const loopMs = 900;
+      const emberT = ((nowMs * 0.9 + p.i * 211) % loopMs) / loopMs;
+      const alpha = 1 - emberT;
+      if (alpha < 0.1) continue;
+      ctx2d.fillStyle = `hsla(${hue - 10},90%,${60 + emberT * 20}%,${alpha * 0.7})`;
+      ctx2d.beginPath();
+      ctx2d.arc(p.x + Math.sin(p.i) * r * 0.3, p.y - r * 0.5 - emberT * r * 1.6, Math.max(0.8, r * 0.1), 0, TAU);
+      ctx2d.fill();
+    }
+    ctx2d.restore();
+  }
+
+  // Jagged arcs that strobe on and off down the spine. A flare reacting to
+  // the real zap meter is deliberately left for the X-Ray skin alone (a
+  // later PR) — this finish needs no gameplay state at all, which is what
+  // lets it read identically in the shop preview, where no such state exists.
+  function fxArc(ctx2d, pts, bodyLength, radius, skin, nowMs){
+    const { hue, sat, headLight } = skin;
+    ctx2d.save();
+    ctx2d.globalCompositeOperation = "lighter";
+    for (let k = 1; k < pts.length; k++){
+      const p = pts[k], q = pts[k - 1];
+      const flicker = Math.sin(nowMs * 0.02 + p.i * 0.9);
+      if (flicker < 0.6) continue;
+      const t = 1 - p.i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      const jitter = (((Math.sin(p.i * 78.233) * 12345.678) % 1) + 1) % 1;
+      const jag = (jitter - 0.5) * r * 0.6;
+      ctx2d.strokeStyle = `hsla(${hue},${Math.min(100, sat + 10)}%,${Math.min(98, headLight + 28)}%,${(flicker - 0.6) / 0.4})`;
+      ctx2d.lineWidth = Math.max(0.6, r * 0.1);
+      ctx2d.beginPath();
+      ctx2d.moveTo(p.x, p.y);
+      ctx2d.lineTo((p.x + q.x) / 2 + nx * jag, (p.y + q.y) / 2 + ny * jag);
+      ctx2d.lineTo(q.x, q.y);
+      ctx2d.stroke();
+    }
+    ctx2d.restore();
+  }
+
+  // One dispatch table for every themed finish — new skin.fx values register
+  // here, nowhere else. Keyed by the exact string skins.js's catalogue uses.
+  const SKIN_FX = { ripple: fxWater, vortex: fxVortex, cracks: fxCracks, ember: fxEmber, arc: fxArc };
+
+  function drawSkinFx(ctx2d, pts, bodyLength, radius, skin, nowMs){
+    const draw = SKIN_FX[skin.fx];
+    if (draw) draw(ctx2d, pts, bodyLength, radius, skin, nowMs);
+  }
+
   // Reused every frame rather than allocated fresh — drawEelBody runs for up
   // to ~15 eels a frame, and this is the one array both effects above read.
   const SKIN_FX_SCRATCH = [];
@@ -2282,16 +2455,19 @@
       }
     }
 
-    // metals' sheen and a gem's twinkle both walk the same sampled points, so
-    // build them once here rather than twice — see fxSheen/fxGemTwinkle above.
-    if (sheen > 0 || gem){
+    // sheen, a gem's twinkle and a themed fx finish all walk the same sampled
+    // points, so build them once here rather than several times over — see
+    // fxSheen/fxGemTwinkle/drawSkinFx above.
+    if (sheen > 0 || gem || skin.fx){
       SKIN_FX_SCRATCH.length = 0;
       for (let i = 0; i < body.length; i += step){
         const [sx, sy] = worldToScreen(body[i].x, body[i].y);
         SKIN_FX_SCRATCH.push({ x: sx, y: sy, i });
       }
+      const nowMs = reduceMotion ? 0 : performance.now();
       if (sheen > 0) fxSheen(ctx, SKIN_FX_SCRATCH, body.length, radius, skin);
-      if (gem) fxGemTwinkle(ctx, SKIN_FX_SCRATCH, 4, body.length, radius, skin, performance.now());
+      if (gem) fxGemTwinkle(ctx, SKIN_FX_SCRATCH, 4, body.length, radius, skin, nowMs);
+      if (skin.fx) drawSkinFx(ctx, SKIN_FX_SCRATCH, body.length, radius, skin, nowMs);
     }
 
     // "swords": crossed on the back, a little way behind the head. Walk the
@@ -2964,8 +3140,10 @@
     // same specular treatment the game uses, so the preview is honest — body
     // here is PREVIEW_BODY itself (every point carries its own `i`, matching
     // its array index, since the preview walks every point already)
+    const previewNowMs = reduceMotion ? 0 : performance.now();
     if (sheen > 0) fxSheen(pctx, body, body.length, radius, skin);
-    if (gem) fxGemTwinkle(pctx, body, 3, body.length, radius, skin, performance.now());
+    if (gem) fxGemTwinkle(pctx, body, 3, body.length, radius, skin, previewNowMs);
+    if (skin.fx) drawSkinFx(pctx, body, body.length, radius, skin, previewNowMs);
 
     if (marks.includes("swords")){
       const at = body[7], back = body[12];
