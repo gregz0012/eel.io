@@ -70,11 +70,19 @@ export const SKINS = [
   { id: "lime", tier: "standard",     name: "Lime",     hue: 95,  sat: 62, bodyLight: 36, headLight: 56, price: 250,
     material: "organic" },
 
-  // the metals — sheen climbs with price, so the ladder is visible at a glance
-  { id: "copper", tier: "metallic",   name: "Copper",   hue: 24,  sat: 62, bodyLight: 32, headLight: 54, price: 500,  sheen: 0.32 },
-  { id: "iron", tier: "metallic",     name: "Iron",     hue: 210, sat: 10, bodyLight: 38, headLight: 64, price: 1000, sheen: 0.52 },
-  { id: "gold", tier: "metallic",     name: "Gold",     hue: 45,  sat: 78, bodyLight: 40, headLight: 66, price: 2000, sheen: 0.78 },
-  { id: "platinum", tier: "metallic", name: "Platinum", hue: 205, sat: 14, bodyLight: 56, headLight: 90, price: 5000, sheen: 1 },
+  // the metals — sheen climbs with price, so the ladder is visible at a
+  // glance; brushedMetal's own strength/scale tune each metal's grain
+  // separately from that — coarser and wider-spread for a cheap oxidised
+  // copper, tighter and richer as the price climbs, all but vanishing under
+  // Platinum's near-mirror finish where sheen alone does the work
+  { id: "copper", tier: "metallic",   name: "Copper",   hue: 24,  sat: 62, bodyLight: 32, headLight: 54, price: 500,  sheen: 0.32,
+    material: { type: "brushedMetal", strength: 0.4, scale: 1.3 } },
+  { id: "iron", tier: "metallic",     name: "Iron",     hue: 210, sat: 10, bodyLight: 38, headLight: 64, price: 1000, sheen: 0.52,
+    material: { type: "brushedMetal", strength: 0.55, scale: 1.0 } },
+  { id: "gold", tier: "metallic",     name: "Gold",     hue: 45,  sat: 78, bodyLight: 40, headLight: 66, price: 2000, sheen: 0.78,
+    material: { type: "brushedMetal", strength: 0.7, scale: 0.85 } },
+  { id: "platinum", tier: "metallic", name: "Platinum", hue: 205, sat: 14, bodyLight: 56, headLight: 90, price: 5000, sheen: 1,
+    material: { type: "brushedMetal", strength: 0.3, scale: 0.6 } },
 
   // the elements — each its own price and its own depth, deepening as the
   // element gets more dramatic to look at rather than climbing a flat ladder
@@ -277,12 +285,13 @@ export function skinFromHue(hue) {
 
 /**
  * Canonical default parameters for each material, keyed by the same string
- * `skin.material`/its `type` field uses. Grows as later PRs add materials;
- * only `organic` exists yet. `strength` and `scale` are 0..1 richness/size
- * knobs a skin's own object form can override — see resolveMaterial.
+ * `skin.material`/its `type` field uses. Grows as later PRs add materials.
+ * `strength` and `scale` are 0..1 richness/size knobs a skin's own object
+ * form can override — see resolveMaterial.
  */
 export const MATERIALS = {
   organic: { strength: 0.5, scale: 1 },
+  brushedMetal: { strength: 0.5, scale: 1 },
 };
 
 const DEFAULT_MATERIAL = Object.freeze({ type: "organic", ...MATERIALS.organic });

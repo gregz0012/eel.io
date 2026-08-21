@@ -62,6 +62,12 @@ describe("the catalogue", () => {
     expect(skinById("platinum").sheen).toBeGreaterThan(skinById("iron").sheen);
   });
 
+  it("gives every metal the brushedMetal material", () => {
+    for (const id of ["copper", "iron", "gold", "platinum"]) {
+      expect(resolveMaterial(skinById(id)).type).toBe("brushedMetal");
+    }
+  });
+
   it("gives every banded hero a second colour to band with", () => {
     // Eel-symbiote is deliberately unbanded — banding colours whole
     // cross-sections, so on a black skin it reads as white rings rather than
