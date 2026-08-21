@@ -2932,6 +2932,87 @@
     ctx2d.restore();
   }
 
+  // The skull: drawn from inside drawEelHead (not fxXray), because it has
+  // to sit *after* the ordinary opaque head fill to be visible at all — a
+  // cranium dome toward the back, a tapering jaw/snout wedge toward the
+  // front, a central nasal ridge, and dark socket voids where the default
+  // eyes would sit. Same three-layer glow/bone/core palette and the same
+  // `glow` scaling as the body skeleton above, so the skull flares white on
+  // a zap right along with the rest of the skeleton.
+  function drawXraySkull(ctx2d, radius, glow){
+    const g = Math.max(0, Math.min(1, glow));
+    const glowC = `rgba(90,200,230,${0.16 + 0.24 * g})`;
+    const boneC = `rgba(178,224,240,${0.55 + 0.35 * g})`;
+    const coreC = `rgba(235,248,255,${0.7 + 0.3 * g})`;
+
+    ctx2d.save();
+    ctx2d.globalCompositeOperation = "lighter";
+    ctx2d.lineCap = "round"; ctx2d.lineJoin = "round";
+
+    // cranium dome, toward the back of the head — kept clear of the eye
+    // sockets' own footprint (below) so the two shapes read as separate
+    // parts of one skull rather than overlapping outlines
+    ctx2d.fillStyle = glowC;
+    ctx2d.beginPath();
+    ctx2d.ellipse(-radius*0.62, 0, radius*0.62, radius*0.82, 0, 0, TAU);
+    ctx2d.fill();
+    ctx2d.strokeStyle = boneC;
+    ctx2d.lineWidth = Math.max(0.8, radius*0.055);
+    ctx2d.beginPath();
+    ctx2d.ellipse(-radius*0.62, 0, radius*0.56, radius*0.72, 0, Math.PI*0.12, Math.PI*1.88);
+    ctx2d.stroke();
+
+    // tapering jaw/snout, toward the front — a short, blunt-tipped wedge
+    // (not a sharp arrowhead), staying well inside the head's own
+    // silhouette
+    const jawTipX = radius*0.85, jawTipR = radius*0.24;
+    ctx2d.fillStyle = glowC;
+    ctx2d.beginPath();
+    ctx2d.moveTo(-radius*0.05, -radius*0.38);
+    ctx2d.quadraticCurveTo(radius*0.55, -radius*0.3, jawTipX, -jawTipR);
+    ctx2d.arc(jawTipX, 0, jawTipR, -Math.PI/2, Math.PI/2);
+    ctx2d.quadraticCurveTo(radius*0.55, radius*0.3, -radius*0.05, radius*0.38);
+    ctx2d.closePath();
+    ctx2d.fill();
+    ctx2d.strokeStyle = boneC;
+    ctx2d.lineWidth = Math.max(0.7, radius*0.045);
+    ctx2d.stroke();
+
+    // central nasal ridge — stops at the same point the jaw's own rounded
+    // tip does, so it reads as the ridge along the snout rather than a
+    // shaft poking out past it
+    ctx2d.strokeStyle = coreC;
+    ctx2d.lineWidth = Math.max(0.6, radius*0.04);
+    ctx2d.beginPath();
+    ctx2d.moveTo(-radius*0.2, 0);
+    ctx2d.lineTo(jawTipX, 0);
+    ctx2d.stroke();
+
+    // a small notch where the skull's back edge meets the neck, visually
+    // continuing into the body's vertebra chain
+    ctx2d.strokeStyle = boneC;
+    ctx2d.lineWidth = Math.max(0.8, radius*0.06);
+    ctx2d.beginPath();
+    ctx2d.moveTo(-radius*1.3, 0);
+    ctx2d.lineTo(-radius*1.05, 0);
+    ctx2d.stroke();
+
+    ctx2d.restore();
+
+    // dark eye-socket voids — near-black fill, thin cyan rim — positioned
+    // forward of the cranium, clear of its outline; explicitly no bright
+    // pupil-and-white shapes
+    for (const s of [-1, 1]){
+      ctx2d.fillStyle = "rgba(2,10,14,0.92)";
+      ctx2d.beginPath();
+      ctx2d.ellipse(radius*0.42, s*radius*0.48, radius*0.26, radius*0.22, 0, 0, TAU);
+      ctx2d.fill();
+      ctx2d.strokeStyle = `rgba(120,210,235,${0.5 + 0.4*g})`;
+      ctx2d.lineWidth = Math.max(0.6, radius*0.04);
+      ctx2d.stroke();
+    }
+  }
+
   function fxXray(ctx2d, pts, bodyLength, radius, skin, nowMs, glow = 0){
     const g = Math.max(0, Math.min(1, glow));
     ctx2d.save();
@@ -3206,7 +3287,7 @@
   // translated to the head position and rotated to face it; shared verbatim
   // between drawEelBody and drawPreviewEel, which used to carry this ~90
   // lines each.
-  function drawEelHead(ctx2d, radius, skin, marks){
+  function drawEelHead(ctx2d, radius, skin, marks, glow = 0){
     const { hue, sat, headLight, gem, accent } = skin;
     // "ears": a pointed cowl swept back off the head, drawn under it so the
     // head reads as sitting inside the mask
@@ -3368,6 +3449,10 @@
           ctx2d.fill();
         }
       }
+    } else if (marks.includes("skull")){
+      // X-Ray: a cranium/jaw/socket skull in place of the default eyes —
+      // see drawXraySkull, above fxXray
+      drawXraySkull(ctx2d, radius, glow);
     } else {
       // eyes
       ctx2d.fillStyle = "#eaffff";
@@ -3893,10 +3978,13 @@
     // projection built above.
     if (sheen > 0) fxSheen(ctx, pts, body.length, radius, skin);
     if (gem) fxGemTwinkle(ctx, pts, 4, body.length, radius, skin, nowMs);
-    if (skin.fx) drawSkinFx(ctx, pts, body.length, radius, skin, nowMs,
-      skin.fx === "xray" ? Engine.chargeGlow(zap, zapFlashT / ZAP_FLASH_S)
+    // computed once and reused by drawEelHead below, so the skull (X-Ray)
+    // flares in lockstep with the body skeleton rather than a second,
+    // independently-timed read of the same zap state
+    const skinGlow = skin.fx === "xray" ? Engine.chargeGlow(zap, zapFlashT / ZAP_FLASH_S)
       : skin.fx === "feral" ? (pointer.boosting ? 1 : 0)
-      : undefined);
+      : undefined;
+    if (skin.fx) drawSkinFx(ctx, pts, body.length, radius, skin, nowMs, skinGlow);
 
     // "swords": crossed on the back, a little way behind the head. Walk the
     // body by distance rather than by index so they sit in the same place on
@@ -3960,7 +4048,7 @@
                            body[0].x - body[Math.min(6,body.length-1)].x);
     ctx.save();
     ctx.translate(hx,hy); ctx.rotate(ang);
-    drawEelHead(ctx, radius, skin, marks);
+    drawEelHead(ctx, radius, skin, marks, skinGlow || 0);
     ctx.restore();
   }
 
@@ -4528,13 +4616,14 @@
     // its array index, since the preview walks every point already)
     if (sheen > 0) fxSheen(pctx, body, body.length, radius, skin);
     if (gem) fxGemTwinkle(pctx, body, 3, body.length, radius, skin, previewNowMs);
-    if (skin.fx) drawSkinFx(pctx, body, body.length, radius, skin, previewNowMs,
-      // no real zap or boost in the shop — synthetic, slowly-cycling values
-      // let both skins visibly demonstrate their fx rather than sitting at
-      // one brightness or never showing it at all
-      skin.fx === "xray" ? Engine.chargeGlow(0.5 + 0.5 * Math.sin(previewNowMs * 0.0006), 0)
+    // no real zap or boost in the shop — synthetic, slowly-cycling values let
+    // both skins visibly demonstrate their fx rather than sitting at one
+    // brightness or never showing it at all; reused below for the skull so
+    // it breathes in lockstep with the body skeleton, same as the game
+    const previewGlow = skin.fx === "xray" ? Engine.chargeGlow(0.5 + 0.5 * Math.sin(previewNowMs * 0.0006), 0)
       : skin.fx === "feral" ? (Math.sin(previewNowMs * 0.0009) > 0 ? 1 : 0)
-      : undefined);
+      : undefined;
+    if (skin.fx) drawSkinFx(pctx, body, body.length, radius, skin, previewNowMs, previewGlow);
 
     if (marks.includes("swords")){
       const at = body[7], back = body[12];
@@ -4564,7 +4653,7 @@
     const ang = Math.atan2(head.y - neck.y, head.x - neck.x);
     pctx.save();
     pctx.translate(head.x, head.y); pctx.rotate(ang);
-    drawEelHead(pctx, radius, skin, marks);
+    drawEelHead(pctx, radius, skin, marks, previewGlow || 0);
     pctx.restore();
   }
 

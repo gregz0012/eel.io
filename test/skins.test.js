@@ -208,6 +208,7 @@ describe("the catalogue", () => {
         expect([
           "web", "ears", "patch", "swords", "emblem", "stare",
           "orbweave", "manyeyes", "finridge", "worneye", "gear", "sensory",
+          "skull",
         ]).toContain(mark);
       }
     }
@@ -235,6 +236,17 @@ describe("the catalogue", () => {
 
   it("gives Voidbond its own sensory eye treatment", () => {
     expect([].concat(skinById("voidbond").mark)).toEqual(["sensory"]);
+  });
+
+  it("gives X-Ray its skull mark without changing anything else about it", () => {
+    // the Phase 6 rewrite (#67) is renderer-only — id/price/level/fx must
+    // stay exactly as they were, only `mark` is new
+    const xray = skinById("xray");
+    expect(xray.id).toBe("xray");
+    expect(xray.price).toBe(8000);
+    expect(xray.minLevel).toBe(8);
+    expect(xray.fx).toBe("xray");
+    expect([].concat(xray.mark)).toEqual(["skull"]);
   });
 
   it("keeps Eel-symbiote black, with nothing banded to lighten it", () => {
