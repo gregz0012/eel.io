@@ -665,4 +665,10 @@ describe("resolveMaterial", () => {
       expect(Object.keys(MATERIALS)).toContain(type);
     }
   });
+
+  it("gives Spider, Eel-wolf and Eel-pool the organic material with their own strength", () => {
+    for (const id of ["spider", "eelwolf", "eelpool"]) {
+      expect(resolveMaterial(skinById(id)).type).toBe("organic");
+    }
+  });
 });

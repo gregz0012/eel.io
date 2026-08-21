@@ -2282,6 +2282,13 @@
     for (const s of [-1, 1]){
       c.save();
       c.rotate(s * 0.62);
+      // a leather strap under the blade, the same line the blade itself will
+      // run — wider and duller, so it reads as a harness the sword rests in
+      // rather than the sword floating loose over the body
+      c.lineCap = "round";
+      c.strokeStyle = "rgba(24,16,10,0.55)";
+      c.lineWidth = Math.max(1.4, size*0.2);
+      c.beginPath(); c.moveTo(size*0.3, 0); c.lineTo(-size*0.9, 0); c.stroke();
       c.lineCap = "butt";
       c.strokeStyle = "#dfe9ef";                    // blade, swept back
       c.lineWidth = Math.max(1, size*0.15);
@@ -2294,6 +2301,10 @@
       c.beginPath(); c.moveTo(size*0.66, 0); c.lineTo(size*0.2, 0); c.stroke();
       c.restore();
     }
+    // a small buckle where the straps cross, seating the harness to the back
+    // rather than leaving the blades looking pinned on with nothing holding them
+    c.fillStyle = "#2a2018";
+    c.beginPath(); c.arc(0, 0, Math.max(1, size*0.09), 0, TAU); c.fill();
     c.restore();
   }
 
@@ -2946,6 +2957,12 @@
       ctx2d.beginPath(); ctx2d.ellipse(0,0,radius*1.5,radius*1.15,0,0,TAU); ctx2d.clip();
       ctx2d.fillStyle = `hsl(${accent.hue},${accent.sat}%,${accent.light + 20}%)`;
       ctx2d.beginPath(); ctx2d.ellipse(radius*0.28, 0, radius*0.74, radius*1.6, 0, 0, TAU); ctx2d.fill();
+      // a darker edge along the mask's own border sharpens it against a
+      // bright head colour, rather than the band's fill blending straight
+      // into the base — reads as a mask laid on, not a soft gradient
+      ctx2d.strokeStyle = `hsl(${accent.hue},${accent.sat}%,${Math.max(0, accent.light - 12)}%)`;
+      ctx2d.lineWidth = Math.max(1, radius*0.1);
+      ctx2d.beginPath(); ctx2d.ellipse(radius*0.28, 0, radius*0.74, radius*1.6, 0, 0, TAU); ctx2d.stroke();
       ctx2d.restore();
     }
 
@@ -3069,6 +3086,34 @@
       const from = side * (0.1 + hash * 0.3);
       const to = side * (0.3 + hash * 0.3);
       bodyRibbon(ctx2d, pts, bodyLength, radius, from, to, styleFor(hash), lo, hi);
+    }
+  }
+
+  // Eel-pool's dark panels as scattered plates rather than a flat banded
+  // stripe — same hashed-patch-placement idea as mottlePatches (PR X), but
+  // each patch spans nearly the full width rather than mottlePatches' own
+  // partial-flank swatch, so a handful of them still reads as solid armour
+  // plating rather than fading into a faint mottle the way stone's subtle
+  // surface texture is meant to. Generic to any skin combining an accent
+  // with the "patch" mark, not special-cased to a skin id; today Eel-pool is
+  // the only one, the same way "web" is Spider's alone.
+  function drawAccentPatches(ctx2d, pts, bodyLength, radius, skin){
+    const { accent } = skin;
+    if (!accent) return;
+    const n = pts.length;
+    if (n < 6) return;
+    const m = Engine.resolveMaterial(skin);
+    const count = Math.max(5, Math.round(9 * m.strength));
+    const style = `hsla(${accent.hue},${accent.sat}%,${accent.light}%,0.85)`;
+    for (let j = 0; j < count; j++){
+      const hash = (((Math.sin(j * 17.23 + bodyLength * 0.007) * 12958.35) % 1) + 1) % 1;
+      const lo = Math.max(0, Math.min(n - 2, Math.floor(hash * (n - 3))));
+      const hi = Math.min(n - 1, lo + 2 + Math.floor(hash * 4));
+      if (hi <= lo) continue;
+      // near-full width, with a jagged edge on one flank from the hash so a
+      // plate's silhouette reads irregular rather than a clean rectangle
+      const jag = (((hash * 7) % 1) + 1) % 1;
+      bodyRibbon(ctx2d, pts, bodyLength, radius, -(0.7 + jag * 0.25), 0.7 + hash * 0.25, style, lo, hi);
     }
   }
 
@@ -3317,13 +3362,16 @@
     ctx.stroke();
     ctx.restore();
 
-    // main body with taper — banded into two colours when the skin has an accent
+    // main body with taper — banded into two colours when the skin has an
+    // accent, except a "patch"-marked skin (Eel-pool), whose panels are
+    // scattered irregular plates (drawAccentPatches, below) rather than a
+    // clean stripe, so this loop stays on the base colour for it throughout
     for (let k = pts.length - 1; k >= 1; k--){
       const p = pts[k], q = pts[k - 1];
       const i = p.i;
       const t = 1 - i / body.length;               // 1 at head
       const r = radius * (0.35 + 0.65 * t);
-      const band = accent && (i % BAND) < BAND * accentRatio;
+      const band = accent && !marks.includes("patch") && (i % BAND) < BAND * accentRatio;
       const bh = band ? accent.hue : hue;
       const bs = band ? accent.sat : sat;
       const bl = band ? accent.light : bodyLight;
@@ -3340,17 +3388,20 @@
     // what the surface is made from — full detail for the player, a cheaper
     // pass for rivals (there can be up to 14 on screen at once)
     drawSkinMaterial(ctx, pts, body.length, radius, skin, nowMs, isPlayer ? 1 : 0.5);
+    if (marks.includes("patch")) drawAccentPatches(ctx, pts, body.length, radius, skin);
 
     // "web": a strand down the spine crossed by ribs, which is as much of a
-    // web as reads at this size — the crosshatch is the recognisable part
+    // web as reads at this size — the crosshatch is the recognisable part.
+    // Tighter rib spacing and thinner ink than a single flourish needs, since
+    // this is Spider's whole material read, not just an accent.
     if (marks.includes("web")){
-      const ink = `hsla(${hue},${Math.round(sat*0.4)}%,7%,0.6)`;
+      const ink = `hsla(${hue},${Math.round(sat*0.4)}%,7%,0.5)`;
       ctx.strokeStyle = ink;
-      ctx.lineWidth = Math.max(0.7, radius*0.12);
+      ctx.lineWidth = Math.max(0.5, radius*0.08);
       ctx.beginPath();
       pts.forEach((p, k) => k === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
       ctx.stroke();
-      for (let k = pts.length - 1; k >= 1; k -= 3){
+      for (let k = pts.length - 1; k >= 1; k -= 2){
         const p = pts[k], q = pts[Math.max(0, k - 1)];
         const t = 1 - p.i / body.length;
         const r = radius * (0.35 + 0.65 * t);
@@ -3931,7 +3982,7 @@
     for (let i = body.length - 1; i > 0; i--){
       const t = 1 - i/body.length;
       const r = radius * (0.35 + 0.65*t);
-      const band = accent && (i % BAND) < BAND * accentRatio;
+      const band = accent && !marks.includes("patch") && (i % BAND) < BAND * accentRatio;
       const bh = band ? accent.hue : hue;
       const bs = band ? accent.sat : sat;
       const bl = band ? accent.light : bodyLight;
@@ -3945,14 +3996,15 @@
     // universal baseline shading — same call, same helper, as the game body
     drawBodyShading(pctx, body, body.length, radius, skin);
     drawSkinMaterial(pctx, body, body.length, radius, skin, previewNowMs, 1);
+    if (marks.includes("patch")) drawAccentPatches(pctx, body, body.length, radius, skin);
 
     if (marks.includes("web")){
-      pctx.strokeStyle = `hsla(${hue},${Math.round(sat*0.4)}%,7%,0.6)`;
-      pctx.lineWidth = Math.max(0.7, radius*0.12);
+      pctx.strokeStyle = `hsla(${hue},${Math.round(sat*0.4)}%,7%,0.5)`;
+      pctx.lineWidth = Math.max(0.5, radius*0.08);
       pctx.beginPath();
       body.forEach((pt,i) => i === 0 ? pctx.moveTo(pt.x,pt.y) : pctx.lineTo(pt.x,pt.y));
       pctx.stroke();
-      for (let i = body.length - 1; i > 0; i -= 3){
+      for (let i = body.length - 1; i > 0; i -= 2){
         const t = 1 - i/body.length;
         const r = radius * (0.35 + 0.65*t);
         const ax = body[i].x, ay = body[i].y;
