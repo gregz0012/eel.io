@@ -53,8 +53,10 @@ Special skin is a variant of one of those five: Bioluminescent's fixed glowing
 spots, Toxic's murkier bubble trail, Frost's crystalline glints, Abyss fading
 toward its own tail, Lava's slower and heavier cracks, Ghost trailing a soft
 afterimage, Prism's drifting rainbow hue, and Void flecked with tiny stars.
-X-Ray is the signature skin: a skeleton that dims and brightens with your
-real zap charge, and flares the instant you fire one. Heroes are banded in
+X-Ray is the signature skin: a full stylised skeleton — skull, ribs, a
+tapering spine — glowing faintly inside a dark translucent body, dimming and
+brightening with your real zap charge and flaring the instant you fire one.
+Heroes are banded in
 two colours and each carries its own flourish — Spider is webbed, Eel-wolf
 has a horned cowl masked through the eyes, Eel-pool wears a masked stare and
 a pair of crossed swords on its back, and Eel-symbiote is tar-black with
