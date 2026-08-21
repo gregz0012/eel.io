@@ -1,3 +1,5 @@
+import { hash32 } from "./rng.js";
+
 // Anonymous player identity.
 //
 // A player is a random UUID the shell generates once and keeps in localStorage.
@@ -34,17 +36,6 @@ const NOUNS = [
   "Tentacle", "Tide", "Trench", "Trout", "Turtle", "Urchin", "Vortex",
   "Voyager", "Wanderer", "Whirlpool", "Wrasse", "Zapper",
 ];
-
-// FNV-1a, 32-bit. Small, fast and deterministic — not a security hash, and it
-// does not need to be: the id is the secret, the tag is only a label.
-function hash32(s) {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 0x01000193) >>> 0;
-  }
-  return h >>> 0;
-}
 
 /**
  * Display name for a player id, e.g. "AmberLantern-4721".

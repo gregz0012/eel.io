@@ -187,13 +187,13 @@
   /* Shared by the game-over board, the home screen's top-5 preview, and the
      full Top 25 screen — one look for "here is the leaderboard", wherever it
      shows up, tuned once. */
-  #board, #homeBoard, #fullBoard, #statsCard{
+  #board, #homeBoard, #fullBoard, #statsCard, #dailyChallenge{
     max-width:360px;width:100%;background:rgba(4,26,38,.5);
     border:1px solid rgba(79,230,214,.2);border-radius:16px;
     padding:14px 16px;font-size:13px;
   }
-  #homeBoard{max-width:420px;}   /* matches #eelSummary's width above it */
-  #board h2, #homeBoard h2{
+  #homeBoard, #dailyChallenge{max-width:420px;}   /* matches #eelSummary's width above it */
+  #board h2, #homeBoard h2, #dailyChallenge h2{
     font-size:11px;letter-spacing:.32em;text-transform:uppercase;
     color:var(--biolume);font-weight:700;margin-bottom:10px;
   }
@@ -227,6 +227,21 @@
   #achievementRows{display:flex;flex-direction:column;gap:10px;text-align:left;}
   .achievement{display:flex;align-items:flex-start;gap:10px;}
   .achievement:not(.earned){opacity:.5;}
+
+  /* daily challenge */
+  #dailyChallenge{text-align:left;}
+  #challengeName{font-weight:700;color:var(--ink);font-size:15px;}
+  #challengeDesc{color:var(--muted);font-size:12px;margin-top:2px;}
+  #challengeProgressBar{
+    margin-top:10px;height:10px;border-radius:6px;background:rgba(4,26,38,.6);
+    border:1px solid rgba(142,243,255,.3);overflow:hidden;
+  }
+  #challengeProgressBar>i{
+    display:block;height:100%;width:0%;
+    background:linear-gradient(90deg,var(--biolume),var(--volt));
+  }
+  #challengeProgressText{margin-top:6px;color:var(--volt);font-weight:700;font-variant-numeric:tabular-nums;}
+  #challengeCountdown{margin-top:4px;color:var(--muted);font-size:11px;}
   .achievement .icon{font-size:17px;line-height:1.3;}
   .achievement .name{font-weight:700;color:var(--ink);}
   .achievement.earned .name{color:var(--volt);}
@@ -441,6 +456,14 @@
   <button id="startBtn">Dive in</button>
   <button id="howBtn" class="quiet">How to play</button>
   <button id="openStatsBtn" class="quiet">Lifetime stats</button>
+  <div id="dailyChallenge">
+    <h2>Today's Challenge</h2>
+    <div id="challengeName"></div>
+    <div id="challengeDesc"></div>
+    <div id="challengeProgressBar"><i id="challengeProgressFill"></i></div>
+    <div id="challengeProgressText"></div>
+    <div id="challengeCountdown"></div>
+  </div>
   <div id="homeBoard" class="hidden">
     <h2>Top divers</h2>
     <div id="homeBoardRows"></div>
@@ -636,6 +659,14 @@
   let achievementQueue = [];      // ids waiting to show their unlock banner
   let achievementBanner = null;   // {name, t} — the one currently showing
   let achCheckT = 0;              // re-checked periodically, not every frame — see update()
+
+  // the daily challenge: same one for everyone, picked purely from the date —
+  // see engine/challenges.js. No server; "shared" falls out of determinism.
+  let challengeDateKey = null;    // the UTC date key the fields below belong to
+  let challengeBaseline = {};     // a snapshot of `stats` at the start of that day
+  let challengeClaimed = false;   // reward already banked for today?
+  let todayChallenge = null;      // recomputed from challengeDateKey, never stored
+  let challengeTickHandle = null; // setInterval id while the home screen is up
   let miniGame = null;                 // "breathing" | "words" while phase === "minigame"
   let miniGameStartedAt = 0, wordTaps = [], lastWordTapAt = null, miniGameLoopRunning = false;
   let zap = 0;             // 0..1 charge
@@ -821,6 +852,41 @@
     unlockedAchievements = result.unlockedIds;
     writeStore(STORE.achievements, JSON.stringify(unlockedAchievements));
     for (const id of result.newlyUnlocked) achievementQueue.push(id);
+  }
+
+  // The UTC calendar date, as "2026-08-21" — never the locale-sensitive
+  // `toLocaleDateString()`. Two players in different timezones must compute
+  // the same key or "the same challenge, everywhere" breaks.
+  function todayDateKeyUTC(){ return new Date().toISOString().slice(0, 10); }
+
+  // Roll to a new day's challenge the instant the UTC date changes, and
+  // recompute which challenge that is (never stored — it's a pure function
+  // of the date key, so there is nothing to drift out of sync).
+  function syncDailyChallenge(){
+    const todayKey = todayDateKeyUTC();
+    if (challengeDateKey !== todayKey){
+      challengeDateKey = todayKey;
+      challengeBaseline = { ...stats };
+      challengeClaimed = false;
+      writeStore(STORE.challengeDay, JSON.stringify(
+        { dateKey: challengeDateKey, baseline: challengeBaseline, claimed: false }));
+    }
+    todayChallenge = Engine.challengeForDate(challengeDateKey);
+  }
+
+  // Bank the reward the instant today's challenge is completed. Banked, never
+  // added to the run's score — the same rule mini-games follow (config.js),
+  // and for the same reason: an un-earned score bump would trip the
+  // leaderboard's points-per-second cap.
+  function checkChallengeComplete(){
+    if (!todayChallenge || challengeClaimed) return;
+    if (!Engine.isChallengeComplete(todayChallenge, stats, challengeBaseline)) return;
+    challengeClaimed = true;
+    banked = Engine.deposit(banked, todayChallenge.reward);
+    writeStore(STORE.banked, String(banked));
+    writeStore(STORE.challengeDay, JSON.stringify(
+      { dateKey: challengeDateKey, baseline: challengeBaseline, claimed: true }));
+    showToast(`Challenge complete! +${todayChallenge.reward}`, "#6dffb0");
   }
 
   // Grant a shield, respecting the level-derived stack cap. A pickup while
@@ -1010,7 +1076,8 @@
                   lifetime: "voltfin.lifetime",     // retired, read once to migrate
                   stats: "voltfin.stats",           // a fresh key — never reuse `lifetime`,
                                                      // which is a number, not JSON
-                  achievements: "voltfin.achievements" };
+                  achievements: "voltfin.achievements",
+                  challengeDay: "voltfin.challengeDay" };
 
   // Storage throws in private browsing and wherever it is blocked. Never let
   // that stop a kid playing the game.
@@ -1108,6 +1175,42 @@
       row.appendChild(icon); row.appendChild(text);
       el.appendChild(row);
     }
+  }
+
+  function formatCountdown(ms){
+    const totalMin = Math.max(0, Math.floor(ms / 60000));
+    const h = Math.floor(totalMin / 60), m = totalMin % 60;
+    return `Resets in ${h}h ${m}m`;
+  }
+
+  function renderDailyChallenge(){
+    syncDailyChallenge();   // cheap; also catches a real midnight rollover
+    if (!todayChallenge) return;
+    document.getElementById("challengeName").textContent = todayChallenge.name;
+    document.getElementById("challengeDesc").textContent = todayChallenge.desc;
+    const progress = Engine.challengeProgress(todayChallenge, stats, challengeBaseline);
+    const pct = clamp(progress / todayChallenge.target, 0, 1) * 100;
+    document.getElementById("challengeProgressFill").style.width = pct + "%";
+    document.getElementById("challengeProgressText").textContent = challengeClaimed
+      ? `Complete! +${todayChallenge.reward} banked`
+      : `${Math.min(progress, todayChallenge.target)} / ${todayChallenge.target}`;
+    const now = new Date();
+    const next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0);
+    document.getElementById("challengeCountdown").textContent = formatCountdown(next - now.getTime());
+  }
+
+  // The countdown needs to tick while the player is looking at it, but the
+  // home screen isn't driven by the playing-only game loop — so it gets its
+  // own small timer, started when home shows and stopped the moment it hides.
+  function startChallengeTicker(){
+    renderDailyChallenge();
+    if (challengeTickHandle) return;
+    challengeTickHandle = setInterval(renderDailyChallenge, 1000);
+  }
+  function stopChallengeTicker(){
+    if (!challengeTickHandle) return;
+    clearInterval(challengeTickHandle);
+    challengeTickHandle = null;
   }
 
   function renderBoardRows(rows, myTag, targetId = "boardRows"){
@@ -1682,9 +1785,10 @@
       spawnBoss(level);
     }
 
-    // achievements: check roughly once a second, show one banner at a time
+    // achievements + the daily challenge: both re-checked roughly once a
+    // second, not every frame — see syncAchievements()
     achCheckT -= dt;
-    if (achCheckT <= 0){ achCheckT = 1; syncAchievements(); }
+    if (achCheckT <= 0){ achCheckT = 1; syncAchievements(); checkChallengeComplete(); }
     if (!achievementBanner && achievementQueue.length){
       const a = Engine.achievementById(achievementQueue.shift());
       if (a) achievementBanner = { name: a.name, t: 3.5 };
@@ -2556,6 +2660,7 @@
     running = Engine.isRunning(phase);
     const inDive = phase === "playing" || phase === "paused";
     show("start", phase === "home");
+    if (phase === "home") startChallengeTicker(); else stopChallengeTicker();
     show("skinsScreen", phase === "skins");
     show("howScreen", phase === "howto");
     show("boardScreen", phase === "board");
@@ -3002,6 +3107,15 @@
   if (stats === null || typeof stats !== "object" || Array.isArray(stats)) stats = {};
   try { unlockedAchievements = JSON.parse(readStore(STORE.achievements)) ?? []; } catch { unlockedAchievements = []; }
   if (!Array.isArray(unlockedAchievements)) unlockedAchievements = [];
+  try {
+    const day = JSON.parse(readStore(STORE.challengeDay));
+    if (day && typeof day === "object"){
+      challengeDateKey = typeof day.dateKey === "string" ? day.dateKey : null;
+      challengeBaseline = day.baseline && typeof day.baseline === "object" ? day.baseline : {};
+      challengeClaimed = day.claimed === true;
+    }
+  } catch { /* no stored day yet — syncDailyChallenge() below establishes one */ }
+  syncDailyChallenge();
 
   // One-off migration from the earlier unlock-by-lifetime-points scheme: keep
   // the skins that had been earned, and bank the total.
@@ -3018,6 +3132,7 @@
   document.getElementById("best").textContent = best;
   renderSkins();
   refreshHomeBoard();
+  startChallengeTicker();   // the page boots straight onto the home screen
 
   document.getElementById("startBtn").addEventListener("click", () => goTo("dive"));
   document.getElementById("againBtn").addEventListener("click", () => goTo("surface"));

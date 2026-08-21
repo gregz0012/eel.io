@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { seededRng, randInt, weightedPick } from "../src/engine/rng.js";
+import { seededRng, randInt, weightedPick, hash32, seedFromDate } from "../src/engine/rng.js";
 
 describe("seededRng", () => {
   it("gives the same stream for the same seed", () => {
@@ -59,5 +59,41 @@ describe("weightedPick", () => {
   it("returns null when nothing has any weight", () => {
     expect(weightedPick(seededRng(1), [{ kind: "a", weight: 0 }])).toBeNull();
     expect(weightedPick(seededRng(1), [])).toBeNull();
+  });
+});
+
+describe("hash32", () => {
+  it("is stable: the same string always hashes the same", () => {
+    expect(hash32("hello")).toBe(hash32("hello"));
+  });
+
+  it("gives different strings different hashes", () => {
+    expect(hash32("hello")).not.toBe(hash32("hullo"));
+  });
+
+  it("always returns a non-negative 32-bit integer", () => {
+    for (const s of ["", "a", "2026-08-21", "a very long string indeed"]) {
+      const h = hash32(s);
+      expect(Number.isInteger(h)).toBe(true);
+      expect(h).toBeGreaterThanOrEqual(0);
+      expect(h).toBeLessThan(2 ** 32);
+    }
+  });
+});
+
+describe("seedFromDate", () => {
+  it("is stable: the same date always seeds the same", () => {
+    expect(seedFromDate("2026-08-21")).toBe(seedFromDate("2026-08-21"));
+  });
+
+  it("gives different dates different seeds", () => {
+    expect(seedFromDate("2026-08-21")).not.toBe(seedFromDate("2026-08-22"));
+  });
+
+  it("feeds seededRng into a real, usable stream", () => {
+    const rng = seededRng(seedFromDate("2026-08-21"));
+    const v = rng();
+    expect(v).toBeGreaterThanOrEqual(0);
+    expect(v).toBeLessThan(1);
   });
 });
