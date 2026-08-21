@@ -2924,6 +2924,87 @@
     ctx2d.restore();
   }
 
+  // tendril (Voidbond): the "living surface" layer riding on top of the
+  // reused liquid material — a handful of static dark vein strokes, plus
+  // teal/purple iridescent channel ribbons scaled by local curvature
+  // (approximated from the turn angle between consecutive sampled
+  // segments — the same "how sharply is this bending" question every
+  // steering angLerp in the shell already answers, just applied to shading
+  // instead of movement), so the colour reads strongest on tight bends and
+  // near the head, per the issue's "premium lighting" ask. Deliberately
+  // hue-shifting, unlike matLiquid's hue-agnostic white ribbons — that
+  // distinction is exactly why this detail lives in fx rather than being
+  // folded into the shared material, which stays untouched so Eel-symbiote
+  // can never regress. A very sparse, rare small tendril rise-and-fall
+  // closes the read out, gated the same self-terminating, no-state,
+  // low-probability-hash way Orbweaver's silk bridge is. Reduced motion:
+  // veins and channels stay static (they already are), only the rising
+  // tendril is omitted.
+  function fxTendril(ctx2d, pts, bodyLength, radius, skin, nowMs){
+    const n = pts.length;
+    if (n < 8) return;
+
+    ctx2d.strokeStyle = "rgba(10,8,20,0.35)";
+    ctx2d.lineWidth = Math.max(0.5, radius * 0.05);
+    const veinCount = Math.max(3, Math.round(n / 22));
+    for (let j = 0; j < veinCount; j++){
+      const hash = (((Math.sin(j * 13.9 + bodyLength * 0.008) * 19571.3) % 1) + 1) % 1;
+      const lo = Math.max(1, Math.min(n - 4, Math.floor(hash * (n - 5))));
+      const hi = Math.min(n - 1, lo + 2 + Math.floor(((hash * 11) % 1) * 4));
+      if (hi <= lo) continue;
+      ctx2d.beginPath();
+      ctx2d.moveTo(pts[lo].x, pts[lo].y);
+      for (let k = lo + 1; k <= hi; k++) ctx2d.lineTo(pts[k].x, pts[k].y);
+      ctx2d.stroke();
+    }
+
+    ctx2d.save();
+    ctx2d.globalCompositeOperation = "lighter";
+    for (let k = 2; k < n - 1; k += 3){
+      const p0 = pts[k - 2], p1 = pts[k - 1], p2 = pts[k];
+      const v1x = p1.x - p0.x, v1y = p1.y - p0.y, v2x = p2.x - p1.x, v2y = p2.y - p1.y;
+      const len1 = Math.hypot(v1x, v1y) || 1, len2 = Math.hypot(v2x, v2y) || 1;
+      const cosT = Math.max(-1, Math.min(1, (v1x * v2x + v1y * v2y) / (len1 * len2)));
+      const bend = (1 - cosT) * 0.5;                // 0 straight, up to ~1 sharp
+      const hash = (((Math.sin(k * 5.3 + 2.1) * 12345.6) % 1) + 1) % 1;
+      if (hash < 0.4) continue;
+      const t = 1 - p2.i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const hue = hash > 0.5 ? 180 : 280;           // teal or purple
+      const alpha = Math.min(0.55, 0.06 + bend * 0.5);
+      const side = hash > 0.5 ? 1 : -1;
+      const nx = -v2y / len2, ny = v2x / len2;
+      ctx2d.strokeStyle = `hsla(${hue},70%,60%,${alpha})`;
+      ctx2d.lineWidth = Math.max(0.6, r * 0.12);
+      ctx2d.beginPath();
+      ctx2d.moveTo(p1.x + nx * r * 0.3 * side, p1.y + ny * r * 0.3 * side);
+      ctx2d.lineTo(p2.x + nx * r * 0.3 * side, p2.y + ny * r * 0.3 * side);
+      ctx2d.stroke();
+    }
+    ctx2d.restore();
+
+    if (!reduceMotion){
+      const step = Math.max(4, Math.round(n / 9));
+      for (let k = 1; k < n; k += step){
+        const a = pts[k], q = pts[k - 1];
+        const hash = (((Math.sin(k * 6.7 + Math.floor(nowMs / 1600)) * 4213.7) % 1) + 1) % 1;
+        if (hash < 0.92) continue;
+        const t = 1 - a.i / bodyLength;
+        const r = radius * (0.35 + 0.65 * t);
+        const rise = Math.sin(((nowMs % 1600) / 1600) * Math.PI);
+        const dx = a.x - q.x, dy = a.y - q.y, len = Math.hypot(dx, dy) || 1;
+        const nx = -dy / len, ny = dx / len;
+        ctx2d.strokeStyle = `hsla(190,70%,65%,${0.4 * rise})`;
+        ctx2d.lineWidth = Math.max(0.5, r * 0.08);
+        ctx2d.beginPath();
+        ctx2d.moveTo(a.x, a.y);
+        ctx2d.lineTo(a.x + nx * r * 0.9 * rise, a.y + ny * r * 0.9 * rise);
+        ctx2d.stroke();
+        break;
+      }
+    }
+  }
+
   // One dispatch table for every themed finish — new skin.fx values register
   // here, nowhere else. Keyed by the exact string skins.js's catalogue uses.
   // `fade` and `iridescent` are deliberately absent: they modulate the body's
@@ -2931,7 +3012,7 @@
   // bodyFxStyle beside the colour math they change, not here.
   const SKIN_FX = {
     ripple: fxWater, vortex: fxVortex, cracks: fxCracks, ember: fxEmber, arc: fxArc, silk: fxSilk,
-    feral: fxFeral,
+    feral: fxFeral, tendril: fxTendril,
     spots: fxSpots, slime: fxSlime, sparkle: fxSparkle, molten: fxMolten,
     afterimage: fxAfterimage, stars: fxStars, xray: fxXray,
   };
@@ -3183,6 +3264,25 @@
       ctx2d.fillStyle = "#1a0f0a";
       ctx2d.beginPath(); ctx2d.arc(radius*0.68,-radius*0.55,radius*0.15,0,TAU); ctx2d.fill();
       ctx2d.beginPath(); ctx2d.arc(radius*0.65, radius*0.55,radius*0.2,0,TAU); ctx2d.fill();
+    } else if (marks.includes("sensory")){
+      // narrow pale-cyan slit eyes plus a few small glowing sensory-node
+      // dots — explicitly not the wide pupil-less "stare" shape
+      // (Eel-symbiote's own), which the issue calls out by name as
+      // off-limits here ("no giant white superhero eyes")
+      ctx2d.fillStyle = "#9fe8ff";
+      for (const s of [-1, 1]){
+        ctx2d.beginPath();
+        ctx2d.ellipse(radius*0.55, s*radius*0.5, radius*0.32, radius*0.07, s*0.1, 0, TAU);
+        ctx2d.fill();
+      }
+      ctx2d.fillStyle = "rgba(159,232,255,0.7)";
+      for (const [dx, dy] of [[0.05,0.75],[-0.15,0.85],[0.2,0.9]]){
+        for (const s of [-1, 1]){
+          ctx2d.beginPath();
+          ctx2d.arc(radius*dx, s*radius*dy, radius*0.05, 0, TAU);
+          ctx2d.fill();
+        }
+      }
     } else {
       // eyes
       ctx2d.fillStyle = "#eaffff";

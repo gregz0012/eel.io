@@ -25,7 +25,7 @@ describe("the catalogue", () => {
       "emerald", "ruby", "diamond",
       "biolume", "toxic", "frost", "xray", "abyss", "lava", "ghost", "prism", "void",
       "spider", "eelwolf", "symbiote", "eelpool",
-      "orbweaver", "razorback", "redrogue",
+      "orbweaver", "razorback", "redrogue", "voidbond",
     ]);
   });
 
@@ -155,7 +155,7 @@ describe("the catalogue", () => {
       if (s.fx === undefined) continue;
       expect([
         "ripple", "vortex", "cracks", "ember", "arc", "spots", "slime", "sparkle", "molten",
-        "fade", "afterimage", "iridescent", "stars", "xray", "silk", "feral",
+        "fade", "afterimage", "iridescent", "stars", "xray", "silk", "feral", "tendril",
       ]).toContain(s.fx);
     }
   });
@@ -207,7 +207,7 @@ describe("the catalogue", () => {
       for (const mark of [].concat(s.mark ?? [])) {
         expect([
           "web", "ears", "patch", "swords", "emblem", "stare",
-          "orbweave", "manyeyes", "finridge", "worneye", "gear",
+          "orbweave", "manyeyes", "finridge", "worneye", "gear", "sensory",
         ]).toContain(mark);
       }
     }
@@ -231,6 +231,10 @@ describe("the catalogue", () => {
     const redrogue = skinById("redrogue");
     expect([].concat(redrogue.mark)).toEqual(["worneye", "gear"]);
     expect(redrogue.fx).toBeUndefined();
+  });
+
+  it("gives Voidbond its own sensory eye treatment", () => {
+    expect([].concat(skinById("voidbond").mark)).toEqual(["sensory"]);
   });
 
   it("keeps Eel-symbiote black, with nothing banded to lighten it", () => {
@@ -711,6 +715,14 @@ describe("resolveMaterial", () => {
     expect(resolveMaterial(skinById("redrogue")).type).toBe("worn");
     expect(Object.keys(MATERIALS)).toContain("worn");
   });
+
+  it("gives Voidbond the liquid material, reused rather than forked, at a higher strength/scale than Eel-symbiote's", () => {
+    const voidbond = resolveMaterial(skinById("voidbond"));
+    const symbiote = resolveMaterial(skinById("symbiote"));
+    expect(voidbond.type).toBe("liquid");
+    expect(voidbond.strength).toBeGreaterThan(symbiote.strength);
+    expect(voidbond.scale).toBeGreaterThan(symbiote.scale);
+  });
 });
 
 describe("the Legends tier", () => {
@@ -733,6 +745,13 @@ describe("the Legends tier", () => {
     expect(redrogue.tier).toBe("legend");
     expect(redrogue.price).toBe(14000);
     expect(levelFor(redrogue)).toBe(12);
+  });
+
+  it("prices and gates Voidbond at 15,000 points and level 13", () => {
+    const voidbond = skinById("voidbond");
+    expect(voidbond.tier).toBe("legend");
+    expect(voidbond.price).toBe(15000);
+    expect(levelFor(voidbond)).toBe(13);
   });
 
   it("keeps every existing Hero skin's id, price and level untouched", () => {
