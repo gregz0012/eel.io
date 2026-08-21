@@ -67,6 +67,7 @@ eel.io/
 │   │   ├── skins.js      # the skin catalogue and buying them (pure)
 │   │   ├── minigames.js  # square breathing, the kind-words tap game (pure)
 │   │   ├── progress.js   # cumulative playtime; when a mini-game is due (pure)
+│   │   ├── stats.js      # lifetime counters, folded in as events happen (pure)
 │   │   ├── collision.js  # geometry: head-vs-body, tail-bite index, self-cross detection
 │   │   ├── entities.js   # factories: makeEel, makeFish, makePredator, makeBoss, ...
 │   │   ├── spawn.js      # spawn rules (takes rng + config, returns entities)
@@ -91,6 +92,8 @@ eel.io/
 │   ├── presents.test.js
 │   ├── bank.test.js
 │   ├── skins.test.js
+│   ├── vector.test.js
+│   ├── stats.test.js
 │   ├── worker.test.js    # the Worker's decisions, against a stubbed D1
 │   └── build.test.js     # the build output stays in sync and actually executes
 ├── cucumber.js
@@ -98,8 +101,9 @@ eel.io/
 ```
 
 `config.js`, `rng.js`, `scoring.js`, `identity.js`, `leaderboard.js`, `session.js`,
-`bank.js`, `skins.js`, `presents.js`, `minigames.js`, `progress.js` and `vector.js`
-exist so far. The rest is the destination, not a description of today — see §9.
+`bank.js`, `skins.js`, `presents.js`, `minigames.js`, `progress.js`, `vector.js`
+and `stats.js` exist so far. The rest is the destination, not a description of
+today — see §9.
 
 ### Why a build step
 
@@ -455,4 +459,5 @@ Honest list of what this architecture does not yet cover:
 - **CI runs the suite, never the game.** `npm run check` now runs on every push, and the `leaderboard` workflow can deploy the Worker without a laptop. Neither can tell you the eel feels wrong or a skin looks bad — playtesting is still manual, and still required.
 - **No lint or formatter.** Fine for now; the codebase is small and consistent.
 - **The bank and owned skins are local-only.** Clearing site data loses them, and they do not follow a player to another device. Nothing validates a balance either — an edited store is an edited store. Syncing them would need an account, which §1 rules out — so this is a trade we accept, not a bug to fix.
+- **Surfacing instead of dying loses that dive's stats, same as it already loses the score and playtime.** `stats.js`'s per-event counters only persist at `die()`; a `paused -> home` "surface" skips that entirely. `dives` is the one exception — it's counted and written the instant a dive starts, so "you dove" is never lost even when the rest of that dive's tally is.
 - **`src/index.html` is still a monolith** — everything except the extracted engine modules. That is expected; see §9.

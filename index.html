@@ -187,7 +187,7 @@
   /* Shared by the game-over board, the home screen's top-5 preview, and the
      full Top 25 screen — one look for "here is the leaderboard", wherever it
      shows up, tuned once. */
-  #board, #homeBoard, #fullBoard{
+  #board, #homeBoard, #fullBoard, #statsCard{
     max-width:360px;width:100%;background:rgba(4,26,38,.5);
     border:1px solid rgba(79,230,214,.2);border-radius:16px;
     padding:14px 16px;font-size:13px;
@@ -206,6 +206,13 @@
   #boardNote, #homeBoardNote, #fullBoardNote{color:var(--muted);font-size:12px;line-height:1.5;}
   #boardNote b, #homeBoardNote b, #fullBoardNote b{color:var(--ink);font-weight:600;}
   #homeBoard #openBoardBtn{margin-top:12px;}
+
+  /* lifetime stats */
+  #statsRows{
+    display:grid;grid-template-columns:1fr auto;gap:7px 14px;text-align:left;
+  }
+  #statsRows .label{color:var(--muted);}
+  #statsRows .value{color:var(--volt);font-weight:700;font-variant-numeric:tabular-nums;text-align:right;}
 
   /* calming mini-games */
   #minigameScreen .final{margin-bottom:8px;}
@@ -415,6 +422,7 @@
   </div>
   <button id="startBtn">Dive in</button>
   <button id="howBtn" class="quiet">How to play</button>
+  <button id="openStatsBtn" class="quiet">Lifetime stats</button>
   <div id="homeBoard" class="hidden">
     <h2>Top divers</h2>
     <div id="homeBoardRows"></div>
@@ -430,6 +438,12 @@
     <div id="fullBoardNote"></div>
   </div>
   <button id="closeBoardBtn">Done</button>
+</div>
+
+<div id="statsScreen" class="overlay hidden">
+  <h1>LIFETIME STATS<span class="sub">every dive, added up</span></h1>
+  <div id="statsCard"><div id="statsRows"></div></div>
+  <button id="closeStatsBtn">Done</button>
 </div>
 
 <div id="pause" class="overlay hidden">
@@ -975,13 +989,14 @@
     // not-started. That is how you get a resume button that revives a dead eel.
     // Every transition is named here and anything unnamed is ignored.
     
-    const PHASES = ["home", "skins", "howto", "board", "playing", "paused", "over", "minigame"];
+    const PHASES = ["home", "skins", "howto", "board", "stats", "playing", "paused", "over", "minigame"];
     
     const TRANSITIONS = {
-      home:    { dive: "playing", openSkins: "skins", openHow: "howto", openBoard: "board" },
+      home:    { dive: "playing", openSkins: "skins", openHow: "howto", openBoard: "board", openStats: "stats" },
       skins:   { closeSkins: "home" },                     // only ever leads back home
       howto:   { closeHow: "home" },                       // likewise
       board:   { closeBoard: "home" },                     // likewise
+      stats:   { closeStats: "home" },                     // likewise
       playing: { pause: "paused", die: "over" },
       paused:  { resume: "playing", surface: "home" },     // surface = give up the run
       // the offer is optional — surface still skips straight home, same as ever
@@ -1389,7 +1404,36 @@
       return { playedMs: state?.playedMs ?? 0, lastRewardAtMs: state?.playedMs ?? 0 };
     }
 
-    return { CONFIG, angleTo, distanceTo, seededRng, randInt, weightedPick, addScore, completeLevel, bossHits, predatorTarget, isBossLevel, levelSpeed, shieldCap, tagFor, shortTagFor, rivalTag, isWellFormedTag, tagSpaceSize, validateSubmission, bestOf, rankOf, topRows, clampTopLimit, PHASES, nextPhase, canDo, isRunning, deposit, diveCost, payForDive, canAffordDive, SKINS, DEFAULT_SKIN_ID, TIERS, skinsByTier, levelFor, meetsLevel, skinById, isOwned, ownedSkins, canAfford, buySkin, wearableSkin, nextSkinToBuy, skinFromHue, skinStatus, PRESENT_KINDS, rollPresent, isKindGift, pickMiniGame, breathPhaseAt, canTapAt, wordsNeeded, isWordGameComplete, wordList, addPlayTime, miniGameDue, recordMiniGameReward };
+    // ---- src/engine/stats.js ----
+    // Lifetime stats, across every dive a player has ever taken. Pure: the shell
+    // increments a named counter as something happens and persists the result;
+    // this module only knows how to fold one event into the running totals.
+    //
+    // Deliberately a small generic pair rather than one named function per stat —
+    // there are close to twenty countable events (see the shell's call sites),
+    // and twenty near-identical one-line wrappers would be worse to read than the
+    // two functions below plus a self-explanatory string key at each call site.
+    
+    /** Add `amount` (default 1) to a named counter. Never goes backwards. */
+    function recordEvent(stats, key, amount = 1) {
+      const next = { ...(stats ?? {}) };
+      next[key] = (next[key] ?? 0) + Math.max(0, amount ?? 0);
+      return next;
+    }
+    
+    /** Track a running maximum under a named key (e.g. the longest the eel has ever grown). */
+    function recordMax(stats, key, value) {
+      const next = { ...(stats ?? {}) };
+      next[key] = Math.max(next[key] ?? 0, value ?? 0);
+      return next;
+    }
+    
+    /** Read a counter, defending against a missing key or an edited store. */
+    function statValue(stats, key) {
+      return Math.max(0, Number(stats?.[key]) || 0);
+    }
+
+    return { CONFIG, angleTo, distanceTo, seededRng, randInt, weightedPick, addScore, completeLevel, bossHits, predatorTarget, isBossLevel, levelSpeed, shieldCap, tagFor, shortTagFor, rivalTag, isWellFormedTag, tagSpaceSize, validateSubmission, bestOf, rankOf, topRows, clampTopLimit, PHASES, nextPhase, canDo, isRunning, deposit, diveCost, payForDive, canAffordDive, SKINS, DEFAULT_SKIN_ID, TIERS, skinsByTier, levelFor, meetsLevel, skinById, isOwned, ownedSkins, canAfford, buySkin, wearableSkin, nextSkinToBuy, skinFromHue, skinStatus, PRESENT_KINDS, rollPresent, isKindGift, pickMiniGame, breathPhaseAt, canTapAt, wordsNeeded, isWordGameComplete, wordList, addPlayTime, miniGameDue, recordMiniGameReward, recordEvent, recordMax, statValue };
   })();
 
   const canvas = document.getElementById("game");
@@ -1461,6 +1505,8 @@
   let levelBanner = 0;                 // countdown on the "LEVEL N CLEARED" flash
   let bestLevel = 1;                   // deepest level ever reached; unlocks skins
   let playProgress = { playedMs: 0, lastRewardAtMs: 0 };   // cumulative play; see engine/progress.js
+  let stats = {};           // lifetime counters; see engine/stats.js
+  let diveMaxLen = 0;       // this dive's peak length, folded into stats.maxLength on death
   let miniGame = null;                 // "breathing" | "words" while phase === "minigame"
   let miniGameStartedAt = 0, wordTaps = [], lastWordTapAt = null, miniGameLoopRunning = false;
   let zap = 0;             // 0..1 charge
@@ -1567,6 +1613,7 @@
     predTarget = PRED_BASE; bossAlert = 0; toast = null;
     bossPending = 0; bossReady = false; levelStartScore = 0;
     levelBanner = 0;                    // every dive starts at level 1, unguarded
+    diveMaxLen = 0;
     player = makeEel(WORLD.w/2, WORLD.h/2, 14, true);
     player.body = [];
     player.biteCd = 0;
@@ -1610,6 +1657,7 @@
   // is what actually grants a shield or spawns a predator.
   function openPresent(g){
     const { kind, amount } = Engine.rollPresent(Math.random);
+    stats = Engine.recordEvent(stats, "presentsOpened");
     burst(g.x, g.y, Engine.isKindGift(kind) ? "#ff7de0" : "#ff5d6c", 30, 6);
 
     if (kind === "points"){
@@ -1660,11 +1708,12 @@
     e.dead = true;
     dropEnergyAlong(e.body, clamp(Math.round(e.len*0.7), 3, 45), e.hue);
     burst(e.x, e.y, `hsl(${e.hue},80%,60%)`, 16, 5);
-    if (byPlayer) addScore(4 + Math.round(e.len*0.3));
+    if (byPlayer){ addScore(4 + Math.round(e.len*0.3)); stats = Engine.recordEvent(stats, "rivalEelsKilled"); }
   }
   function biteEel(e, idx){
     const removed = e.body.length - idx;
     if (removed <= 2) return;
+    stats = Engine.recordEvent(stats, "rivalTailsBitten");
     const frac = removed / e.body.length;
     const lost = e.len * frac;
     dropEnergyAlong(e.body.slice(idx), clamp(Math.round(lost*0.8), 1, 22), e.hue);
@@ -1681,7 +1730,12 @@
     for (let i = 0; i < clamp(Math.round(p.r*0.9), 8, 42); i++)
       addEnergy(p.x + rand(-p.r,p.r), p.y + rand(-p.r,p.r), 195);
     burst(p.x, p.y, "#8ef3ff", 28, 7);
-    if (byPlayer){ addScore(Math.round(p.r)); grow(p.r*0.5); }
+    if (byPlayer){
+      addScore(Math.round(p.r)); grow(p.r*0.5);
+      // bosses are predators too, but they get their own count at the
+      // unambiguous "the way opens" moment in onBossKilled — not here
+      if (!p.boss) stats = Engine.recordEvent(stats, "predatorsKilled");
+    }
     shakeT = .3;
   }
 
@@ -1726,6 +1780,7 @@
 
   /** The boss guarding this level is dead: through to the next one. */
   function onBossKilled(){
+    stats = Engine.recordEvent(stats, "bossesKilled");
     const next = Engine.completeLevel({ score, level });
     score = next.score;
     for (const L of next.levelsGained) onLevelUp(L);
@@ -1809,7 +1864,9 @@
                   banked: "voltfin.banked", owned: "voltfin.owned", skin: "voltfin.skin",
                   bestLevel: "voltfin.bestLevel",
                   playedMs: "voltfin.playedMs", rewardAtMs: "voltfin.miniGameRewardAtMs",
-                  lifetime: "voltfin.lifetime" };   // lifetime: retired, read once to migrate
+                  lifetime: "voltfin.lifetime",     // retired, read once to migrate
+                  stats: "voltfin.stats" };         // a fresh key — never reuse `lifetime`,
+                                                     // which is a number, not JSON
 
   // Storage throws in private browsing and wherever it is blocked. Never let
   // that stop a kid playing the game.
@@ -1855,6 +1912,41 @@
 
   // One renderer for every place the board shows up: the game-over screen,
   // the home screen's top-5 preview, and the full Top 25 screen.
+  // Every counter recorded in stats.js, in the order they read best — feeding
+  // first, combat second, dives/deaths last. Purely a display list: the keys
+  // it reads are exactly the ones the shell's event hooks write.
+  const STAT_ROWS = [
+    ["dives", "Dives taken"],
+    ["lifetimePoints", "Lifetime points"],
+    ["maxLength", "Longest eel"],
+    ["fishEaten", "Fish eaten"],
+    ["feastOrbsEaten", "Feast orbs eaten"],
+    ["energyMotesCollected", "Energy motes collected"],
+    ["babyEelsEaten", "Baby eels gulped"],
+    ["presentsOpened", "Presents opened"],
+    ["rivalTailsBitten", "Rival tails bitten"],
+    ["rivalEelsKilled", "Rivals swallowed whole"],
+    ["predatorsKilled", "Predators devoured"],
+    ["bossesKilled", "Bosses defeated"],
+    ["bossHitsLanded", "Boss hits landed"],
+    ["shieldsConsumed", "Shields used to survive"],
+    ["selfCrosses", "Own tail bitten"],
+    ["deathsByEel", "Eaten by a rival"],
+    ["deathsByPredator", "Eaten by a predator"],
+    ["deathsByBoss", "Eaten by a boss"],
+  ];
+
+  function renderStats(){
+    const el = document.getElementById("statsRows");
+    el.textContent = "";
+    for (const [key, label] of STAT_ROWS){
+      const l = document.createElement("div"); l.className = "label"; l.textContent = label;
+      const v = document.createElement("div"); v.className = "value";
+      v.textContent = Math.round(Engine.statValue(stats, key)).toLocaleString();
+      el.appendChild(l); el.appendChild(v);
+    }
+  }
+
   function renderBoardRows(rows, myTag, targetId = "boardRows"){
     const el = document.getElementById(targetId);
     el.textContent = "";
@@ -2091,6 +2183,13 @@
     writeStore(STORE.playedMs, String(playProgress.playedMs));
     show("miniGameOfferBtn", Engine.miniGameDue(playProgress));
 
+    // everything else this dive touched — kills, pickups, presents — was
+    // folded into `stats` live as it happened; points and peak length are
+    // only known for certain now, so they fold in here
+    stats = Engine.recordEvent(stats, "lifetimePoints", Math.round(score));
+    stats = Engine.recordMax(stats, "maxLength", diveMaxLen);
+    writeStore(STORE.stats, JSON.stringify(stats));
+
     show("hud", false); show("powerbar", false); show("zapBtn", false); show("pauseBtn", false);
     show("sonar", false);
     setTimeout(() => show("over", true), 550);
@@ -2123,6 +2222,7 @@
     const wanted = Math.round(clamp(player.len, 12, Engine.CONFIG.maxLen)) * 3;
     while (player.body.length > wanted) player.body.pop();
     player.len = clamp(player.len, 8, Engine.CONFIG.maxLen);
+    if (player.len > diveMaxLen) diveMaxLen = player.len;   // cheap; folded into stats once, on death
 
     // --- crossing your own tail: you bite yourself and lose length + points ---
     if (player.biteCd > 0) player.biteCd -= dt;
@@ -2136,6 +2236,7 @@
           player.body.length = i;                 // eat your own tail off
           player.len = Math.max(6, player.len - lostLen);
           addScore(-Math.round(lostLen * 0.5));    // and lose points for it
+          stats = Engine.recordEvent(stats, "selfCrosses");
           burst(cut.x, cut.y, `hsl(${player.hue},80%,60%)`, 14, 5);
           shakeT = .3; flashT = .2; player.biteCd = 0.8;
           break;
@@ -2173,6 +2274,7 @@
       const grab = R + f.r + 12;
       if (dist2(f.x,f.y,player.x,player.y) < grab*grab){
         addScore(1); grow(1.1);
+        stats = Engine.recordEvent(stats, "fishEaten");
         burst(f.x, f.y, `hsl(${f.hue},85%,62%)`, 6, 3);
         fish.splice(i,1);
       }
@@ -2218,8 +2320,11 @@
           // head-to-head: the bigger eel wins
           if (player.len > e.len*1.1){ grow(e.len*0.3); killEel(e, true); }
           else if (e.len > player.len*1.28){
-            if (shieldCount > 0){ shieldCount--; killEel(e, true); burst(player.x,player.y,"#ffd166",24,5); shakeT=.25; }
-            else { die("a larger eel swallowed you"); return; }
+            if (shieldCount > 0){
+              shieldCount--; stats = Engine.recordEvent(stats, "shieldsConsumed");
+              killEel(e, true); burst(player.x,player.y,"#ffd166",24,5); shakeT=.25;
+            }
+            else { stats = Engine.recordEvent(stats, "deathsByEel"); die("a larger eel swallowed you"); return; }
           }
           // similar size: they just brush past
         } else {
@@ -2266,6 +2371,7 @@
           if (p.boss){
             if (p.hitCd <= 0){
               p.hp -= 1; p.hitCd = BOSS_HIT_COOLDOWN_S;
+              stats = Engine.recordEvent(stats, "bossHitsLanded");
               const a = Math.atan2(p.y-player.y, p.x-player.x);
               p.x += Math.cos(a)*Engine.CONFIG.boss.ramKnockback; p.y += Math.sin(a)*Engine.CONFIG.boss.ramKnockback;
               burst(p.x, p.y, "#ffd166", 22, 6); shakeT = .25;
@@ -2281,8 +2387,14 @@
           // a stun just wore off with the player still on top of it — neither
           // a kill nor a free hit; give a beat to swim clear (#29)
         }
-        else if (shieldCount > 0){ shieldCount--; p.stun = SHIELD_STUN_S; p.stunMax = SHIELD_STUN_S; burst(player.x,player.y,"#ffd166",26,6); shakeT=.3; }
-        else { die(p.boss ? "the boss devoured you" : "a predator got you"); return; }
+        else if (shieldCount > 0){
+          shieldCount--; stats = Engine.recordEvent(stats, "shieldsConsumed");
+          p.stun = SHIELD_STUN_S; p.stunMax = SHIELD_STUN_S; burst(player.x,player.y,"#ffd166",26,6); shakeT=.3;
+        }
+        else {
+          stats = Engine.recordEvent(stats, p.boss ? "deathsByBoss" : "deathsByPredator");
+          die(p.boss ? "the boss devoured you" : "a predator got you"); return;
+        }
       }
     }
     predators = predators.filter(p => !p.dead);
@@ -2320,6 +2432,7 @@
       if (d2 < (R+b.r)*(R+b.r)){
         zap = clamp(zap + 0.5, 0, 1);
         grow(2); addScore(3);
+        stats = Engine.recordEvent(stats, "babyEelsEaten");
         burst(b.x,b.y,"#f6ff8a",20,5);
         babies.splice(i,1);
       }
@@ -2339,6 +2452,7 @@
       const grab = R + en.r + 12;
       if (d2 < grab*grab){
         grow(1.0); addScore(1);
+        stats = Engine.recordEvent(stats, "energyMotesCollected");
         burst(en.x, en.y, `hsl(${en.hue},85%,66%)`, 3, 2);
         energy.splice(i,1);
       }
@@ -2349,6 +2463,7 @@
       const s = feasts[i]; s.spin += dt*0.6; s.pulse += dt*3;
       if (dist2(s.x,s.y,player.x,player.y) < (R+s.r)*(R+s.r)){
         addScore(10); grow(11);
+        stats = Engine.recordEvent(stats, "feastOrbsEaten");
         burst(s.x,s.y,"#6dffb0",30,6);
         burst(s.x,s.y,"#ffd166",16,4);
         flashT = 0.2;
@@ -3216,6 +3331,11 @@
       const fare = Engine.payForDive(banked);   // broke players dive free, never blocked
       banked = fare.banked;
       writeStore(STORE.banked, String(banked));
+      // counted and persisted immediately, not deferred to die() — surfacing
+      // instead of dying already loses that dive's other stats (see die()),
+      // but "you dove" should never be one of the things a surface erases
+      stats = Engine.recordEvent(stats, "dives");
+      writeStore(STORE.stats, JSON.stringify(stats));
       reset();
       runStartedAt = Date.now(); pausedMs = 0;
       pointer.x = W/2; pointer.y = H/2; pointer.has = false;
@@ -3243,6 +3363,7 @@
     show("skinsScreen", phase === "skins");
     show("howScreen", phase === "howto");
     show("boardScreen", phase === "board");
+    show("statsScreen", phase === "stats");
     show("minigameScreen", phase === "minigame");
     show("over", false);                        // die() reveals it on a short delay
     show("pause", phase === "paused");
@@ -3681,6 +3802,8 @@
   banked = Number(readStore(STORE.banked)) || 0;
   try { owned = JSON.parse(readStore(STORE.owned)) ?? []; } catch { owned = []; }
   if (!Array.isArray(owned)) owned = [];
+  try { stats = JSON.parse(readStore(STORE.stats)) ?? {}; } catch { stats = {}; }
+  if (stats === null || typeof stats !== "object" || Array.isArray(stats)) stats = {};
 
   // One-off migration from the earlier unlock-by-lifetime-points scheme: keep
   // the skins that had been earned, and bank the total.
@@ -3709,6 +3832,8 @@
   document.getElementById("closeHowBtn").addEventListener("click", () => goTo("closeHow"));
   document.getElementById("openBoardBtn").addEventListener("click", () => { goTo("openBoard"); refreshFullBoard(); });
   document.getElementById("closeBoardBtn").addEventListener("click", () => goTo("closeBoard"));
+  document.getElementById("openStatsBtn").addEventListener("click", () => { goTo("openStats"); renderStats(); });
+  document.getElementById("closeStatsBtn").addEventListener("click", () => goTo("closeStats"));
   document.getElementById("miniGameOfferBtn").addEventListener("click", () => goTo("playMiniGame"));
   document.getElementById("skipMiniGameBtn").addEventListener("click", finishMiniGame);
 })();
