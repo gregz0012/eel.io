@@ -2619,16 +2619,82 @@
     ctx2d.restore();
   }
 
+  // A second, fainter pass of the same body, walked at a fixed offset toward
+  // the tail — a free "afterimage" without storing any previous frame, since
+  // the body's own trailing points already approximate where the head was a
+  // moment ago. A single stroke (not per-segment, like the effects above) so
+  // it reads as one soft trailing shape rather than a second tapered body.
+  function fxAfterimage(ctx2d, pts, bodyLength, radius, skin, nowMs){
+    const { hue, sat, headLight } = skin;
+    const shift = Math.max(2, Math.round(pts.length * 0.12));
+    if (pts.length <= shift) return;
+    ctx2d.save();
+    ctx2d.globalCompositeOperation = "lighter";
+    ctx2d.strokeStyle = `hsla(${hue},${Math.max(0, sat - 10)}%,${Math.min(90, headLight + 10)}%,0.22)`;
+    ctx2d.lineWidth = radius * 1.3;
+    ctx2d.lineCap = "round"; ctx2d.lineJoin = "round";
+    ctx2d.beginPath();
+    for (let k = 0; k < pts.length - shift; k++){
+      const p = pts[k + shift];
+      k === 0 ? ctx2d.moveTo(p.x, p.y) : ctx2d.lineTo(p.x, p.y);
+    }
+    ctx2d.stroke();
+    ctx2d.restore();
+  }
+
+  // Tiny points of light scattered across the body's own width, not just at
+  // its rim like the other spot effects — so a near-black Void skin reads as
+  // a starry night sky rather than a solid silhouette.
+  function fxStars(ctx2d, pts, bodyLength, radius, skin, nowMs){
+    const { hue } = skin;
+    ctx2d.save();
+    ctx2d.globalCompositeOperation = "lighter";
+    for (let k = 1; k < pts.length; k++){
+      const p = pts[k], q = pts[k - 1];
+      const jitter = (((Math.sin(p.i * 51.234) * 63187.531) % 1) + 1) % 1;
+      if (jitter < 0.55) continue;
+      const t = 1 - p.i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const twinkle = 0.4 + 0.6 * Math.sin(nowMs * 0.002 + p.i * 1.1);
+      if (twinkle < 0.3) continue;
+      const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      const offset = (jitter * 2 - 1) * r * 0.75;   // anywhere across the width
+      ctx2d.fillStyle = `hsla(${hue},20%,96%,${twinkle * 0.8})`;
+      ctx2d.beginPath();
+      ctx2d.arc(p.x + nx * offset, p.y + ny * offset, Math.max(0.7, r * 0.07), 0, TAU);
+      ctx2d.fill();
+    }
+    ctx2d.restore();
+  }
+
   // One dispatch table for every themed finish — new skin.fx values register
   // here, nowhere else. Keyed by the exact string skins.js's catalogue uses.
+  // `fade` and `iridescent` are deliberately absent: they modulate the body's
+  // own base stroke rather than layering on top of it, so they live in
+  // bodyFxStyle beside the colour math they change, not here.
   const SKIN_FX = {
     ripple: fxWater, vortex: fxVortex, cracks: fxCracks, ember: fxEmber, arc: fxArc,
     spots: fxSpots, slime: fxSlime, sparkle: fxSparkle, molten: fxMolten,
+    afterimage: fxAfterimage, stars: fxStars,
   };
 
   function drawSkinFx(ctx2d, pts, bodyLength, radius, skin, nowMs){
     const draw = SKIN_FX[skin.fx];
     if (draw) draw(ctx2d, pts, bodyLength, radius, skin, nowMs);
+  }
+
+  // The two finishes that touch the *base* stroke colour every skin already
+  // computes each segment (fade dims it toward the tail, iridescent drifts
+  // its hue) rather than an overlay on top — this is what the game body loop
+  // and the preview body loop both call, so a bug here disfigures the eel in
+  // both places at once rather than being caught in only one. Pure function
+  // of the colour already chosen, so it stays a stateless function of a
+  // point's own index and time, same as every effect above.
+  function bodyFxStyle(bh, bs, bl, t, i, skin, nowMs){
+    if (skin.fx === "fade") return `hsla(${bh},${bs}%,${bl}%,${0.08 + 0.92 * t})`;
+    if (skin.fx === "iridescent") return `hsl(${(bh + i * 2.2 + nowMs * 0.05) % 360},${bs}%,${bl}%)`;
+    return `hsl(${bh},${bs}%,${bl}%)`;
   }
 
   // Reused every frame rather than allocated fresh — drawEelBody runs for up
@@ -2642,6 +2708,9 @@
     const BAND = 52;                               // body points per light/dark cycle
     // sample every few points for smooth ribbon
     const step = 3;
+    // needed up front for fade/iridescent, which recolour the main body pass
+    // itself rather than an overlay drawn after it
+    const nowMs = reduceMotion ? 0 : performance.now();
     ctx.lineCap = "round"; ctx.lineJoin = "round";
 
     // glow underlay — gems run a little hotter than plain metal
@@ -2667,7 +2736,9 @@
       const bh = band ? accent.hue : hue;
       const bs = band ? accent.sat : sat;
       const bl = band ? accent.light : bodyLight;
-      ctx.strokeStyle = `hsl(${bh},${bs}%,${bl + t*18}%)`;
+      ctx.strokeStyle = (skin.fx === "fade" || skin.fx === "iridescent")
+        ? bodyFxStyle(bh, bs, bl + t*18, t, i, skin, nowMs)
+        : `hsl(${bh},${bs}%,${bl + t*18}%)`;
       ctx.lineWidth = r*2;
       ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by); ctx.stroke();
     }
@@ -2707,7 +2778,6 @@
         const [sx, sy] = worldToScreen(body[i].x, body[i].y);
         SKIN_FX_SCRATCH.push({ x: sx, y: sy, i });
       }
-      const nowMs = reduceMotion ? 0 : performance.now();
       if (sheen > 0) fxSheen(ctx, SKIN_FX_SCRATCH, body.length, radius, skin);
       if (gem) fxGemTwinkle(ctx, SKIN_FX_SCRATCH, 4, body.length, radius, skin, nowMs);
       if (skin.fx) drawSkinFx(ctx, SKIN_FX_SCRATCH, body.length, radius, skin, nowMs);
@@ -3337,6 +3407,9 @@
     const marks = [].concat(skin.mark ?? []);      // one flourish or several
     const BAND = 10;                               // preview body is shorter, so a tighter cycle
     const radius = h * 0.16;
+    // needed up front for fade/iridescent, which recolour the main body pass
+    // itself rather than an overlay drawn after it
+    const previewNowMs = reduceMotion ? 0 : performance.now();
     pctx.clearRect(0, 0, w, h);
     pctx.lineCap = "round"; pctx.lineJoin = "round";
 
@@ -3356,7 +3429,9 @@
       const bh = band ? accent.hue : hue;
       const bs = band ? accent.sat : sat;
       const bl = band ? accent.light : bodyLight;
-      pctx.strokeStyle = `hsl(${bh},${bs}%,${bl + t*18}%)`;
+      pctx.strokeStyle = (skin.fx === "fade" || skin.fx === "iridescent")
+        ? bodyFxStyle(bh, bs, bl + t*18, t, i, skin, previewNowMs)
+        : `hsl(${bh},${bs}%,${bl + t*18}%)`;
       pctx.lineWidth = r*2;
       pctx.beginPath(); pctx.moveTo(body[i].x, body[i].y); pctx.lineTo(body[i-1].x, body[i-1].y); pctx.stroke();
     }
@@ -3383,7 +3458,6 @@
     // same specular treatment the game uses, so the preview is honest — body
     // here is PREVIEW_BODY itself (every point carries its own `i`, matching
     // its array index, since the preview walks every point already)
-    const previewNowMs = reduceMotion ? 0 : performance.now();
     if (sheen > 0) fxSheen(pctx, body, body.length, radius, skin);
     if (gem) fxGemTwinkle(pctx, body, 3, body.length, radius, skin, previewNowMs);
     if (skin.fx) drawSkinFx(pctx, body, body.length, radius, skin, previewNowMs);
