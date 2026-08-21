@@ -159,6 +159,15 @@ npm run check    # build freshness + acceptance scenarios + unit tests
 
 See [`CLAUDE.md`](CLAUDE.md) for the architecture and the BDD → TDD workflow.
 
+## Native app (iOS / Android)
+
+Eel Shock plays fine as a web page — but if you want it installable, the
+[`capacitor/`](capacitor/) directory wraps the built `index.html` in a
+[Capacitor](https://capacitorjs.com/) WebView for iOS and Android. It's a
+separate, additive project: nothing in it touches `src/**`, `build.mjs`, or
+the test suite, and none of its dependencies ship to the browser version.
+See [`capacitor/README.md`](capacitor/README.md) for setup.
+
 ## Enable the online version (GitHub Pages)
 
 1. In this repo, go to **Settings → Pages**.

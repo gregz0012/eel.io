@@ -1,0 +1,9 @@
+{
+  "appId": "io.eel.shock",
+  "appName": "Eel Shock",
+  "webDir": "www",
+  "backgroundColor": "#041a26",
+  "server": {
+    "androidScheme": "https"
+  }
+}
