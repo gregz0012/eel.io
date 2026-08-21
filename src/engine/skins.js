@@ -204,6 +204,14 @@ export const SKINS = [
   { id: "razorback", tier: "legend", name: "Razorback", hue: 34, sat: 52, bodyLight: 22, headLight: 32,
     price: 13500, minLevel: 11, material: { type: "scarred", strength: 0.55, scale: 1 },
     fx: "feral", mark: ["finridge"] },
+
+  // Rust red over dark charcoal/worn black, small off-white and muted-metal
+  // details — deliberately not a clean symmetrical red/black costume. No
+  // fx: this one is all material and marks, matching the issue's own
+  // illustrative schema for it.
+  { id: "redrogue", tier: "legend", name: "Red Rogue", hue: 12, sat: 48, bodyLight: 19, headLight: 27,
+    price: 14000, minLevel: 12, material: { type: "worn", strength: 0.5, scale: 1 },
+    mark: ["worneye", "gear"] },
 ];
 
 export const DEFAULT_SKIN_ID = "volt";
@@ -355,6 +363,7 @@ export const MATERIALS = {
   liquid: { strength: 0.5, scale: 1 },
   chitin: { strength: 0.5, scale: 1 },
   scarred: { strength: 0.5, scale: 1 },
+  worn: { strength: 0.5, scale: 1 },
 };
 
 const DEFAULT_MATERIAL = Object.freeze({ type: "organic", ...MATERIALS.organic });
