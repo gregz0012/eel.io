@@ -653,4 +653,16 @@ describe("resolveMaterial", () => {
       expect(skinById(id).material).toBe("organic");
     }
   });
+
+  it("gives every Special skin a real material rather than the implicit default", () => {
+    const expected = {
+      biolume: "organic", toxic: "organic", frost: "crystal",
+      abyss: "organic", lava: "charred", ghost: "air",
+      prism: "crystal", void: "organic",
+    };
+    for (const [id, type] of Object.entries(expected)) {
+      expect(resolveMaterial(skinById(id)).type).toBe(type);
+      expect(Object.keys(MATERIALS)).toContain(type);
+    }
+  });
 });
