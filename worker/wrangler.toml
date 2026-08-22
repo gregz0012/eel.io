@@ -3,7 +3,9 @@ main = "index.js"
 compatibility_date = "2025-01-01"
 
 # Apply the schema before the first deploy:
-#   npx wrangler d1 execute eelio --remote --file=./schema.sql
+#   ../node_modules/.bin/wrangler d1 execute eelio --remote --file=./schema.sql
+# Wrangler is a pinned root devDependency (see package.json), not fetched
+# fresh via npx.
 # (The database id is an identifier, not a secret — reaching it still needs
 # your Cloudflare account credentials.)
 [[d1_databases]]
@@ -14,4 +16,4 @@ database_id = "328ba652-6903-4e88-a85a-7c468e8462d9"
 # Origins allowed to call this Worker. Keep it to your own pages so the endpoint
 # is not a free write API for anyone who finds it.
 [vars]
-ALLOWED_ORIGINS = "https://gregz0012.github.io,http://localhost:8000"
+ALLOWED_ORIGINS = "https://gregz0012.github.io,https://eelshock.com,http://localhost:8000"
