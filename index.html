@@ -6578,7 +6578,7 @@
   const PIXI_SKIN_MATERIAL = {
     organic: pixiMatOrganic, brushedMetal: pixiMatBrushedMetal,
     stone: pixiMatStone, charred: pixiMatCharred, crystal: pixiMatCrystal,
-    water: pixiMatWater, air: pixiMatAir,
+    water: pixiMatWater, air: pixiMatAir, charged: pixiMatCharged,
   };
 
   // World-space port of fxSheen — a bright specular streak down one flank
@@ -6724,6 +6724,40 @@
       ({ color: 0xffffff, alpha: 0.03 + 0.04 * m.strength }));
   }
 
+  // World-space port of matCharged — faint, always-visible branching veins,
+  // deterministic from each segment (Canvas 2D keys off arc-length `s`; this
+  // uses the raw body index instead, the same simplification
+  // pixiMatOrganic/pixiDrawCrackLips already made — a vein's *placement*
+  // being deterministic is what matters here, not its size, so unlike
+  // crystal's facets this doesn't need a true arc-length pass). Ported as
+  // individual per-segment strokes off the spine, the same style
+  // pixiDrawCrackLips already established for this shape of mark (a short
+  // radial line, not a lengthwise band). Disclosed simplification, boosted
+  // upfront from experience: Canvas 2D draws these with an additive
+  // "lighter" blend; bodyG is normal-blend for every pass above it, so this
+  // draws at a boosted alpha instead — the same trade-off pixiMatCharred's
+  // ember patches made, this time tuned generously from the start rather
+  // than needing a second verification pass to catch it reading too faint.
+  function pixiMatCharged(bodyG, body, step, bodyLength, radius, skin, detail){
+    const m = Engine.resolveMaterial(skin);
+    const { hue, sat, headLight } = skin;
+    const color = hslToHex(hue, Math.min(100, sat + 15), Math.min(90, headLight + 15));
+    for (let i = step; i < body.length; i += step){
+      const p = body[i], q = body[i - step];
+      const hash = (((Math.sin(i * 0.11) * 43758.5453) % 1) + 1) % 1;
+      if (hash < 0.6) continue;
+      const t = 1 - i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      const side = hash > 0.8 ? 1 : -1;
+      const alpha = Math.min(0.9, (0.12 + 0.15 * m.strength) * detail * 2.2);
+      bodyG.moveTo(p.x, p.y)
+        .lineTo(p.x + nx * r * 0.6 * side, p.y + ny * r * 0.6 * side)
+        .stroke({ width: Math.max(0.5, r * 0.06), color, alpha });
+    }
+  }
+
   // Shared by the player and every rival — draws exactly the two layers
   // described above into the given pair of (already-cleared) Graphics.
   function drawEelRibbon(glowG, bodyG, body, step, radius, skin, glow, detail, nowMs){
@@ -6752,10 +6786,10 @@
     // Universal baseline shading, then whatever material this skin resolves
     // to, then sheen and a gem's twinkle on top — same order as the Canvas
     // 2D pass (drawBodyShading, drawSkinMaterial, fxSheen, fxGemTwinkle).
-    // Only organic, brushedMetal, stone, charred, crystal, water and air are
-    // ported so far (see PRs AS-AW in the plan file); every other
-    // SKIN_MATERIAL id falls back to organic here too for now, matching
-    // resolveMaterial's own never-throw fallback — their bespoke textures
+    // Only organic, brushedMetal, stone, charred, crystal, water, air and
+    // charged are ported so far (see PRs AS-AX in the plan file); every
+    // other SKIN_MATERIAL id falls back to organic here too for now,
+    // matching resolveMaterial's own never-throw fallback — their bespoke textures
     // are still Canvas 2D until their own PRs.
     pixiDrawBodyShading(bodyG, body, step, body.length, radius);
     const matType = Engine.resolveMaterial(skin).type;
