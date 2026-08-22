@@ -3381,6 +3381,103 @@
     return { color: hslToHex(bh, bs, bl), alpha: 1 };
   }
 
+  // World-space port of drawAccentPatches (Eel-pool's "patch" body mark) —
+  // near-full-width jagged plates via the same `pixiBodyRibbon` primitive
+  // `pixiMottlePatches` already uses, but with fixed near-full-width offsets
+  // and a single accent colour rather than a per-hash colour callback, so
+  // this is its own small function rather than a generalisation of
+  // `pixiMottlePatches` (which two already-shipped, already-verified
+  // materials depend on unchanged). `lo`/`hi` use the same "sample slot"
+  // scaling `pixiMottlePatches` established for translating Canvas 2D's
+  // already-sampled `pts.length` into this file's raw `body` indices.
+  function pixiDrawAccentPatches(bodyG, body, step, bodyLength, radius, skin){
+    const { accent } = skin;
+    if (!accent) return;
+    const slots = Math.floor(body.length / step);
+    if (slots < 6) return;
+    const m = Engine.resolveMaterial(skin);
+    const count = Math.max(5, Math.round(9 * m.strength));
+    const color = hslToHex(accent.hue, accent.sat, accent.light);
+    for (let j = 0; j < count; j++){
+      const hash = (((Math.sin(j * 17.23 + bodyLength * 0.007) * 12958.35) % 1) + 1) % 1;
+      const loS = Math.max(0, Math.min(slots - 2, Math.floor(hash * (slots - 3))));
+      const hiS = Math.min(slots - 1, loS + 2 + Math.floor(hash * 4));
+      if (hiS <= loS) continue;
+      const lo = loS * step, hi = Math.min(body.length - 1, hiS * step);
+      const jag = (((hash * 7) % 1) + 1) % 1;
+      pixiBodyRibbon(bodyG, body, step, bodyLength, radius, -(0.7 + jag * 0.25), 0.7 + hash * 0.25, color, 0.85, lo, hi);
+    }
+  }
+
+  // World-space port of the "web" body mark (Spider) — a strand down the
+  // spine crossed by ribs. Ported as the same shape of stroke pass every
+  // other body-fill loop in this file already uses; the crosshatch ribs
+  // sample every other `step` interval, matching Canvas 2D's own `k -= 2`
+  // stride over its already-`step`-sampled `pts`.
+  function pixiDrawWebMark(bodyG, body, step, bodyLength, radius, skin){
+    const { hue, sat } = skin;
+    const ink = hslToHex(hue, Math.round(sat * 0.4), 7);
+    bodyG.moveTo(body[0].x, body[0].y);
+    for (let i = step; i < body.length; i += step) bodyG.lineTo(body[i].x, body[i].y);
+    bodyG.stroke({ width: Math.max(0.5, radius * 0.08), color: ink, alpha: 0.5 });
+    for (let i = body.length - 1; i >= step; i -= step * 2){
+      const p = body[i], q = body[Math.max(0, i - step)];
+      const t = 1 - i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      bodyG.moveTo(p.x - nx * r * 0.95, p.y - ny * r * 0.95)
+        .lineTo(p.x + nx * r * 0.95, p.y + ny * r * 0.95)
+        .stroke({ width: Math.max(0.5, radius * 0.08), color: ink, alpha: 0.5 });
+    }
+  }
+
+  // Rotates a local-frame point (lx, ly) by `ang` and translates it to
+  // world position (cx, cy) — the manual equivalent of Canvas 2D's
+  // `ctx.translate(cx, cy); ctx.rotate(ang)` context stack, which PixiJS
+  // Graphics has no per-draw-call analogue for. Every bespoke body-mark
+  // icon (crossed swords now; more in later PRs) is defined as a handful of
+  // local-frame points transformed through this before being fed to
+  // `bodyG`'s path methods, so the whole icon still lands in one shared
+  // Graphics object alongside the rest of the ribbon — no extra Container
+  // or per-mark transform needed.
+  function pixiLocalToWorld(cx, cy, ang, lx, ly){
+    const c = Math.cos(ang), s = Math.sin(ang);
+    return [cx + lx * c - ly * s, cy + lx * s + ly * c];
+  }
+
+  // World-space port of drawCrossedSwords (Eel-pool's "swords" body mark) —
+  // a hand-illustrated icon, not a parameterised technique like everything
+  // else ported in this phase so far. Every stroke in the Canvas 2D version
+  // lies along the local x-axis after its own `ctx.rotate`, so each becomes
+  // one call to `pixiLocalToWorld` per endpoint rather than needing a
+  // matrix stack. `cx`/`cy`/`ang` are already world-space/world-angle
+  // (Canvas 2D computes `ang` from raw, unprojected `body` deltas, so no
+  // conversion was ever needed there either — only the *position* used to
+  // need `worldToScreen`, which this port has no reason to call at all).
+  function pixiDrawCrossedSwords(bodyG, cx, cy, ang, size){
+    for (const side of [-1, 1]){
+      const a = ang + side * 0.62;
+      const strap0 = pixiLocalToWorld(cx, cy, a, size * 0.3, 0);
+      const strap1 = pixiLocalToWorld(cx, cy, a, -size * 0.9, 0);
+      bodyG.moveTo(strap0[0], strap0[1]).lineTo(strap1[0], strap1[1])
+        .stroke({ width: Math.max(1.4, size * 0.2), color: 0x18100a, alpha: 0.55, cap: "round" });
+      const blade0 = pixiLocalToWorld(cx, cy, a, size * 0.18, 0);
+      const blade1 = pixiLocalToWorld(cx, cy, a, -size * 1.0, 0);
+      bodyG.moveTo(blade0[0], blade0[1]).lineTo(blade1[0], blade1[1])
+        .stroke({ width: Math.max(1, size * 0.15), color: 0xdfe9ef, cap: "butt" });
+      const guard0 = pixiLocalToWorld(cx, cy, a, size * 0.2, -size * 0.2);
+      const guard1 = pixiLocalToWorld(cx, cy, a, size * 0.2, size * 0.2);
+      bodyG.moveTo(guard0[0], guard0[1]).lineTo(guard1[0], guard1[1])
+        .stroke({ width: Math.max(1, size * 0.14), color: 0xf6c453, cap: "butt" });
+      const grip0 = pixiLocalToWorld(cx, cy, a, size * 0.66, 0);
+      const grip1 = pixiLocalToWorld(cx, cy, a, size * 0.2, 0);
+      bodyG.moveTo(grip0[0], grip0[1]).lineTo(grip1[0], grip1[1])
+        .stroke({ width: Math.max(1, size * 0.17), color: 0x17171d, cap: "butt" });
+    }
+    bodyG.circle(cx, cy, Math.max(1, size * 0.09)).fill({ color: 0x2a2018 });
+  }
+
   function drawEelRibbon(glowG, bodyG, body, step, radius, skin, glow, detail, nowMs){
     const { hue, sat, bodyLight, headLight, accent, accentRatio = 0.5, sheen = 0, gem } = skin;
     const marks = [].concat(skin.mark ?? []);
@@ -3420,10 +3517,30 @@
     const matType = Engine.resolveMaterial(skin).type;
     const drawMat = PIXI_SKIN_MATERIAL[matType] ?? PIXI_SKIN_MATERIAL.organic;
     drawMat(bodyG, body, step, body.length, radius, skin, detail, nowMs, glowG);
+    if (marks.includes("patch")) pixiDrawAccentPatches(bodyG, body, step, body.length, radius, skin);
+    if (marks.includes("web")) pixiDrawWebMark(bodyG, body, step, body.length, radius, skin);
     if (sheen > 0) pixiFxSheen(bodyG, body, step, body.length, radius, skin);
     if (gem) pixiFxGemTwinkle(bodyG, body, step, body.length, radius, skin, nowMs);
     const drawFx = PIXI_SKIN_FX[skin.fx];
     if (drawFx) drawFx(glowG, bodyG, body, step, body.length, radius, skin, nowMs);
+
+    // "swords": crossed on the back, a little way behind the head — walk
+    // the body by distance rather than by index, so they sit in the same
+    // place on a stubby new eel and a long one alike, matching the Canvas
+    // 2D version's own approach exactly (including reading the world-space
+    // body array directly, since neither version ever needed a screen
+    // projection for the angle, and this one no longer needs it for the
+    // position either).
+    if (marks.includes("swords")){
+      let travelled = 0, si = 0;
+      while (si < body.length - 2 && travelled < radius * 3.1){
+        travelled += Math.hypot(body[si + 1].x - body[si].x, body[si + 1].y - body[si].y);
+        si++;
+      }
+      const tail = body[Math.min(body.length - 1, si + 5)];
+      pixiDrawCrossedSwords(bodyG, body[si].x, body[si].y,
+        Math.atan2(body[si].y - tail.y, body[si].x - tail.x), radius * 2.1);
+    }
   }
 
   function drawPlayerRibbonPixi(body, step, radius, skin, glow, nowMs){
