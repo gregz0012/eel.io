@@ -6609,6 +6609,52 @@
                   : { color: 0x000000, alpha: 0.06 + 0.08 * m.strength });
   }
 
+  // World-space port of drawRazorbackSlashes — irregular-count (1, 2 or 4,
+  // never a fixed three) short diagonal bodyRibbon slices in a small
+  // steel/silver tone. Shared by pixiMatScarred (the base, always-present
+  // read, `boosted: false`) and pixiFxFeral (an identical second pass at
+  // higher alpha while boosting, `boosted: true`) — matching Canvas 2D's own
+  // reason for sharing this function: calling it twice keeps the two passes
+  // trivially aligned, rather than duplicating the placement hash. Operates
+  // in "sample slot" units scaled by `step`, the conversion
+  // pixiDrawAccentPatches/pixiMottlePatches already established.
+  function pixiDrawRazorbackSlashes(g, body, step, bodyLength, radius, strength, boosted){
+    const slots = Math.floor(body.length / step);
+    if (slots < 8) return;
+    const groups = Math.max(2, Math.round(slots / 30));
+    const alpha = boosted ? Math.min(0.9, 0.3 + 0.35 * strength) : Math.min(0.5, 0.08 + 0.12 * strength);
+    const color = boosted ? 0xe0e6ea : 0xbec4c8;
+    for (let j = 0; j < groups; j++){
+      const hash = (((Math.sin(j * 21.4 + bodyLength * 0.009) * 33421.7) % 1) + 1) % 1;
+      const count = hash < 0.4 ? 1 : hash < 0.75 ? 2 : 4;
+      const loS = Math.max(0, Math.min(slots - 6, Math.floor(hash * (slots - 7))));
+      for (let s = 0; s < count; s++){
+        const sub = (((Math.sin(j * 7.7 + s * 13.3) * 9127.3) % 1) + 1) % 1;
+        const k0S = Math.min(slots - 2, loS + Math.floor(sub * 4));
+        const k1S = Math.min(slots - 1, k0S + 2);
+        if (k1S <= k0S) continue;
+        const k0 = k0S * step, k1 = Math.min(body.length - 1, k1S * step);
+        const side = sub > 0.5 ? 1 : -1;
+        const near = side * (0.15 + sub * 0.2), far = side * (0.45 + sub * 0.2);
+        pixiBodyRibbon(g, body, step, bodyLength, radius, Math.min(near, far), Math.max(near, far), color, alpha, k0, k1);
+      }
+    }
+  }
+
+  // World-space port of matScarred (Razorback) — dark mottled patches
+  // (pixiMottlePatches, PR AU's technique) plus a dorsal stripe down the
+  // spine, plus the slash marks above — rougher and more irregular than
+  // any other material ported so far.
+  function pixiMatScarred(bodyG, body, step, bodyLength, radius, skin, detail){
+    const m = Engine.resolveMaterial(skin);
+    const count = Math.max(3, Math.round(6 * m.strength * detail));
+    pixiMottlePatches(bodyG, body, step, bodyLength, radius, count, hash =>
+      hash > 0.5 ? { color: 0x000000, alpha: 0.10 + 0.10 * m.strength }
+                  : { color: 0xffffff, alpha: 0.04 + 0.05 * m.strength });
+    pixiBodyRibbon(bodyG, body, step, bodyLength, radius, -0.1, 0.1, hslToHex(25, 35, 14), 0.18 * m.strength);
+    pixiDrawRazorbackSlashes(bodyG, body, step, bodyLength, radius, m.strength * detail, false);
+  }
+
   // Dispatch table mirroring Canvas 2D's SKIN_MATERIAL — a material id that
   // has no WebGL entry yet falls back to organic, same never-throw contract
   // as Engine.resolveMaterial and the Canvas 2D drawSkinMaterial fallback.
@@ -6616,7 +6662,7 @@
     organic: pixiMatOrganic, brushedMetal: pixiMatBrushedMetal,
     stone: pixiMatStone, charred: pixiMatCharred, crystal: pixiMatCrystal,
     water: pixiMatWater, air: pixiMatAir, charged: pixiMatCharged,
-    liquid: pixiMatLiquid, chitin: pixiMatChitin,
+    liquid: pixiMatLiquid, chitin: pixiMatChitin, scarred: pixiMatScarred,
   };
 
   // World-space port of fxSheen — a bright specular streak down one flank
@@ -7181,23 +7227,38 @@
     }
   }
 
+  // World-space port of fxFeral (Razorback) — an instant, cosmetic-only
+  // brightening of the slash marks while boosting, threaded through a
+  // trailing `fxGlow` argument mirroring the same `glow` slot Canvas 2D's
+  // drawSkinFx already threads X-Ray's chargeGlow and Razorback's
+  // pointer.boosting through (computed once in drawEelRibbon, below).
+  // Genuinely additive via `glowG` (PR AY's discovery) rather than the
+  // normal-blend-boost trade-off earlier materials needed — Canvas 2D uses
+  // a real "lighter" composite for this exact pass too, so this is a true
+  // parity port, not a simplification.
+  function pixiFxFeral(glowG, bodyG, body, step, bodyLength, radius, skin, nowMs, fxGlow = 0){
+    if (!fxGlow) return;
+    const m = Engine.resolveMaterial(skin);
+    pixiDrawRazorbackSlashes(glowG, body, step, bodyLength, radius, m.strength, true);
+  }
+
   // Dispatch table for skin.fx — unlike PIXI_SKIN_MATERIAL, no fallback: not
   // having an fx is a valid state (mirrors Canvas 2D's drawSkinFx, which
   // just no-ops when SKIN_FX[skin.fx] is undefined). Only ripple, vortex,
-  // cracks, ember, arc, sparkle, molten, afterimage, stars, spots, slime and
-  // silk are ported so far (see PRs AY-BH in the plan file); every other fx
-  // stays Canvas-2D-only, drawn on top of the WebGL body exactly as before.
-  // fade and iridescent (PR BE) are deliberately absent from this table —
-  // they recolour the base-fill stroke itself (pixiBodyFxStyle, called
-  // inline from drawEelRibbon's own base-fill loop below) rather than
-  // drawing an overlay afterward, so they can never be dispatched the same
-  // way as everything else here.
+  // cracks, ember, arc, sparkle, molten, afterimage, stars, spots, slime,
+  // silk and feral are ported so far (see PRs AY-BI in the plan file);
+  // every other fx stays Canvas-2D-only, drawn on top of the WebGL body
+  // exactly as before. fade and iridescent (PR BE) are deliberately absent
+  // from this table — they recolour the base-fill stroke itself
+  // (pixiBodyFxStyle, called inline from drawEelRibbon's own base-fill loop
+  // below) rather than drawing an overlay afterward, so they can never be
+  // dispatched the same way as everything else here.
   const PIXI_SKIN_FX = {
     ripple: pixiFxWater, vortex: pixiFxVortex,
     cracks: pixiFxCracks, ember: pixiFxEmber, arc: pixiFxArc,
     sparkle: pixiFxSparkle, molten: pixiFxMolten,
     afterimage: pixiFxAfterimage, stars: pixiFxStars,
-    spots: pixiFxSpots, slime: pixiFxSlime, silk: pixiFxSilk,
+    spots: pixiFxSpots, slime: pixiFxSlime, silk: pixiFxSilk, feral: pixiFxFeral,
   };
 
   // Shared by the player and every rival — draws exactly the two layers
@@ -7391,8 +7452,14 @@
     if (marks.includes("web")) pixiDrawWebMark(bodyG, body, step, body.length, radius, skin);
     if (sheen > 0) pixiFxSheen(bodyG, body, step, body.length, radius, skin);
     if (gem) pixiFxGemTwinkle(bodyG, body, step, body.length, radius, skin, nowMs);
+    // Computed once, matching Canvas 2D's own inline `skinGlow` local at its
+    // drawSkinFx call site — only feral is ported to WebGL so far (X-Ray's
+    // chargeGlow stays Canvas-2D-only until the head PR), but this mirrors
+    // the same shape so a future ported fx needing a glow value slots in
+    // the same way.
+    const fxGlow = skin.fx === "feral" ? (pointer.boosting ? 1 : 0) : undefined;
     const drawFx = PIXI_SKIN_FX[skin.fx];
-    if (drawFx) drawFx(glowG, bodyG, body, step, body.length, radius, skin, nowMs);
+    if (drawFx) drawFx(glowG, bodyG, body, step, body.length, radius, skin, nowMs, fxGlow);
 
     // "swords": crossed on the back, a little way behind the head — walk
     // the body by distance rather than by index, so they sit in the same
