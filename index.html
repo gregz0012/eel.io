@@ -27,6 +27,10 @@
     touch-action:none;
   }
   #game{display:block;position:absolute;inset:0;cursor:crosshair;}
+  /* stacked directly beneath #game, background/bubbles/motes/fish once WebGL
+     is available (see the "WebGL renderer" section in the script below);
+     never receives pointer events, so input handling is untouched */
+  #gameGL{display:block;position:absolute;inset:0;pointer-events:none;}
 
   /* ---- HUD ---- */
   #hud{
@@ -472,6 +476,7 @@
 </style>
 </head>
 <body>
+<canvas id="gameGL"></canvas>
 <canvas id="game"></canvas>
 
 <div id="hud" class="hidden">
@@ -4474,8 +4479,26 @@
     canvas.width = W * DPR; canvas.height = H * DPR;
     canvas.style.width = W + "px"; canvas.style.height = H + "px";
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    resizePixi();
   }
-  window.addEventListener("resize", resize); resize();
+  window.addEventListener("resize", resize);
+
+  // Declared here, ahead of resize()'s first call just below, so that call
+  // never reaches resizePixi() before these exist — the exact shape of bug
+  // this project's very first bundled build shipped with (a `let` read
+  // before its declaration executes; see this file's own history). Pixi's
+  // async init (initPixi(), by the "WebGL renderer" section further down)
+  // hasn't run yet at this point, so resizePixi() harmlessly no-ops on this
+  // first call via its own `if (!pixiReady) return` guard. `PIXI` itself is
+  // feature-detected with `typeof`, same idiom as AudioContext/
+  // navigator.vibrate elsewhere in this file — test/build.test.js's sandbox
+  // never loads the vendor script (only the bare game script it extracts),
+  // so `PIXI` is genuinely absent there, and this must not throw.
+  const glCanvas = document.getElementById("gameGL");
+  const pixiApp = typeof PIXI !== "undefined" ? new PIXI.Application() : null;
+  let pixiReady = false;
+
+  resize();
 
   // ---------- helpers ----------
   const TAU = Math.PI * 2;
@@ -5966,6 +5989,211 @@
     } else {
       sonarEl.style.display = "none";
     }
+  }
+
+  // ---------- WebGL renderer (Pixi), PR AP of #85 ----------
+  // A second canvas (#gameGL), stacked directly beneath #game and never
+  // receiving pointer events (input stays exactly as it is, on #game),
+  // carries the lowest-risk visual layers — background, bubbles, energy
+  // motes, fish — as the first proof that the coordinate system (camera,
+  // resize, DPR) works end to end before the eel body mesh (the issue's
+  // actual "main focus") moves over in a later PR. Everything not yet
+  // migrated keeps drawing on the existing 2D canvas exactly as before;
+  // #game's own background fill is removed (see draw(), below) and
+  // replaced with an explicit clearRect so the Pixi layer shows through.
+  //
+  // Deliberately written inline here rather than as separate
+  // src/render/*.js files: build.mjs has no existing mechanism to inline
+  // non-engine JS (bundleEngine() is written specifically for
+  // src/engine/'s hand-authored export style), and building one is real,
+  // additional build-system risk this PR's actual job — proving the
+  // renderer swap is safe at all — doesn't need yet. Revisit the file
+  // split once there's enough render code to justify it.
+  //
+  // glCanvas/pixiApp/pixiReady are declared up near resize()'s own
+  // definition, not here — see the comment there for why.
+
+  // world-space content (bubbles, motes, fish) sits in a container whose
+  // own position is the camera transform — a child's local x/y is exactly
+  // the world x/y, no per-entity worldToScreen math needed. Screen-space
+  // content (the background) sits in an untransformed sibling so it never
+  // moves with the camera, matching drawBackground()'s own screen-space
+  // ctx.fillRect/gradient calls today.
+  let pixiWorld, pixiBg;
+
+  async function initPixi(){
+    if (!pixiApp) return;   // PIXI wasn't present when this script loaded
+    try {
+      await pixiApp.init({
+        canvas: glCanvas, width: W, height: H, resolution: DPR,
+        autoDensity: true, backgroundAlpha: 0, antialias: false,
+      });
+    } catch (e) {
+      // No WebGL (an old device, a WebView without it) — the 2D canvas
+      // already draws everything correctly on its own; the GL layer
+      // simply never appears, and nothing above this ever calls into it.
+      console.warn("WebGL renderer unavailable, continuing on Canvas 2D only:", e);
+      return;
+    }
+    pixiBg = new PIXI.Container();
+    pixiWorld = new PIXI.Container();
+    pixiApp.stage.addChild(pixiBg, pixiWorld);
+    pixiReady = true;
+  }
+  initPixi();
+
+  function resizePixi(){
+    if (!pixiReady) return;
+    pixiApp.renderer.resize(W, H);
+    pixiBgDirty = true;
+  }
+
+  // ---- background: vertical gradient + faint animated light shafts ----
+  // Rebuilt only on resize/reduceMotion toggle (the gradient) or every
+  // frame while shafts animate — matching drawBackground()'s own content
+  // exactly, just against Pixi's Graphics API instead of Canvas 2D's.
+  let pixiBgGradient = null, pixiBgDirty = true;
+  const PIXI_SHAFT_COUNT = 5;
+  let pixiShafts = [];
+
+  function syncPixiBackground(nowMs){
+    if (pixiBgDirty){
+      pixiBg.removeChildren().forEach(c => c.destroy());
+      pixiBgGradient = new PIXI.Graphics()
+        .rect(0, 0, W, H)
+        .fill({ fill: new PIXI.FillGradient({
+          type: "linear", start: { x: 0, y: 0 }, end: { x: 0, y: 1 },
+          colorStops: [
+            { offset: 0, color: "#052f44" },
+            { offset: 0.55, color: "#062a3e" },
+            { offset: 1, color: "#031521" },
+          ],
+        }) });
+      pixiBg.addChild(pixiBgGradient);
+      pixiShafts = [];
+      if (!reduceMotion){
+        for (let i = 0; i < PIXI_SHAFT_COUNT; i++){
+          const shaft = new PIXI.Graphics();
+          shaft.blendMode = "add";
+          pixiBg.addChild(shaft);
+          pixiShafts.push(shaft);
+        }
+      }
+      pixiBgDirty = false;
+    }
+    if (reduceMotion) return;
+    const t = nowMs * 0.00006;
+    for (let i = 0; i < pixiShafts.length; i++){
+      const bx = ((i * 0.23 + t) % 1.3 - 0.15) * W;
+      pixiShafts[i].clear()
+        .poly([bx, 0, bx + 140, 0, bx + 320, H, bx - 40, H])
+        .fill({ fill: new PIXI.FillGradient({
+          type: "linear", start: { x: bx, y: 0 }, end: { x: bx + 120, y: 0 },
+          colorStops: [
+            { offset: 0, color: "rgba(120,220,230,0.05)" },
+            { offset: 1, color: "rgba(120,220,230,0)" },
+          ],
+        }) });
+    }
+  }
+
+  // ---- generic "keep a container's children in sync with an array" pool.
+  // Every child's visual properties are fully rewritten from its array
+  // entry every frame, so a mid-array splice (bubbles/energy/fish are all
+  // spliced from arbitrary indices elsewhere) never desyncs a child from
+  // stale data — there is no persistent per-index identity to break.
+  function syncPool(container, array, makeChild, updateChild){
+    while (container.children.length < array.length) container.addChild(makeChild());
+    while (container.children.length > array.length){
+      container.removeChildAt(container.children.length - 1).destroy();
+    }
+    for (let i = 0; i < array.length; i++) updateChild(container.children[i], array[i]);
+  }
+
+  let pixiBubbles, pixiEnergy, pixiFish;
+
+  function syncPixiWorld(){
+    if (!pixiBubbles){
+      pixiBubbles = new PIXI.Container();
+      pixiEnergy = new PIXI.Container();
+      pixiFish = new PIXI.Container();
+      pixiWorld.addChild(pixiBubbles, pixiEnergy, pixiFish);
+    }
+
+    // Every entity below draws its Graphics path exactly once (tagged with
+    // `_drawn`, keyed on the radius it was drawn at) and updates only
+    // position/rotation/scale on every later frame — a transform write is
+    // orders of magnitude cheaper than rebuilding and re-uploading vertex
+    // geometry every frame, and unlike Canvas 2D's per-frame immediate-mode
+    // redraw, Pixi's retained Graphics objects don't need to repay that
+    // cost each frame just to stay on screen.
+    syncPool(pixiBubbles, bubbles, () => new PIXI.Graphics(), (g, b) => {
+      if (g._drawnR !== b.r){
+        g.clear().circle(0, 0, b.r).fill({ color: 0x96dce6, alpha: 0.12 });
+        g._drawnR = b.r;
+      }
+      g.position.set(b.x, b.y);
+    });
+
+    // The pulse is a uniform scale of a unit circle drawn once, not a
+    // per-frame radius redraw — same visual, no geometry rebuild.
+    syncPool(pixiEnergy, energy, () => {
+      const g = new PIXI.Graphics(); g.blendMode = "add"; return g;
+    }, (g, en) => {
+      if (g._drawnHue !== en.hue){
+        g.clear().circle(0, 0, 1).fill({ color: hslToHex(en.hue, 90, 66), alpha: 0.95 });
+        g._drawnHue = en.hue;
+      }
+      const p = 1 + Math.sin(en.wob) * 0.3;
+      g.scale.set(en.r * p);
+      g.position.set(en.x, en.y);
+    });
+
+    // The tail's per-frame wobble (a few px of vertex sway) is dropped here
+    // — a static tail is visually indistinguishable at this size and this
+    // is what turns 280 full path rebuilds/frame into 280 cheap transform
+    // writes. Revisit if a future pass wants it back via a small vertex
+    // shader instead of rebuilding the path on the CPU every frame.
+    syncPool(pixiFish, fish, () => new PIXI.Graphics(), (g, f) => {
+      if (g._drawnR !== f.r || g._drawnHue !== f.hue){
+        const c = hslToHex(f.hue, 85, 62);
+        g.clear()
+          .ellipse(0, 0, f.r * 1.6, f.r).fill(c)
+          .poly([-f.r*1.4, 0, -f.r*2.4, -f.r*0.9, -f.r*2.4, f.r*0.9]).fill(c)
+          .circle(f.r*0.7, -f.r*0.2, 1.6).fill(0x04202c);
+        g._drawnR = f.r; g._drawnHue = f.hue;
+      }
+      g.position.set(f.x, f.y);
+      g.rotation = f.a;
+    });
+
+    pixiBubbles.visible = pixiEnergy.visible = pixiFish.visible = !!player;
+  }
+
+  // Graphics fills take a packed hex number, not the "hsl(...)" strings
+  // the rest of the shell hands to Canvas 2D — converted once per call
+  // rather than cached, same low cost as the equivalent template-string
+  // build the 2D path already pays every frame.
+  function hslToHex(h, s, l){
+    s /= 100; l /= 100;
+    const k = n => (n + h / 30) % 12;
+    const a = s * Math.min(l, 1 - l);
+    const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+    return (Math.round(f(0)*255) << 16) + (Math.round(f(8)*255) << 8) + Math.round(f(4)*255);
+  }
+
+  function drawPixiFrame(nowMs){
+    if (!pixiReady) return;
+    syncPixiBackground(nowMs);
+    if (player){
+      let jx = 0, jy = 0;
+      if (shakeT > 0){ jx = rand(-1,1)*shakeT*22; jy = rand(-1,1)*shakeT*22; }
+      pixiWorld.position.set(W/2 - camera.x + jx, H/2 - camera.y + jy);
+      syncPixiWorld();
+    } else if (pixiBubbles) {
+      pixiBubbles.visible = pixiEnergy.visible = pixiFish.visible = false;
+    }
+    pixiApp.render();
   }
 
   // ---------- draw ----------
@@ -8158,16 +8386,27 @@
   }
 
   function draw(){
-    drawBackground();
+    // Background, bubbles, energy motes and fish render on the WebGL layer
+    // (#gameGL) once it's ready; the 2D canvas is cleared instead of
+    // painting its own opaque background so that layer shows through.
+    // Without WebGL (an old device, a WebView that lacks it), pixiReady
+    // stays false forever and these four keep drawing on Canvas 2D exactly
+    // as they always have — the graceful-degradation path, not a
+    // special-cased fallback bolted on afterwards.
+    if (pixiReady){
+      drawPixiFrame();
+      ctx.clearRect(0, 0, W, H);
+    } else {
+      drawBackground();
+    }
     if (!player) return;
     drawWorldBounds();
-    drawBubbles();
-    drawEnergy();
+    if (!pixiReady){ drawBubbles(); drawEnergy(); }
     drawPresents();
     drawStars();
     drawFeasts();
     drawBabies();
-    drawFish();
+    if (!pixiReady) drawFish();
     drawRivalEels();
     drawPredators();
     drawPlayer();
