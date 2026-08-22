@@ -511,10 +511,13 @@ Actions tab. It needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` as
 repository secrets; the README says where they come from. By hand:
 
 ```bash
+npm ci
 cd worker
-npx wrangler d1 execute eelio --remote --file=./schema.sql   # create the table, once
-npx wrangler deploy                                          # prints the URL for LEADERBOARD_URL
+../node_modules/.bin/wrangler d1 execute eelio --remote --file=./schema.sql   # create the table, once
+../node_modules/.bin/wrangler deploy                                          # prints the URL for LEADERBOARD_URL
 ```
+
+Wrangler is a pinned root devDependency (see `package.json`), not fetched fresh via `npx` at deploy time.
 
 Two things that look like secrets and are not: the D1 database id and the
 Worker's URL. The URL ships in `index.html` to every player, so it belongs in
@@ -527,7 +530,7 @@ The D1 database is `eelio`; its binding and id are in `worker/wrangler.toml`.
 
 Wrangler reports anonymous usage telemetry to Cloudflare by default. It concerns
 the CLI, not players, but given design value #1 it is worth knowing you can turn
-it off with `npx wrangler telemetry disable` or `WRANGLER_SEND_METRICS=false`.
+it off with `./node_modules/.bin/wrangler telemetry disable` or `WRANGLER_SEND_METRICS=false`.
 
 ---
 
