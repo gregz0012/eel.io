@@ -2805,6 +2805,29 @@
     pixiDrawCrackLips(bodyG, body, step, bodyLength, radius, 0x000000, 0.4);
   }
 
+  // liquid (Eel-symbiote, reused at Voidbond's own tuning): a sparse pair of
+  // glossy highlight ribbons drifting from two out-of-phase sine terms, so
+  // the motion reads as an irregular flex rather than a clean single wave.
+  // Genuinely additive via glowG (the discovery from PR AY, applied here to
+  // a material for the first time — every material dispatched before this
+  // one was ported before that was known, so they still use the
+  // normal-blend-boost trade-off; this is guidance for new work, not a
+  // retrofit). `PIXI_SKIN_MATERIAL` entries are called with a trailing
+  // `glowG` argument for exactly this reason — every other material ignores
+  // it, same as they already ignore `nowMs` if they don't need it.
+  function pixiMatLiquid(bodyG, body, step, bodyLength, radius, skin, detail, nowMs, glowG){
+    const m = Engine.resolveMaterial(skin);
+    const ribbons = Math.max(1, Math.round(2 * m.strength * detail));
+    for (let b = 0; b < ribbons; b++){
+      const phase = b * 2.3;
+      const offset = (Math.sin(nowMs * 0.00018 + phase) * 0.6
+                    + Math.sin(nowMs * 0.00043 + phase * 1.9) * 0.4) * 0.35 * m.scale;
+      const width = 0.05 + 0.03 * m.strength;
+      const alpha = (0.05 + 0.06 * m.strength) * detail;
+      pixiBodyRibbon(glowG, body, step, bodyLength, radius, offset - width, offset + width, 0xffffff, alpha);
+    }
+  }
+
   // Dispatch table mirroring Canvas 2D's SKIN_MATERIAL — a material id that
   // has no WebGL entry yet falls back to organic, same never-throw contract
   // as Engine.resolveMaterial and the Canvas 2D drawSkinMaterial fallback.
@@ -2812,6 +2835,7 @@
     organic: pixiMatOrganic, brushedMetal: pixiMatBrushedMetal,
     stone: pixiMatStone, charred: pixiMatCharred, crystal: pixiMatCrystal,
     water: pixiMatWater, air: pixiMatAir, charged: pixiMatCharged,
+    liquid: pixiMatLiquid,
   };
 
   // World-space port of fxSheen — a bright specular streak down one flank
@@ -3387,17 +3411,15 @@
     // Universal baseline shading, then whatever material this skin resolves
     // to, then sheen, a gem's twinkle and a themed fx finish on top — same
     // order as the Canvas 2D pass (drawBodyShading, drawSkinMaterial,
-    // fxSheen, fxGemTwinkle, drawSkinFx). Only organic, brushedMetal, stone,
-    // charred, crystal, water, air and charged materials, and only the
-    // ripple/vortex fx, are ported so far (see PRs AS-AY in the plan file);
-    // every other SKIN_MATERIAL id falls back to organic here too for now,
-    // matching resolveMaterial's own never-throw fallback, and every other
-    // fx stays Canvas-2D-only — their bespoke textures/effects are still
-    // Canvas 2D until their own PRs.
+    // fxSheen, fxGemTwinkle, drawSkinFx). Every SKIN_MATERIAL id not yet
+    // ported (see the plan file for the current list) falls back to organic
+    // here too, matching resolveMaterial's own never-throw fallback, and
+    // every fx not yet ported stays Canvas-2D-only — their bespoke
+    // textures/effects are still Canvas 2D until their own PRs.
     pixiDrawBodyShading(bodyG, body, step, body.length, radius);
     const matType = Engine.resolveMaterial(skin).type;
     const drawMat = PIXI_SKIN_MATERIAL[matType] ?? PIXI_SKIN_MATERIAL.organic;
-    drawMat(bodyG, body, step, body.length, radius, skin, detail, nowMs);
+    drawMat(bodyG, body, step, body.length, radius, skin, detail, nowMs, glowG);
     if (sheen > 0) pixiFxSheen(bodyG, body, step, body.length, radius, skin);
     if (gem) pixiFxGemTwinkle(bodyG, body, step, body.length, radius, skin, nowMs);
     const drawFx = PIXI_SKIN_FX[skin.fx];
