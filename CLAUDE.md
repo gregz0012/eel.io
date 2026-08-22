@@ -144,6 +144,15 @@ native iOS/Android wrapper around the built `index.html`, with its own
 touch what ships to the browser. See `capacitor/README.md`. It has no bearing
 on anything above; the web version is still the primary target.
 
+Production distribution is split deliberately. `.github/workflows/web.yml`
+tests every `main` deployment, builds `dist/web`, and deploys it to the
+`eel-shock-web` Workers Static Assets service configured by
+`wrangler.web.jsonc` at `eelshock.com`. `.github/workflows/mobile-release.yml`
+runs only for `vMAJOR.MINOR.PATCH` tags: it builds `dist/app` once and packages
+fresh Android/iOS Capacitor project inputs on Linux/macOS runners. It does not
+sign, upload or publish either store app. This lets the web version move ahead
+without turning every merge into a mobile release.
+
 ### Why a build step
 
 The engine is written as ES modules so Node can import it directly in tests. Browsers refuse to load ES modules over `file://`, and design value #2 says Eel Shock stays a single file you can double-click or email to a kid. Those two facts are irreconcilable without a build.

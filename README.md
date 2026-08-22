@@ -220,14 +220,66 @@ Capacitor dependencies are pinned to exact versions in its own committed
 the app target, stage it in `capacitor/www`, and sync any locally generated
 native projects.
 
-## Enable the online version (GitHub Pages)
+## Web production deployment
+
+The [`web`](.github/workflows/web.yml) workflow deploys
+`dist/web/index.html` to a Workers Static Assets service named
+`eel-shock-web` whenever a tested change reaches `main`. Its custom domain is
+declared in [`wrangler.web.jsonc`](wrangler.web.jsonc), so the production URL
+is **https://eelshock.com**.
+
+One-time Cloudflare prerequisites:
+
+1. Add `eelshock.com` to the same Cloudflare account as the Eel Shock Worker
+   and make sure the zone is active. The hostname cannot already have a CNAME
+   record when Wrangler creates the Custom Domain.
+2. Create a separate API token for web deployment using Cloudflare's **Edit
+   Cloudflare Workers** template. Restrict its account resource to the account
+   that owns Eel Shock and its zone resource to `eelshock.com`; do not use the
+   Global API Key.
+3. Add that token as the repository secret `CLOUDFLARE_WEB_API_TOKEN`. The
+   existing `CLOUDFLARE_ACCOUNT_ID` secret is shared safely because an account
+   id is not a credential.
+4. Optionally add approval protection to the repository's GitHub `production`
+   environment. The workflow already targets that environment and prevents two
+   production deploys from running at once.
+
+The first successful deployment creates the Custom Domain DNS record and
+certificate through Cloudflare. Later merges upload only the new tested web
+artifact. **Actions → web → Run workflow** can redeploy the current `main`
+manually; it does not build from an unreviewed branch.
+
+Wrangler is configured as a pure static-assets Worker: there is no runtime
+framework or application Worker in front of the game. Missing paths return a
+real 404, and the self-contained `index.html` remains playable if downloaded
+or opened offline.
+
+## Tagged mobile release inputs
+
+Pushing a semantic version tag such as `v1.2.0` runs the
+[`mobile-release`](.github/workflows/mobile-release.yml) workflow. It tests the
+tagged source once, builds the shared `dist/app` artifact, then generates and
+syncs fresh Android and iOS Capacitor projects on their appropriate GitHub
+runners. Three artifacts are retained for 30 days:
+
+- `eel-shock-app-v1.2.0` — the shared app web bundle;
+- `eel-shock-android-v1.2.0` — the generated Android Studio project;
+- `eel-shock-ios-v1.2.0` — the generated Xcode project.
+
+These are reproducible **release inputs**, not signed store packages. The
+workflow deliberately does not hold signing certificates, create an APK/AAB or
+IPA, upload to Google Play/App Store Connect, or publish a store release. Store
+versioning, icons, signing and submission remain explicit later release work.
+
+## GitHub Pages fallback
 
 1. In this repo, go to **Settings → Pages**.
 2. Under **Build and deployment → Source**, choose **Deploy from a branch**.
 3. Pick branch **main** and folder **/ (root)**, then **Save**.
 4. Wait a minute, then visit **https://gregz0012.github.io/eel.io/**.
 
-Because the game is named `index.html`, Pages serves it at the root URL automatically.
+Because the committed game is named `index.html`, Pages can continue serving it
+as a fallback while `eelshock.com` becomes the production address.
 
 ## Tech
 
