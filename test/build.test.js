@@ -15,7 +15,22 @@ function gameScript() {
 
 describe("built index.html", () => {
   it("is up to date with src/", () => {
+    // Also exercises build.mjs's readVendorPixi() hash-pin check — a
+    // hand-edited or drifted vendor/pixi.min.js makes this fail loudly,
+    // same as any other build staleness.
     execFileSync("node", ["build.mjs", "--check"], { cwd: new URL("..", import.meta.url) });
+  });
+
+  it("ships the vendored PixiJS bundle in its own script block, separate from the game script", () => {
+    // The vendor block deliberately carries an id attribute so gameScript()'s
+    // bare-<script>-tag regex (below) skips past it — confirm that split
+    // actually holds: PIXI's definition lives in its own block, and the
+    // extracted game script is exactly what test/build.test.js's other
+    // assertions assume it is (no module syntax, executes standalone).
+    expect(html).toMatch(/<script id="vendor-pixi">[\s\S]*?<\/script>/);
+    const vendorBlock = html.match(/<script id="vendor-pixi">([\s\S]*?)<\/script>/)[1];
+    expect(vendorBlock).toMatch(/var PIXI\s*=/);
+    expect(gameScript()).not.toMatch(/var PIXI\s*=/);
   });
 
   it("ships no module syntax and no external resources", () => {

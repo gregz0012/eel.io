@@ -679,6 +679,15 @@
   <button id="skipMiniGameBtn" class="quiet">Skip</button>
 </div>
 
+<!-- Vendored, pinned, offline PixiJS build — see vendor/README.md and
+     CLAUDE.md's "why a build step" section. This tag deliberately carries
+     an id attribute so test/build.test.js's game-script extraction (which
+     looks for exactly one bare, attribute-less script tag below) skips
+     past it. Splicing happens in build.mjs, independent of bundleEngine(),
+     which is written only for src/engine/'s hand-authored export style. -->
+<script id="vendor-pixi">
+  /* @inject:vendor-pixi */
+</script>
 <script>
 (() => {
   "use strict";
