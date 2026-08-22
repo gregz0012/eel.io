@@ -6894,15 +6894,45 @@
     }
   }
 
+  // World-space port of fxArc — jagged, flickering bolts down the spine,
+  // genuinely additive via glowG (see PR AY). Canvas 2D draws one segment
+  // per raw point pair (no step skipping, unlike cracks/ember's k+=2); this
+  // samples at the same `step` interval every other pixi pass in this file
+  // uses, a consistent simplification rather than a special case for this
+  // one fx — fewer, slightly longer jagged segments, same flicker/jitter
+  // read at a glance. No flare tied to the real zap meter here (X-Ray's own
+  // skeleton, a later PR, is the only skin whose fx reads live gameplay
+  // state) — this finish needs none, which is what lets it read identically
+  // in the shop preview once that moves to WebGL.
+  function pixiFxArc(glowG, bodyG, body, step, bodyLength, radius, skin, nowMs){
+    const { hue, sat, headLight } = skin;
+    const color = hslToHex(hue, Math.min(100, sat + 10), Math.min(98, headLight + 28));
+    for (let i = step; i < body.length; i += step){
+      const p = body[i], q = body[i - step];
+      const flicker = Math.sin(nowMs * 0.02 + i * 0.9);
+      if (flicker < 0.6) continue;
+      const t = 1 - i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      const jitter = (((Math.sin(i * 78.233) * 12345.678) % 1) + 1) % 1;
+      const jag = (jitter - 0.5) * r * 0.6;
+      glowG.moveTo(p.x, p.y)
+        .lineTo((p.x + q.x) / 2 + nx * jag, (p.y + q.y) / 2 + ny * jag)
+        .lineTo(q.x, q.y)
+        .stroke({ width: Math.max(0.6, r * 0.1), color, alpha: (flicker - 0.6) / 0.4 });
+    }
+  }
+
   // Dispatch table for skin.fx — unlike PIXI_SKIN_MATERIAL, no fallback: not
   // having an fx is a valid state (mirrors Canvas 2D's drawSkinFx, which
   // just no-ops when SKIN_FX[skin.fx] is undefined). Only ripple, vortex,
-  // cracks and ember are ported so far (see PRs AY-AZ in the plan file);
-  // every other fx stays Canvas-2D-only, drawn on top of the WebGL body
-  // exactly as before.
+  // cracks, ember and arc are ported so far (see PRs AY-BA in the plan
+  // file); every other fx stays Canvas-2D-only, drawn on top of the WebGL
+  // body exactly as before.
   const PIXI_SKIN_FX = {
     ripple: pixiFxWater, vortex: pixiFxVortex,
-    cracks: pixiFxCracks, ember: pixiFxEmber,
+    cracks: pixiFxCracks, ember: pixiFxEmber, arc: pixiFxArc,
   };
 
   // Shared by the player and every rival — draws exactly the two layers
