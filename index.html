@@ -6758,6 +6758,89 @@
     }
   }
 
+  // World-space port of fxWater — a travelling highlight band (normal
+  // blend in Canvas 2D too, drawn outside its "lighter" block, so this
+  // needs no additive-to-normal-blend compromise) plus a rising bubble
+  // trail. The bubble trail genuinely is additive in Canvas 2D; rather than
+  // the normal-blend-boost trade-off pixiMatCharred/pixiMatCharged needed,
+  // this draws straight into the eel's own glowG (already `blendMode:
+  // "add"`, already used for the halo stroke) — real additive, no
+  // compromise, now that a per-eel additive layer is available to reach
+  // for. Canvas 2D offsets the bubble rise along a fixed screen "-y"; since
+  // this game's camera never rotates (see worldToScreen), a fixed world "-y"
+  // lands in the identical direction, so this is a literal port rather than
+  // the local-normal substitution pixiFxGemTwinkle needed for a different
+  // reason (that offset reads naturally either way; this one is an exact
+  // match, not just a reasonable substitute).
+  function pixiFxWater(glowG, bodyG, body, step, bodyLength, radius, skin, nowMs){
+    const { hue, sat, headLight } = skin;
+    const waveColor = hslToHex(hue, Math.min(100, sat + 10), Math.min(92, headLight + 18));
+    for (let i = step; i < body.length; i += step){
+      const p = body[i], q = body[i - step];
+      const wave = Math.sin(nowMs * 0.0015 - i * 0.25);
+      if (wave < 0.5) continue;
+      const t = 1 - i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      bodyG.moveTo(p.x - nx * r * 0.5, p.y - ny * r * 0.5)
+        .lineTo(q.x - nx * r * 0.5, q.y - ny * r * 0.5)
+        .stroke({ width: r * 0.5, color: waveColor, alpha: wave - 0.5 });
+    }
+    const bubbleColor = hslToHex(hue, Math.min(100, sat + 20), 95);
+    for (let i = 0; i < body.length; i += step * 5){
+      const p = body[i];
+      const t = 1 - i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const loopMs = 1400;
+      const bubbleT = ((nowMs * 0.6 + i * 137) % loopMs) / loopMs;
+      const alpha = Math.sin(bubbleT * Math.PI);
+      if (alpha < 0.15) continue;
+      glowG.circle(p.x, p.y - r * 0.6 - bubbleT * r * 1.4, Math.max(1, r * 0.14))
+        .fill({ color: bubbleColor, alpha: alpha * 0.6 });
+    }
+  }
+
+  // World-space port of fxVortex — a soft additive outline around the whole
+  // body plus small spiral swirls at sampled points, both genuinely additive
+  // in Canvas 2D (`globalCompositeOperation = "lighter"` for this fx's
+  // entire pass) and so both drawn into glowG here, same reasoning as
+  // pixiFxWater's bubble trail above. The swirl's per-axis offset
+  // (`cos(...)`, `sin(...)*0.6`) is a literal port of Canvas 2D's — this
+  // game's camera never rotates, so a world-space x/y offset reads
+  // identically to the screen-space one Canvas 2D computes.
+  function pixiFxVortex(glowG, bodyG, body, step, bodyLength, radius, skin, nowMs){
+    const { hue, sat, headLight } = skin;
+    glowG.moveTo(body[0].x, body[0].y);
+    for (let i = step; i < body.length; i += step) glowG.lineTo(body[i].x, body[i].y);
+    glowG.lineTo(body[body.length - 1].x, body[body.length - 1].y);
+    glowG.stroke({
+      width: radius * 0.9, cap: "round", join: "round",
+      color: hslToHex(hue, Math.max(0, sat - 20), Math.min(96, headLight + 20)), alpha: 0.10,
+    });
+    const swirlColor = hslToHex(hue, Math.min(100, sat + 10), 96);
+    for (let i = 0; i < body.length; i += step * 6){
+      const p = body[i];
+      const t = 1 - i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t) * 0.9;
+      const spin = nowMs * 0.003 + i * 0.5;
+      let first = true;
+      for (let a = 0; a <= TAU * 1.4; a += 0.4){
+        const rad = r * 0.5 * (a / (TAU * 1.4));
+        const x = p.x + Math.cos(a + spin) * rad, y = p.y + Math.sin(a + spin) * rad * 0.6;
+        if (first){ glowG.moveTo(x, y); first = false; } else glowG.lineTo(x, y);
+      }
+      glowG.stroke({ width: Math.max(0.6, r * 0.08), color: swirlColor, alpha: 0.5 });
+    }
+  }
+
+  // Dispatch table for skin.fx — unlike PIXI_SKIN_MATERIAL, no fallback: not
+  // having an fx is a valid state (mirrors Canvas 2D's drawSkinFx, which
+  // just no-ops when SKIN_FX[skin.fx] is undefined). Only ripple and vortex
+  // are ported so far (see PR AY in the plan file); every other fx stays
+  // Canvas-2D-only, drawn on top of the WebGL body exactly as before.
+  const PIXI_SKIN_FX = { ripple: pixiFxWater, vortex: pixiFxVortex };
+
   // Shared by the player and every rival — draws exactly the two layers
   // described above into the given pair of (already-cleared) Graphics.
   function drawEelRibbon(glowG, bodyG, body, step, radius, skin, glow, detail, nowMs){
@@ -6784,19 +6867,23 @@
     }
 
     // Universal baseline shading, then whatever material this skin resolves
-    // to, then sheen and a gem's twinkle on top — same order as the Canvas
-    // 2D pass (drawBodyShading, drawSkinMaterial, fxSheen, fxGemTwinkle).
-    // Only organic, brushedMetal, stone, charred, crystal, water, air and
-    // charged are ported so far (see PRs AS-AX in the plan file); every
-    // other SKIN_MATERIAL id falls back to organic here too for now,
-    // matching resolveMaterial's own never-throw fallback — their bespoke textures
-    // are still Canvas 2D until their own PRs.
+    // to, then sheen, a gem's twinkle and a themed fx finish on top — same
+    // order as the Canvas 2D pass (drawBodyShading, drawSkinMaterial,
+    // fxSheen, fxGemTwinkle, drawSkinFx). Only organic, brushedMetal, stone,
+    // charred, crystal, water, air and charged materials, and only the
+    // ripple/vortex fx, are ported so far (see PRs AS-AY in the plan file);
+    // every other SKIN_MATERIAL id falls back to organic here too for now,
+    // matching resolveMaterial's own never-throw fallback, and every other
+    // fx stays Canvas-2D-only — their bespoke textures/effects are still
+    // Canvas 2D until their own PRs.
     pixiDrawBodyShading(bodyG, body, step, body.length, radius);
     const matType = Engine.resolveMaterial(skin).type;
     const drawMat = PIXI_SKIN_MATERIAL[matType] ?? PIXI_SKIN_MATERIAL.organic;
     drawMat(bodyG, body, step, body.length, radius, skin, detail, nowMs);
     if (sheen > 0) pixiFxSheen(bodyG, body, step, body.length, radius, skin);
     if (gem) pixiFxGemTwinkle(bodyG, body, step, body.length, radius, skin, nowMs);
+    const drawFx = PIXI_SKIN_FX[skin.fx];
+    if (drawFx) drawFx(glowG, bodyG, body, step, body.length, radius, skin, nowMs);
   }
 
   function drawPlayerRibbonPixi(body, step, radius, skin, glow, nowMs){
