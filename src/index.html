@@ -2338,19 +2338,35 @@
   function syncPool(container, array, makeChild, updateChild){
     while (container.children.length < array.length) container.addChild(makeChild());
     while (container.children.length > array.length){
-      container.removeChildAt(container.children.length - 1).destroy();
+      // {children: true} matters for a pooled child that is itself a small
+      // Container (presents' glow+body pair, below) — Pixi's default
+      // Container.destroy() does not destroy children, which would leak
+      // their GPU resources every time the pool shrinks.
+      container.removeChildAt(container.children.length - 1).destroy({ children: true });
     }
     for (let i = 0; i < array.length; i++) updateChild(container.children[i], array[i]);
   }
 
   let pixiBubbles, pixiEnergy, pixiFish;
+  let pixiPresents, pixiStars, pixiBabies, pixiPredators, pixiFeasts, pixiParticles;
 
   function syncPixiWorld(){
     if (!pixiBubbles){
       pixiBubbles = new PIXI.Container();
       pixiEnergy = new PIXI.Container();
       pixiFish = new PIXI.Container();
-      pixiWorld.addChild(pixiBubbles, pixiEnergy, pixiFish);
+      pixiPresents = new PIXI.Container();
+      pixiStars = new PIXI.Container();
+      pixiBabies = new PIXI.Container();
+      pixiPredators = new PIXI.Container();
+      pixiFeasts = new PIXI.Container();
+      pixiParticles = new PIXI.Container();
+      // draw order matches the existing draw() dispatch: presents, stars,
+      // feasts, babies, fish before rivals/predators/player/particles.
+      pixiWorld.addChild(
+        pixiBubbles, pixiEnergy, pixiPresents, pixiStars, pixiFeasts,
+        pixiBabies, pixiFish, pixiPredators, pixiParticles,
+      );
     }
 
     // Every entity below draws its Graphics path exactly once (tagged with
@@ -2400,7 +2416,171 @@
       g.rotation = f.a;
     });
 
-    pixiBubbles.visible = pixiEnergy.visible = pixiFish.visible = !!player;
+    // Cached like bubbles/fish: box + ribbon + bow don't change shape, only
+    // the small vertical "bob" offset each frame (folded into position.y,
+    // not a redraw). Two Graphics per present, like the eel ribbons' glow
+    // split — Graphics has one blendMode for the whole object, and the glow
+    // halo needs "add" while the box/ribbon/bow need normal blending.
+    syncPool(pixiPresents, presents, () => {
+      const glowG = new PIXI.Graphics(); glowG.blendMode = "add";
+      const bodyG = new PIXI.Graphics();
+      const wrap = new PIXI.Container();
+      wrap.addChild(glowG, bodyG);
+      wrap._glow = glowG; wrap._body = bodyG;
+      return wrap;
+    }, (wrap, p) => {
+      if (wrap._drawnR !== p.r){
+        const w = p.r * 1.6;
+        wrap._glow.clear().circle(0, 0, p.r * 1.9).fill({ color: 0xff7de0, alpha: 0.28 });
+        wrap._body.clear()
+          .rect(-w/2, -w/2, w, w).fill(0xff7de0)
+          .rect(-w/2, -w*0.12, w, w*0.24).fill(0xffd166)
+          .rect(-w*0.12, -w/2, w*0.24, w).fill(0xffd166)
+          .circle(-w*0.16, -w/2, w*0.16).fill(0xffd166)
+          .circle(w*0.16, -w/2, w*0.16).fill(0xffd166);
+        wrap._drawnR = p.r;
+      }
+      wrap.position.set(p.x, p.y + Math.sin(p.bob) * 3);
+    });
+
+    // Pulse (uniform scale, applied to the whole wrap so glow and star stay
+    // in the same 2:1 ratio the original's independent s.r*2*p / s.r*p
+    // multipliers give it) + spin (rotation — harmless on the glow, since a
+    // circle is rotation-invariant). Static shape, drawn once per radius.
+    syncPool(pixiStars, stars, () => {
+      const glowG = new PIXI.Graphics(); glowG.blendMode = "add";
+      const bodyG = new PIXI.Graphics();
+      const wrap = new PIXI.Container();
+      wrap.addChild(glowG, bodyG);
+      wrap._glow = glowG; wrap._body = bodyG;
+      return wrap;
+    }, (wrap, s) => {
+      if (wrap._drawnR !== s.r){
+        wrap._glow.clear().circle(0, 0, s.r*2).fill({ color: 0xffd166, alpha: 0.3 });
+        wrap._body.clear();
+        wrap._body.moveTo(0, 0);
+        for (let i = 0; i < 5; i++){
+          const a = i/5*TAU - Math.PI/2, a2 = a + TAU/10;
+          wrap._body.lineTo(Math.cos(a)*s.r, Math.sin(a)*s.r);
+          wrap._body.lineTo(Math.cos(a2)*s.r*0.45, Math.sin(a2)*s.r*0.45);
+        }
+        wrap._body.closePath().fill(0xffd166);
+        wrap._drawnR = s.r;
+      }
+      wrap.position.set(s.x, s.y);
+      wrap.rotation = s.spin;
+      wrap.scale.set(1 + Math.sin(s.pulse) * 0.12);
+    });
+
+    // The flick's wiggle (the tail curve's control point sway) is dropped,
+    // same simplification as fish's tail wobble — a static curve at this
+    // size, cached, redrawn only if the radius changes.
+    syncPool(pixiBabies, babies, () => {
+      const glowG = new PIXI.Graphics(); glowG.blendMode = "add";
+      const bodyG = new PIXI.Graphics();
+      const wrap = new PIXI.Container();
+      wrap.addChild(glowG, bodyG);
+      wrap._glow = glowG; wrap._body = bodyG;
+      return wrap;
+    }, (wrap, b) => {
+      if (wrap._drawnR !== b.r){
+        wrap._glow.clear().circle(0, 0, b.r*2.2).fill({ color: 0xf6ff8a, alpha: 0.4 });
+        wrap._body.clear()
+          .moveTo(b.r, 0).quadraticCurveTo(-b.r*0.2, 0, -b.r*1.6, 0)
+          .stroke({ width: b.r*0.9, cap: "round", color: 0xf6ff8a })
+          .circle(b.r*0.9, 0, 1.4).fill(0x04202c);
+        wrap._drawnR = b.r;
+      }
+      wrap.position.set(b.x, b.y);
+      wrap.rotation = b.a;
+    });
+
+    // Predator body only — the boss ring/pips/"BOSS" label stay on the
+    // Canvas 2D overlay (drawRivalName-style text, upright in screen space,
+    // unconditional), same "text/UI stays on Canvas 2D" split as everywhere
+    // else in this phase. Cache key includes stunned/boss since those flip
+    // the body's fill colours. Glow (additive) and body (normal) split into
+    // two Graphics again, same reason as the eel ribbons and presents.
+    syncPool(pixiPredators, predators, () => {
+      const glowG = new PIXI.Graphics(); glowG.blendMode = "add";
+      const bodyG = new PIXI.Graphics();
+      const wrap = new PIXI.Container();
+      wrap.addChild(glowG, bodyG);
+      wrap._glow = glowG; wrap._body = bodyG;
+      return wrap;
+    }, (wrap, p) => {
+      const stunned = p.stun > 0;
+      const key = `${p.r}|${stunned}|${p.boss}`;
+      if (wrap._drawnKey !== key){
+        const bodyC = stunned ? 0x2b6478 : (p.boss ? 0x4a2350 : 0x2b5468);
+        const glowC = stunned ? 0x8ef3ff : (p.boss ? 0xc83cb4 : 0xff5d6c);
+        const eyeC = stunned ? 0x8ef3ff : 0xff5d6c;
+        wrap._glow.clear()
+          .circle(0, 0, p.r*1.6).fill({ color: glowC, alpha: stunned ? 0.25 : (p.boss ? 0.28 : 0.18) });
+        wrap._body.clear()
+          .ellipse(0, 0, p.r*1.5, p.r).fill(bodyC)
+          .poly([-p.r*1.3,0, -p.r*2.4,-p.r*0.9, -p.r*2.4,p.r*0.9]).fill(bodyC)
+          .poly([p.r*0.1,-p.r*0.9, -p.r*0.6,-p.r*1.7, -p.r*0.7,-p.r*0.9]).fill(bodyC)
+          .poly([p.r*1.5,0, p.r*0.7,p.r*0.5, p.r*0.9,-p.r*0.1]).fill(0x0a2531)
+          .circle(p.r*0.7, -p.r*0.35, p.r*0.16).fill(eyeC);
+        wrap._drawnKey = key;
+      }
+      wrap.position.set(p.x, p.y);
+      wrap.rotation = p.a;
+    });
+
+    // Feasts are rare (a handful at most) and their 6 mini-fish genuinely
+    // orbit every frame (not just spin in place), so — unlike everything
+    // above — this one just redraws in full every frame; caching would
+    // save little at this count and cost real complexity. The gradient
+    // core is approximated with three concentric fills (Canvas 2D's true
+    // radial gradient has no direct Pixi equivalent this simple), and each
+    // orbiting fish is drawn axis-aligned rather than rotated to face its
+    // direction of travel (Graphics has no per-shape rotate — only the
+    // whole object's transform — and re-deriving that per mini-fish, six
+    // times, every frame, for a detail this small isn't worth it). The
+    // "10×" label stays on the Canvas 2D overlay with the other small text.
+    syncPool(pixiFeasts, feasts, () => {
+      const glowG = new PIXI.Graphics(); glowG.blendMode = "add";
+      const bodyG = new PIXI.Graphics();
+      const wrap = new PIXI.Container();
+      wrap.addChild(glowG, bodyG);
+      wrap._glow = glowG; wrap._body = bodyG;
+      return wrap;
+    }, (wrap, s) => {
+      const p = 1 + Math.sin(s.pulse) * 0.14;
+      wrap._glow.clear().circle(0, 0, s.r*2.4*p).fill({ color: 0x6dffb0, alpha: 0.28 });
+      wrap._body.clear()
+        .circle(0, 0, s.r*p).fill(0x1f9e6a)
+        .circle(0, 0, s.r*p*0.66).fill(0x6dffb0)
+        .circle(0, 0, s.r*p*0.22).fill(0xeaffff);
+      for (let i = 0; i < 6; i++){
+        const a = s.spin + i/6*TAU;
+        const ox = Math.cos(a)*s.r*1.7, oy = Math.sin(a)*s.r*1.7;
+        wrap._body.ellipse(ox, oy, 4, 2.4).fill(0xffd166);
+      }
+      wrap.position.set(s.x, s.y);
+    });
+
+    // Particles fade (alpha) and never rotate; colour/radius are fixed for
+    // a given particle's lifetime, so — same pattern as everything above —
+    // draw once per (radius, colour), then just update alpha/position.
+    syncPool(pixiParticles, particles, () => {
+      const g = new PIXI.Graphics(); g.blendMode = "add"; return g;
+    }, (g, p) => {
+      const colorNum = typeof p.color === "string" && p.color[0] === "#"
+        ? parseInt(p.color.slice(1), 16) : 0xffffff;
+      if (g._drawnR !== p.r || g._drawnColor !== colorNum){
+        g.clear().circle(0, 0, p.r).fill(colorNum);
+        g._drawnR = p.r; g._drawnColor = colorNum;
+      }
+      g.alpha = clamp(p.life, 0, 1);
+      g.position.set(p.x, p.y);
+    });
+
+    pixiBubbles.visible = pixiEnergy.visible = pixiFish.visible =
+      pixiPresents.visible = pixiStars.visible = pixiBabies.visible =
+      pixiPredators.visible = pixiFeasts.visible = pixiParticles.visible = !!player;
   }
 
   // Graphics fills take a packed hex number, not the "hsl(...)" strings
@@ -4482,36 +4662,44 @@
     for (const p of predators){
       const [sx,sy] = worldToScreen(p.x,p.y);
       if (sx<-80||sx>W+80||sy<-80||sy>H+80) continue;
-      ctx.save();
-      ctx.translate(sx,sy); ctx.rotate(p.a);
       const stunned = p.stun > 0;
-      // glow
-      ctx.save(); ctx.globalCompositeOperation="lighter";
-      ctx.fillStyle = stunned ? "rgba(142,243,255,0.25)" : (p.boss ? "rgba(200,60,180,0.28)" : "rgba(255,93,108,0.18)");
-      ctx.beginPath(); ctx.arc(0,0,p.r*1.6,0,TAU); ctx.fill();
-      ctx.restore();
-      // body
-      ctx.fillStyle = stunned ? "#2b6478" : (p.boss ? "#4a2350" : "#2b5468");
-      ctx.beginPath(); ctx.ellipse(0,0,p.r*1.5,p.r,0,0,TAU); ctx.fill();
-      // tail fin (swishes)
-      const sw = Math.sin(p.tail)*0.5;
-      ctx.beginPath();
-      ctx.moveTo(-p.r*1.3,0);
-      ctx.lineTo(-p.r*2.4,-p.r*0.9+sw*10);
-      ctx.lineTo(-p.r*2.4, p.r*0.9+sw*10);
-      ctx.closePath(); ctx.fill();
-      // dorsal
-      ctx.beginPath();
-      ctx.moveTo(p.r*0.1,-p.r*0.9); ctx.lineTo(-p.r*0.6,-p.r*1.7); ctx.lineTo(-p.r*0.7,-p.r*0.9);
-      ctx.closePath(); ctx.fill();
-      // jaw
-      ctx.fillStyle = "#0a2531";
-      ctx.beginPath(); ctx.moveTo(p.r*1.5,0); ctx.lineTo(p.r*0.7,p.r*0.5); ctx.lineTo(p.r*0.9,-p.r*0.1);
-      ctx.closePath(); ctx.fill();
-      // eye
-      ctx.fillStyle = stunned ? "#8ef3ff" : "#ff5d6c";
-      ctx.beginPath(); ctx.arc(p.r*0.7,-p.r*0.35,p.r*0.16,0,TAU); ctx.fill();
-      ctx.restore();
+      // Body (glow, ellipse, tail, dorsal, jaw, eye) renders on the WebGL
+      // layer once it's ready — see syncPixiWorld's pixiPredators pool,
+      // above drawPixiFrame — and the tail-fin swish is dropped there,
+      // same static-shape simplification as fish's tail wobble. The boss
+      // badge below stays Canvas 2D either way: it's upright screen-space
+      // text/UI, not part of the body mesh.
+      if (!pixiReady){
+        ctx.save();
+        ctx.translate(sx,sy); ctx.rotate(p.a);
+        // glow
+        ctx.save(); ctx.globalCompositeOperation="lighter";
+        ctx.fillStyle = stunned ? "rgba(142,243,255,0.25)" : (p.boss ? "rgba(200,60,180,0.28)" : "rgba(255,93,108,0.18)");
+        ctx.beginPath(); ctx.arc(0,0,p.r*1.6,0,TAU); ctx.fill();
+        ctx.restore();
+        // body
+        ctx.fillStyle = stunned ? "#2b6478" : (p.boss ? "#4a2350" : "#2b5468");
+        ctx.beginPath(); ctx.ellipse(0,0,p.r*1.5,p.r,0,0,TAU); ctx.fill();
+        // tail fin (swishes)
+        const sw = Math.sin(p.tail)*0.5;
+        ctx.beginPath();
+        ctx.moveTo(-p.r*1.3,0);
+        ctx.lineTo(-p.r*2.4,-p.r*0.9+sw*10);
+        ctx.lineTo(-p.r*2.4, p.r*0.9+sw*10);
+        ctx.closePath(); ctx.fill();
+        // dorsal
+        ctx.beginPath();
+        ctx.moveTo(p.r*0.1,-p.r*0.9); ctx.lineTo(-p.r*0.6,-p.r*1.7); ctx.lineTo(-p.r*0.7,-p.r*0.9);
+        ctx.closePath(); ctx.fill();
+        // jaw
+        ctx.fillStyle = "#0a2531";
+        ctx.beginPath(); ctx.moveTo(p.r*1.5,0); ctx.lineTo(p.r*0.7,p.r*0.5); ctx.lineTo(p.r*0.9,-p.r*0.1);
+        ctx.closePath(); ctx.fill();
+        // eye
+        ctx.fillStyle = stunned ? "#8ef3ff" : "#ff5d6c";
+        ctx.beginPath(); ctx.arc(p.r*0.7,-p.r*0.35,p.r*0.16,0,TAU); ctx.fill();
+        ctx.restore();
+      }
       // boss badge: ring, "BOSS" label and remaining hit pips (drawn upright, in screen space)
       if (p.boss){
         ctx.save(); ctx.globalCompositeOperation="lighter";
@@ -4665,23 +4853,31 @@
       const p = 1 + Math.sin(s.pulse)*0.14;
       ctx.save();
       ctx.translate(sx,sy);
-      // glow halo
-      ctx.save(); ctx.globalCompositeOperation="lighter";
-      ctx.fillStyle="rgba(109,255,176,0.28)";
-      ctx.beginPath(); ctx.arc(0,0,s.r*2.4*p,0,TAU); ctx.fill(); ctx.restore();
-      // core pearl
-      const g = ctx.createRadialGradient(0,0,2,0,0,s.r*p);
-      g.addColorStop(0,"#eaffff"); g.addColorStop(0.5,"#6dffb0"); g.addColorStop(1,"#1f9e6a");
-      ctx.fillStyle = g;
-      ctx.beginPath(); ctx.arc(0,0,s.r*p,0,TAU); ctx.fill();
-      // orbiting little fish
-      ctx.fillStyle = "#ffd166";
-      for (let i=0;i<6;i++){
-        const a = s.spin + i/6*TAU;
-        const ox = Math.cos(a)*s.r*1.7, oy = Math.sin(a)*s.r*1.7;
-        ctx.save(); ctx.translate(ox,oy); ctx.rotate(a+Math.PI/2);
-        ctx.beginPath(); ctx.ellipse(0,0,4,2.4,0,0,TAU); ctx.fill();
-        ctx.restore();
+      // Glow halo, core pearl and the orbiting mini-fish render on the
+      // WebGL layer once it's ready — see syncPixiWorld's pixiFeasts pool
+      // (redrawn every frame there, not cached: feasts are rare enough
+      // that caching would save little, and the orbiting fish genuinely
+      // move every frame unlike a static tail wobble). The "10×" mark
+      // stays Canvas 2D either way — upright text, not part of the mesh.
+      if (!pixiReady){
+        // glow halo
+        ctx.save(); ctx.globalCompositeOperation="lighter";
+        ctx.fillStyle="rgba(109,255,176,0.28)";
+        ctx.beginPath(); ctx.arc(0,0,s.r*2.4*p,0,TAU); ctx.fill(); ctx.restore();
+        // core pearl
+        const g = ctx.createRadialGradient(0,0,2,0,0,s.r*p);
+        g.addColorStop(0,"#eaffff"); g.addColorStop(0.5,"#6dffb0"); g.addColorStop(1,"#1f9e6a");
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(0,0,s.r*p,0,TAU); ctx.fill();
+        // orbiting little fish
+        ctx.fillStyle = "#ffd166";
+        for (let i=0;i<6;i++){
+          const a = s.spin + i/6*TAU;
+          const ox = Math.cos(a)*s.r*1.7, oy = Math.sin(a)*s.r*1.7;
+          ctx.save(); ctx.translate(ox,oy); ctx.rotate(a+Math.PI/2);
+          ctx.beginPath(); ctx.ellipse(0,0,4,2.4,0,0,TAU); ctx.fill();
+          ctx.restore();
+        }
       }
       // "10x" mark
       ctx.fillStyle="#04302a"; ctx.font="bold 11px Trebuchet MS,sans-serif";
@@ -4749,15 +4945,21 @@
     if (!player){ renderPixiFrame(); return; }
     drawWorldBounds();
     if (!pixiReady){ drawBubbles(); drawEnergy(); }
-    drawPresents();
-    drawStars();
+    // drawFeasts() and drawPredators() stay unconditional even once WebGL
+    // is ready — each still draws a Canvas 2D-only piece (the "10×" label;
+    // the boss ring/pips/label) on top of what's now a WebGL body/core.
+    // drawPresents()/drawStars()/drawBabies()/drawParticles() are fully
+    // migrated, so they're skipped entirely once pixiReady, same as
+    // drawFish() below.
+    if (!pixiReady) drawPresents();
+    if (!pixiReady) drawStars();
     drawFeasts();
-    drawBabies();
+    if (!pixiReady) drawBabies();
     if (!pixiReady) drawFish();
     drawRivalEels();
     drawPredators();
     drawPlayer();
-    drawParticles();
+    if (!pixiReady) drawParticles();
     // drawRivalEels()/drawPlayer() are what actually update each eel's
     // ribbon Graphics this frame (see drawEelBody) — the GPU submit has to
     // happen after both, or it rasterizes stale (last-frame) eel geometry.
