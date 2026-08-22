@@ -3,7 +3,7 @@
 // before its declaration and threw on load, so the game never started at all.)
 import { describe, it, expect } from "vitest";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 
 const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 
@@ -41,6 +41,21 @@ describe("built index.html", () => {
     // that one assignment before checking nothing else points off the page.
     const withoutLeaderboardUrl = html.replace(/const LEADERBOARD_URL = "[^"]*";/, "");
     expect(withoutLeaderboardUrl).not.toMatch(/https?:\/\/(?!www\.w3\.org)/);
+  });
+
+  it("produces separate web and app artifacts from the same source", () => {
+    const root = new URL("..", import.meta.url);
+    const dist = new URL("../dist", import.meta.url);
+    rmSync(dist, { recursive: true, force: true });
+
+    execFileSync("node", ["build.mjs", "--target", "web"], { cwd: root });
+    execFileSync("node", ["build.mjs", "--target", "app"], { cwd: root });
+
+    const web = readFileSync(new URL("../dist/web/index.html", import.meta.url), "utf8");
+    const app = readFileSync(new URL("../dist/app/index.html", import.meta.url), "utf8");
+    expect(web).toContain('const BUILD_TARGET = "web";');
+    expect(app).toContain('const BUILD_TARGET = "app";');
+    expect(web.replace('const BUILD_TARGET = "web";', 'const BUILD_TARGET = "app";')).toBe(app);
   });
 
   it("executes without throwing when loaded", () => {
