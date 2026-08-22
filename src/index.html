@@ -2698,10 +2698,49 @@
     }
   }
 
+  // World-space port of matBrushedMetal — fine directional grain, thin
+  // low-alpha ribbons running the whole body at hashed normal offsets.
+  // Count/alpha/spread come from resolveMaterial's strength/scale exactly
+  // like the Canvas 2D version; `detail` is the same 1-for-player,
+  // lower-for-rival richness knob Canvas 2D's drawSkinMaterial already uses.
+  function pixiMatBrushedMetal(bodyG, body, step, bodyLength, radius, skin, detail){
+    const m = Engine.resolveMaterial(skin);
+    const count = Math.max(2, Math.round(5 * m.strength * detail));
+    const alpha = 0.05 + 0.10 * m.strength;
+    for (let g = 0; g < count; g++){
+      const hash = (((Math.sin(g * 12.9898 + bodyLength * 0.013) * 43758.5453) % 1) + 1) % 1;
+      const side = hash > 0.5 ? 1 : -1;
+      const offset = side * (0.15 + hash * 0.55) * m.scale;
+      const width = 0.02 + hash * 0.03;
+      pixiBodyRibbon(bodyG, body, step, bodyLength, radius, offset - width, offset + width, 0xffffff, alpha);
+    }
+  }
+
+  // Dispatch table mirroring Canvas 2D's SKIN_MATERIAL — a material id that
+  // has no WebGL entry yet falls back to organic, same never-throw contract
+  // as Engine.resolveMaterial and the Canvas 2D drawSkinMaterial fallback.
+  const PIXI_SKIN_MATERIAL = { organic: pixiMatOrganic, brushedMetal: pixiMatBrushedMetal };
+
+  // World-space port of fxSheen — a bright specular streak down one flank
+  // and a dark rim down the other, on top of the universal shading every
+  // skin gets from pixiDrawBodyShading. Ported as two full-length filled
+  // ribbons (matching this file's other pixiBodyRibbon-based passes) rather
+  // than Canvas 2D's per-segment offset strokes — a disclosed simplification
+  // that reads the same at this stroke width/alpha and is far cheaper than
+  // ~250 individual per-eel strokes. Offsets are the Canvas 2D stroke's own
+  // center ± half its lineWidth, converted to bodyRibbon's from/to fractions.
+  function pixiFxSheen(bodyG, body, step, bodyLength, radius, skin){
+    const { hue, sat, bodyLight, headLight, sheen } = skin;
+    pixiBodyRibbon(bodyG, body, step, bodyLength, radius, -0.9, -0.2,
+      hslToHex(hue, sat, Math.max(4, bodyLight - 20)), 0.35 * sheen);
+    pixiBodyRibbon(bodyG, body, step, bodyLength, radius, 0.25, 0.75,
+      hslToHex(hue, Math.max(0, sat - 30), Math.min(98, headLight + 24)), 0.6 * sheen);
+  }
+
   // Shared by the player and every rival — draws exactly the two layers
   // described above into the given pair of (already-cleared) Graphics.
-  function drawEelRibbon(glowG, bodyG, body, step, radius, skin, glow){
-    const { hue, sat, bodyLight, headLight, accent, accentRatio = 0.5 } = skin;
+  function drawEelRibbon(glowG, bodyG, body, step, radius, skin, glow, detail){
+    const { hue, sat, bodyLight, headLight, accent, accentRatio = 0.5, sheen = 0 } = skin;
     const marks = [].concat(skin.mark ?? []);
     const BAND = 52;
 
@@ -2723,20 +2762,24 @@
         .stroke({ width: r * 2, cap: "round", join: "round", color: hslToHex(bh, bs, bl + t * 18) });
     }
 
-    // Universal baseline shading, then the organic material — every eel
-    // gets both, same order as the Canvas 2D pass (drawBodyShading, then
-    // drawSkinMaterial). Only `organic` is ported so far (see PR AS in the
-    // plan file); every other SKIN_MATERIAL id falls back to organic here
-    // too for now, matching resolveMaterial's own never-throw fallback —
-    // their bespoke textures are still Canvas 2D until their own PRs.
+    // Universal baseline shading, then whatever material this skin resolves
+    // to, then sheen on top — same order as the Canvas 2D pass
+    // (drawBodyShading, drawSkinMaterial, fxSheen). Only organic and
+    // brushedMetal are ported so far (see PRs AS/AT in the plan file); every
+    // other SKIN_MATERIAL id falls back to organic here too for now,
+    // matching resolveMaterial's own never-throw fallback — their bespoke
+    // textures are still Canvas 2D until their own PRs.
     pixiDrawBodyShading(bodyG, body, step, body.length, radius);
-    pixiMatOrganic(bodyG, body, step, body.length, radius);
+    const matType = Engine.resolveMaterial(skin).type;
+    const drawMat = PIXI_SKIN_MATERIAL[matType] ?? PIXI_SKIN_MATERIAL.organic;
+    drawMat(bodyG, body, step, body.length, radius, skin, detail);
+    if (sheen > 0) pixiFxSheen(bodyG, body, step, body.length, radius, skin);
   }
 
   function drawPlayerRibbonPixi(body, step, radius, skin, glow){
     ensurePixiEelLayers();
     pixiPlayerGlow.clear(); pixiPlayerBody.clear();
-    drawEelRibbon(pixiPlayerGlow, pixiPlayerBody, body, step, radius, skin, glow);
+    drawEelRibbon(pixiPlayerGlow, pixiPlayerBody, body, step, radius, skin, glow, 1);
   }
 
   function drawRivalRibbonsBegin(){
@@ -2748,7 +2791,7 @@
   function drawRivalRibbonPixi(idx, body, step, radius, skin, glow){
     const glowG = pixiRivalGlow.children[idx], bodyG = pixiRivalBody.children[idx];
     glowG.clear(); bodyG.clear();
-    drawEelRibbon(glowG, bodyG, body, step, radius, skin, glow);
+    drawEelRibbon(glowG, bodyG, body, step, radius, skin, glow, 0.5);
   }
 
   // Split from the actual render() call on purpose: this syncs everything
