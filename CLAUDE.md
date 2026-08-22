@@ -78,7 +78,9 @@ eel.io/
 │   │   ├── spawn.js      # spawn rules (takes rng + config, returns entities)
 │   │   └── world.js      # step(state, input, dt, rng) -> state  ← the heart, pure
 │   ├── render/draw.js    # reads state, draws to canvas (NOT unit-tested; visual only)
+│   │                     #   — not yet extracted; see the note below the tree
 │   └── input/controls.js # pointer/keyboard/touch -> intent object {aim, boost, zap}
+│                         #   — not yet extracted; see the note below the tree
 ├── worker/               # leaderboard server (Cloudflare Workers + D1)
 │   ├── index.js          # imports the SAME rules from src/engine/
 │   ├── schema.sql
@@ -113,6 +115,22 @@ eel.io/
 `bank.js`, `skins.js`, `presents.js`, `minigames.js`, `progress.js`, `vector.js`,
 `stats.js`, `achievements.js` and `challenges.js` exist so far. The rest is the destination, not
 a description of today — see §9.
+
+`render/draw.js` and `input/controls.js` are the one part of this target that
+Phase 7 (#85, the WebGL/PixiJS renderer) deliberately chose not to build
+toward. Splitting the renderer into its own file(s) would mean `build.mjs`
+gaining a mechanism to inline non-`engine/` JS — `bundleEngine()` is written
+specifically for `engine/`'s hand-authored export style, and building a
+second inliner was real, additional build-system risk the renderer swap
+itself didn't need. So both the pre-existing Canvas 2D drawing functions and
+every WebGL/Pixi function added for #85 (renderer/camera setup, the eel
+ribbon and head mesh, every material and skin `fx`) live inline in
+`src/index.html`, alongside input handling — a call made once, early in
+the phase, and never revisited because nothing since has needed it
+revisited. Unlike `engine/`'s modules, this isn't a slice waiting its turn
+in §9's migration order; it's a standing decision. Revisit only if the
+render code's size or a genuine reuse need (e.g. sharing it with another
+shell) makes the inliner worth building.
 
 A `capacitor/` directory also exists, outside this tree entirely: an optional
 native iOS/Android wrapper around the built `index.html`, with its own
@@ -495,7 +513,7 @@ it off with `npx wrangler telemetry disable` or `WRANGLER_SEND_METRICS=false`.
 - **Rebuild before committing.** `npm run check` fails on a stale `index.html`.
 - **Tunables live in `config.js`**, not scattered as magic numbers, so tests can pin them and balance changes stay in one place.
 - **One engine module = one unit spec.** New engine file ⇒ new `test/*.test.js`. Add it to `ENGINE_MODULES` in `build.mjs` too, in dependency order.
-- **Don't unit-test the renderer.** `draw.js` is validated by eye. Keep logic *out* of it so there's nothing there worth testing.
+- **Don't unit-test the renderer.** Whether Canvas 2D or WebGL/Pixi, it's validated by eye (Playwright screenshots during development, never a committed visual-regression suite). Keep logic *out* of it so there's nothing there worth testing.
 - **Sound and haptics are shell-only, same as the renderer.** `AudioContext` and
   `navigator.vibrate` are banned in `engine/` for the same reason `Math.random`
   is — and `test/build.test.js`'s sandbox has neither, so even a top-level
