@@ -6247,10 +6247,7 @@
         name: "eel-metal-material", vertex: METAL_VERTEX, fragment: METAL_FRAGMENT,
       });
     }
-    const geometry = new PIXI.MeshGeometry({
-      positions: new Float32Array(0), uvs: new Float32Array(0), indices: new Uint32Array(0),
-    });
-    geometry.addAttribute("aCurve", { buffer: new Float32Array(0), format: "float32" });
+    const geometry = makeMetalGeometry(0);
     const metalUniforms = new PIXI.UniformGroup({
       uBaseColor: { value: new Float32Array([1, 1, 1]), type: "vec3<f32>" },
       uHighlightColor: { value: new Float32Array([1, 1, 1]), type: "vec3<f32>" },
@@ -6265,8 +6262,26 @@
     const shader = new PIXI.Shader({ glProgram: pixiMetalProgram, resources: { metalUniforms } });
     const mesh = new PIXI.Mesh({ geometry, shader });
     mesh._metalUniforms = metalUniforms;
+    mesh._metalSampleCount = 0;
     mesh.visible = false;
     return mesh;
+  }
+
+  function makeMetalGeometry(sampleCount){
+    const vertexCount = sampleCount * 2;
+    const geometry = new PIXI.MeshGeometry({
+      positions: new Float32Array(vertexCount * 2),
+      uvs: new Float32Array(vertexCount * 2),
+      // An eel is nowhere near Uint16's vertex limit. Keeping the index
+      // buffer 16-bit avoids the mobile WebGL driver extension/path used by
+      // Uint32 indices and makes all four attributes change size atomically.
+      indices: new Uint16Array(Math.max(0, sampleCount - 1) * 6),
+      shrinkBuffersToFit: true,
+    });
+    geometry.addAttribute("aCurve", {
+      buffer: new Float32Array(vertexCount), format: "float32",
+    });
+    return geometry;
   }
 
   function colorVec(hex, out){
@@ -6278,23 +6293,42 @@
   function updateMetalMesh(mesh, body, step, radius, skin, nowMs, detail){
     const m = Engine.resolveMaterial(skin);
     if (m.type !== "brushedMetal") { mesh.visible = false; return false; }
-    const samples = [];
-    for (let i = 0; i < body.length; i += step) samples.push(i);
-    if (samples[samples.length - 1] !== body.length - 1) samples.push(body.length - 1);
-    if (samples.length < 2) { mesh.visible = false; return false; }
-    const positions = new Float32Array(samples.length * 4);
-    const uvs = new Float32Array(samples.length * 4);
-    const curves = new Float32Array(samples.length * 2);
-    const indices = new Uint32Array((samples.length - 1) * 6);
-    for (let s = 0; s < samples.length; s++){
-      const i = samples[s], p = body[i];
-      const ai = samples[Math.max(0, s - 1)], bi = samples[Math.min(samples.length - 1, s + 1)];
+    const sampleCount = Math.ceil((body.length - 1) / step) + 1;
+    if (sampleCount < 2) { mesh.visible = false; return false; }
+
+    // Pixi tracks each GPU buffer independently. Replacing positions, UVs,
+    // curvature and indices one after another while their lengths change can
+    // expose a mixed old/new vertex layout to some mobile WebGL drivers. Swap
+    // one complete geometry when the topology changes; otherwise update the
+    // existing typed arrays in place, which also removes four hot-loop
+    // allocations per metallic eel per frame.
+    if (mesh._metalSampleCount !== sampleCount){
+      const oldGeometry = mesh.geometry;
+      mesh.geometry = makeMetalGeometry(sampleCount);
+      mesh._metalSampleCount = sampleCount;
+      oldGeometry.destroy(true);
+    }
+    const geometry = mesh.geometry;
+    const positions = geometry.positions;
+    const uvs = geometry.uvs;
+    const curves = geometry.getBuffer("aCurve").data;
+    const indices = geometry.indices;
+    for (let s = 0; s < sampleCount; s++){
+      const i = Math.min(s * step, body.length - 1), p = body[i];
+      const ai = Math.min(Math.max(0, s - 1) * step, body.length - 1);
+      const bi = Math.min((s + 1) * step, body.length - 1);
       const a = body[ai], b = body[bi];
+      if (!Number.isFinite(p.x) || !Number.isFinite(p.y)
+          || !Number.isFinite(a.x) || !Number.isFinite(a.y)
+          || !Number.isFinite(b.x) || !Number.isFinite(b.y)){
+        mesh.visible = false;
+        return false;
+      }
       const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
       const nx = -dy / len, ny = dx / len;
       const t = 1 - i / body.length, r = radius * (0.35 + 0.65 * t);
       let curve = 0;
-      if (s > 0 && s < samples.length - 1){
+      if (s > 0 && s < sampleCount - 1){
         const inAng = Math.atan2(p.y - a.y, p.x - a.x);
         const outAng = Math.atan2(b.y - p.y, b.x - p.x);
         curve = Math.min(1, Math.abs(Math.atan2(Math.sin(outAng - inAng), Math.cos(outAng - inAng))) / 0.45);
@@ -6302,18 +6336,15 @@
       const v = s * 4;
       positions[v] = p.x - nx * r; positions[v + 1] = p.y - ny * r;
       positions[v + 2] = p.x + nx * r; positions[v + 3] = p.y + ny * r;
-      const u = s / (samples.length - 1);
+      const u = s / (sampleCount - 1);
       uvs[v] = u; uvs[v + 1] = 0; uvs[v + 2] = u; uvs[v + 3] = 1;
       curves[s * 2] = curve; curves[s * 2 + 1] = curve;
-      if (s < samples.length - 1){
+      if (s < sampleCount - 1){
         const k = s * 6, n = s * 2;
         indices[k] = n; indices[k + 1] = n + 1; indices[k + 2] = n + 2;
         indices[k + 3] = n + 1; indices[k + 4] = n + 3; indices[k + 5] = n + 2;
       }
     }
-    const geometry = mesh.geometry;
-    geometry.positions = positions; geometry.uvs = uvs; geometry.indices = indices;
-    geometry.getBuffer("aCurve").data = curves;
     geometry.getBuffer("aPosition").update(); geometry.getBuffer("aUV").update();
     geometry.getBuffer("aCurve").update(); geometry.getIndex().update();
     const u = mesh._metalUniforms.uniforms;
