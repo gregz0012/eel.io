@@ -2761,16 +2761,46 @@
   // Count/alpha/spread come from resolveMaterial's strength/scale exactly
   // like the Canvas 2D version; `detail` is the same 1-for-player,
   // lower-for-rival richness knob Canvas 2D's drawSkinMaterial already uses.
-  function pixiMatBrushedMetal(bodyG, body, step, bodyLength, radius, skin, detail){
+  function pixiMatBrushedMetal(bodyG, body, step, bodyLength, radius, skin, detail, nowMs, glowG){
     const m = Engine.resolveMaterial(skin);
-    const count = Math.max(2, Math.round(5 * m.strength * detail));
-    const alpha = 0.05 + 0.10 * m.strength;
+    const count = Math.max(2, Math.round(6 * m.grainStrength * detail));
+    const alpha = (0.04 + 0.11 * m.grainStrength) * (0.65 + 0.35 * m.roughness);
     for (let g = 0; g < count; g++){
       const hash = (((Math.sin(g * 12.9898 + bodyLength * 0.013) * 43758.5453) % 1) + 1) % 1;
       const side = hash > 0.5 ? 1 : -1;
       const offset = side * (0.15 + hash * 0.55) * m.scale;
-      const width = 0.02 + hash * 0.03;
-      pixiBodyRibbon(bodyG, body, step, bodyLength, radius, offset - width, offset + width, 0xffffff, alpha);
+      const width = (0.018 + hash * 0.035) * (0.7 + m.roughness * 0.6);
+      const grainColor = g % 3 === 0 ? 0x000000 : 0xffffff;
+      pixiBodyRibbon(bodyG, body, step, bodyLength, radius, offset - width, offset + width,
+        grainColor, grainColor === 0 ? alpha * 0.45 : alpha);
+    }
+
+    // Curvature-aware reflection samples. Each sample derives its normal
+    // from the bent body itself, so the highlight travels with the eel rather
+    // than being painted at a fixed screen coordinate. Rough metals receive
+    // broad, quiet reflections; polished metals receive tight bright ones.
+    // Sampling every third ribbon point keeps this bounded on mobile.
+    const stride = Math.max(step, step * 3);
+    const sprint = detail >= 1 && pointer.boosting ? 1.22 : 1;
+    const sweep = Math.sin(nowMs * 0.0011 * sprint) * 0.42;
+    const hiColor = hslToHex(skin.hue, Math.max(0, skin.sat - 35), Math.min(98, skin.headLight + 24));
+    for (let i = stride; i < body.length - stride; i += stride){
+      const a = body[i - stride], p = body[i], b = body[i + stride];
+      const inAng = Math.atan2(p.y - a.y, p.x - a.x);
+      const outAng = Math.atan2(b.y - p.y, b.x - p.x);
+      const bend = Math.min(1, Math.abs(Math.atan2(Math.sin(outAng - inAng), Math.cos(outAng - inAng))) / 0.45);
+      const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      const t = 1 - i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const side = sweep + Math.sin(i * 0.075 + nowMs * 0.00035 * sprint) * 0.18;
+      const width = Math.max(0.7, r * (0.08 + m.highlightWidth * 0.2));
+      const alpha = Math.min(0.88, (0.11 + bend * 0.3) * m.reflectivity * detail * sprint);
+      const x = p.x + nx * r * side, y = p.y + ny * r * side;
+      const along = Math.max(1.2, r * (0.25 + m.highlightWidth * 0.35));
+      glowG.moveTo(x - dx / len * along, y - dy / len * along)
+        .lineTo(x + dx / len * along, y + dy / len * along)
+        .stroke({ width, color: hiColor, alpha, cap: "round" });
     }
   }
 
@@ -3004,10 +3034,15 @@
   // center ± half its lineWidth, converted to bodyRibbon's from/to fractions.
   function pixiFxSheen(bodyG, body, step, bodyLength, radius, skin){
     const { hue, sat, bodyLight, headLight, sheen } = skin;
+    const m = Engine.resolveMaterial(skin);
+    const metal = m.type === "brushedMetal";
+    const reflectivity = metal ? m.reflectivity : sheen;
+    const width = metal ? m.highlightWidth : 0.5;
     pixiBodyRibbon(bodyG, body, step, bodyLength, radius, -0.9, -0.2,
-      hslToHex(hue, sat, Math.max(4, bodyLight - 20)), 0.35 * sheen);
-    pixiBodyRibbon(bodyG, body, step, bodyLength, radius, 0.25, 0.75,
-      hslToHex(hue, Math.max(0, sat - 30), Math.min(98, headLight + 24)), 0.6 * sheen);
+      hslToHex(hue, sat, Math.max(4, bodyLight - 20)), 0.24 * sheen * (metal ? 0.65 + m.roughness * 0.35 : 1));
+    pixiBodyRibbon(bodyG, body, step, bodyLength, radius, 0.5 - width, 0.5 + width,
+      hslToHex(hue, Math.max(0, sat - 30), Math.min(98, headLight + 24)),
+      Math.min(0.8, 0.32 * sheen + 0.38 * reflectivity));
   }
 
   // World-space port of matCrystal — faceted geometric regions rather than
@@ -4329,8 +4364,12 @@
   // reflectivity a polished metal has above that shared baseline, which is
   // why its intensities are lower than they used to be. Scaling by sheen is
   // still what separates dull iron from mirror-bright platinum.
-  function fxSheen(ctx2d, pts, bodyLength, radius, skin){
+  function fxSheen(ctx2d, pts, bodyLength, radius, skin, nowMs = 0){
     const { hue, sat, bodyLight, headLight, sheen } = skin;
+    const m = Engine.resolveMaterial(skin);
+    const metal = m.type === "brushedMetal";
+    const reflectivity = metal ? m.reflectivity : sheen;
+    const highlightWidth = metal ? m.highlightWidth : 0.5;
     for (let k = pts.length - 1; k >= 1; k--){
       const a = pts[k], b = pts[k - 1];
       const t = 1 - a.i / bodyLength;
@@ -4338,18 +4377,19 @@
       const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
       const nx = -dy / len, ny = dx / len;         // unit normal to the spine
 
-      ctx2d.strokeStyle = `hsla(${hue},${sat}%,${Math.max(4, bodyLight - 20)}%,${0.35 * sheen})`;
+      ctx2d.strokeStyle = `hsla(${hue},${sat}%,${Math.max(4, bodyLight - 20)}%,${0.24 * sheen * (metal ? 0.65 + m.roughness * 0.35 : 1)})`;
       ctx2d.lineWidth = r * 0.7;
       ctx2d.beginPath();
       ctx2d.moveTo(a.x - nx * r * 0.55, a.y - ny * r * 0.55);
       ctx2d.lineTo(b.x - nx * r * 0.55, b.y - ny * r * 0.55);
       ctx2d.stroke();
 
-      ctx2d.strokeStyle = `hsla(${hue},${Math.max(0, sat - 30)}%,${Math.min(98, headLight + 24)}%,${0.6 * sheen})`;
-      ctx2d.lineWidth = r * 0.5;
+      const sweep = metal ? 0.42 + Math.sin(nowMs * 0.0011 + a.i * 0.045) * 0.2 : 0.5;
+      ctx2d.strokeStyle = `hsla(${hue},${Math.max(0, sat - 30)}%,${Math.min(98, headLight + 24)}%,${Math.min(0.8, 0.32 * sheen + 0.38 * reflectivity)})`;
+      ctx2d.lineWidth = r * (0.16 + highlightWidth * 0.42);
       ctx2d.beginPath();
-      ctx2d.moveTo(a.x + nx * r * 0.5, a.y + ny * r * 0.5);
-      ctx2d.lineTo(b.x + nx * r * 0.5, b.y + ny * r * 0.5);
+      ctx2d.moveTo(a.x + nx * r * sweep, a.y + ny * r * sweep);
+      ctx2d.lineTo(b.x + nx * r * sweep, b.y + ny * r * sweep);
       ctx2d.stroke();
     }
   }
@@ -5402,15 +5442,15 @@
   // is the surface texture underneath the shine, not a substitute for it.
   function matBrushedMetal(ctx2d, pts, bodyLength, radius, skin, nowMs, detail){
     const m = Engine.resolveMaterial(skin);
-    const count = Math.max(2, Math.round(5 * m.strength * detail));
-    const alpha = 0.05 + 0.10 * m.strength;
+    const count = Math.max(2, Math.round(6 * m.grainStrength * detail));
+    const alpha = (0.04 + 0.11 * m.grainStrength) * (0.65 + 0.35 * m.roughness);
     for (let g = 0; g < count; g++){
       const hash = (((Math.sin(g * 12.9898 + bodyLength * 0.013) * 43758.5453) % 1) + 1) % 1;
       const side = hash > 0.5 ? 1 : -1;
       const offset = side * (0.15 + hash * 0.55) * m.scale;
-      const width = 0.02 + hash * 0.03;
+      const width = (0.018 + hash * 0.035) * (0.7 + m.roughness * 0.6);
       bodyRibbon(ctx2d, pts, bodyLength, radius, offset - width, offset + width,
-        `rgba(255,255,255,${alpha})`);
+        g % 3 === 0 ? `rgba(0,0,0,${alpha * 0.45})` : `rgba(255,255,255,${alpha})`);
     }
   }
 
@@ -5904,7 +5944,7 @@
 
     // sheen, a gem's twinkle and a themed fx finish all walk the same shared
     // projection built above.
-    if (sheen > 0) fxSheen(ctx, pts, body.length, radius, skin);
+    if (sheen > 0) fxSheen(ctx, pts, body.length, radius, skin, nowMs);
     if (gem) fxGemTwinkle(ctx, pts, 4, body.length, radius, skin, nowMs);
     if (skin.fx) drawSkinFx(ctx, pts, body.length, radius, skin, nowMs, skinGlow);
 
@@ -6570,7 +6610,7 @@
     // same specular treatment the game uses, so the preview is honest — body
     // here is PREVIEW_BODY itself (every point carries its own `i`, matching
     // its array index, since the preview walks every point already)
-    if (sheen > 0) fxSheen(pctx, body, body.length, radius, skin);
+    if (sheen > 0) fxSheen(pctx, body, body.length, radius, skin, previewNowMs);
     if (gem) fxGemTwinkle(pctx, body, 3, body.length, radius, skin, previewNowMs);
     // no real zap or boost in the shop — synthetic, slowly-cycling values let
     // both skins visibly demonstrate their fx rather than sitting at one

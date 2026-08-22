@@ -91,13 +91,13 @@ export const SKINS = [
   // copper, tighter and richer as the price climbs, all but vanishing under
   // Platinum's near-mirror finish where sheen alone does the work
   { id: "copper", tier: "metallic",   name: "Copper",   hue: 24,  sat: 62, bodyLight: 32, headLight: 54, price: 500,  sheen: 0.32,
-    material: { type: "brushedMetal", strength: 0.4, scale: 1.3 } },
-  { id: "iron", tier: "metallic",     name: "Iron",     hue: 210, sat: 10, bodyLight: 38, headLight: 64, price: 1000, sheen: 0.52,
-    material: { type: "brushedMetal", strength: 0.55, scale: 1.0 } },
-  { id: "gold", tier: "metallic",     name: "Gold",     hue: 45,  sat: 78, bodyLight: 40, headLight: 66, price: 2000, sheen: 0.78,
-    material: { type: "brushedMetal", strength: 0.7, scale: 0.85 } },
-  { id: "platinum", tier: "metallic", name: "Platinum", hue: 205, sat: 14, bodyLight: 56, headLight: 90, price: 5000, sheen: 1,
-    material: { type: "brushedMetal", strength: 0.3, scale: 0.6 } },
+    material: { type: "brushedMetal", strength: 0.4, scale: 1.3, roughness: 0.68, reflectivity: 0.34, grainStrength: 0.62, highlightWidth: 0.58 } },
+  { id: "iron", tier: "metallic",     name: "Iron",     hue: 210, sat: 10, bodyLight: 34, headLight: 58, price: 1000, sheen: 0.52,
+    material: { type: "brushedMetal", strength: 0.55, scale: 1.0, roughness: 0.82, reflectivity: 0.28, grainStrength: 0.9, highlightWidth: 0.34 } },
+  { id: "gold", tier: "metallic",     name: "Gold",     hue: 45,  sat: 78, bodyLight: 38, headLight: 68, price: 2000, sheen: 0.78,
+    material: { type: "brushedMetal", strength: 0.7, scale: 0.85, roughness: 0.28, reflectivity: 0.76, grainStrength: 0.38, highlightWidth: 0.24 } },
+  { id: "platinum", tier: "metallic", name: "Platinum", hue: 205, sat: 14, bodyLight: 52, headLight: 92, price: 5000, sheen: 1,
+    material: { type: "brushedMetal", strength: 0.3, scale: 0.6, roughness: 0.1, reflectivity: 0.96, grainStrength: 0.16, highlightWidth: 0.14 } },
 
   // the elements — each its own price and its own depth, deepening as the
   // element gets more dramatic to look at rather than climbing a flat ladder
@@ -369,7 +369,7 @@ export function skinFromHue(hue) {
  */
 export const MATERIALS = {
   organic: { strength: 0.5, scale: 1 },
-  brushedMetal: { strength: 0.5, scale: 1 },
+  brushedMetal: { strength: 0.5, scale: 1, roughness: 0.5, reflectivity: 0.5, grainStrength: 0.5, highlightWidth: 0.35 },
   stone: { strength: 0.5, scale: 1 },
   charred: { strength: 0.5, scale: 1 },
   crystal: { strength: 0.5, scale: 1 },
@@ -385,8 +385,8 @@ export const MATERIALS = {
 const DEFAULT_MATERIAL = Object.freeze({ type: "organic", ...MATERIALS.organic });
 
 /**
- * Normalise whatever a skin names as its material into `{type, strength,
- * scale}` the renderer can rely on unconditionally. `skin.material` may be
+ * Normalise whatever a skin names as its material into a complete material
+ * configuration the renderer can rely on unconditionally. `skin.material` may be
  * absent, a bare string ("stone"), or an object ({type, strength, scale}) —
  * all three are legal input shapes. Anything unrecognisable (a typo, a
  * future skin whose material hasn't shipped yet, garbage from a corrupted
@@ -403,7 +403,10 @@ export function resolveMaterial(skin) {
   if (typeof m === "object") {
     const base = MATERIALS[m.type];
     if (!base) return DEFAULT_MATERIAL;
-    return { type: m.type, strength: m.strength ?? base.strength, scale: m.scale ?? base.scale };
+    // Preserve material-specific parameters (roughness/reflectivity for
+    // metals today, clarity/dispersion for gems later) without making the
+    // normaliser grow a new hard-coded property list for every material.
+    return { ...base, ...m, type: m.type };
   }
   return DEFAULT_MATERIAL;
 }
