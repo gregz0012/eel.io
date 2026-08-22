@@ -2716,10 +2716,102 @@
     }
   }
 
+  // World-space port of mottlePatches — short, hashed ribbon patches keyed
+  // off each patch's own index (not per-frame randomness), shared base for
+  // stone and charred. `lo`/`hi` in the Canvas 2D version are indices into
+  // the already-sampled `pts` array; here `body` is unsampled, so the same
+  // hash-derived span is computed in "sample slot" units (slots = body
+  // sampled every `step`) and then scaled back into raw body-array indices —
+  // preserving the same apparent patch size/density the Canvas 2D version
+  // gets for free by indexing its pre-sampled point list directly.
+  // `styleFor(hash)` returns `{color, alpha}` (a packed hex + a float) rather
+  // than Canvas 2D's CSS colour string, matching how every other pixi
+  // material passes its fill to pixiBodyRibbon.
+  function pixiMottlePatches(bodyG, body, step, bodyLength, radius, count, styleFor){
+    const slots = Math.floor(body.length / step);
+    if (slots < 6) return;
+    for (let j = 0; j < count; j++){
+      const hash = (((Math.sin(j * 17.23 + bodyLength * 0.007) * 12958.35) % 1) + 1) % 1;
+      const loS = Math.max(0, Math.min(slots - 2, Math.floor(hash * (slots - 3))));
+      const hiS = Math.min(slots - 1, loS + 1 + Math.floor(hash * 3));
+      if (hiS <= loS) continue;
+      const lo = loS * step, hi = Math.min(body.length - 1, hiS * step);
+      const side = hash > 0.5 ? 1 : -1;
+      const from = side * (0.1 + hash * 0.3);
+      const to = side * (0.3 + hash * 0.3);
+      const { color, alpha } = styleFor(hash);
+      pixiBodyRibbon(bodyG, body, step, bodyLength, radius, from, to, color, alpha, lo, hi);
+    }
+  }
+
+  // World-space port of drawCrackLips — a thin dark stroke under where
+  // Canvas 2D's fxCracks/fxEmber (still Canvas-2D-only; not ported this PR)
+  // draw their own bright crack lines, so the cracks read as cut into rock
+  // rather than painted over a flat body. Ported as individual per-segment
+  // strokes directly on bodyG, the same style drawEelRibbon's own
+  // accent-banded body loop already uses — not a bodyRibbon fill, since a
+  // lip is a short radial mark sticking out from the spine, not a
+  // lengthwise band. Uses the raw body index as its jitter hash seed
+  // (rather than Canvas 2D's `p.i`), the same disclosed simplification
+  // pixiMatOrganic already made for the same reason.
+  function pixiDrawCrackLips(bodyG, body, step, bodyLength, radius, color, alpha){
+    for (let i = step; i < body.length; i += step){
+      const p = body[i], q = body[i - step];
+      const jitter = (((Math.sin(i * 12.9898) * 43758.5453) % 1) + 1) % 1;
+      if (jitter < 0.5) continue;
+      const t = 1 - i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      const side = jitter > 0.75 ? 1 : -1;
+      bodyG.moveTo(p.x, p.y)
+        .lineTo(p.x + nx * r * 0.7 * side, p.y + ny * r * 0.7 * side)
+        .stroke({ width: Math.max(1.2, r * 0.16), color, alpha });
+    }
+  }
+
+  // World-space port of matStone — mottled, low-contrast grey/brown patches
+  // plus dark crack lips underneath where fxCracks will land its own bright
+  // lines (still Canvas 2D, drawn on top of this WebGL body afterward).
+  function pixiMatStone(bodyG, body, step, bodyLength, radius, skin, detail){
+    const m = Engine.resolveMaterial(skin);
+    const count = Math.max(3, Math.round(6 * m.strength * detail));
+    pixiMottlePatches(bodyG, body, step, bodyLength, radius, count, hash =>
+      hash > 0.5 ? { color: 0x000000, alpha: 0.08 + 0.10 * m.strength }
+                  : { color: 0xffffff, alpha: 0.05 + 0.08 * m.strength });
+    pixiDrawCrackLips(bodyG, body, step, bodyLength, radius, 0x000000, 0.35);
+  }
+
+  // World-space port of matCharred — the same mottle idea as stone, near-
+  // black, plus a hot under-glow layer reading as heat through a charcoal
+  // crust. Disclosed simplification: Canvas 2D draws the hot patches with
+  // globalCompositeOperation "lighter" for a true additive glow; a Pixi
+  // Graphics object has one blendMode for its whole content, and bodyG is
+  // already normal-blend for the base fill/shading/organic-texture passes
+  // above it, so adding a genuine additive layer here would mean a third
+  // pooled Graphics per eel for one material. Instead the hot patches are
+  // drawn at a boosted alpha in normal "over" blend, layered on top of the
+  // dark patches already drawn into bodyG — loses the true glow-through
+  // luminosity but keeps the "warmth breaking through blackened stone"
+  // read this material is actually going for.
+  function pixiMatCharred(bodyG, body, step, bodyLength, radius, skin, detail){
+    const m = Engine.resolveMaterial(skin);
+    const count = Math.max(3, Math.round(6 * m.strength * detail));
+    pixiMottlePatches(bodyG, body, step, bodyLength, radius, count, () =>
+      ({ color: 0x000000, alpha: 0.18 + 0.12 * m.strength }));
+    const emberColor = hslToHex(22, 95, 52);
+    pixiMottlePatches(bodyG, body, step, bodyLength, radius, Math.max(3, Math.round(4 * m.strength * detail)), () =>
+      ({ color: emberColor, alpha: 0.3 + 0.35 * m.strength }));
+    pixiDrawCrackLips(bodyG, body, step, bodyLength, radius, 0x000000, 0.4);
+  }
+
   // Dispatch table mirroring Canvas 2D's SKIN_MATERIAL — a material id that
   // has no WebGL entry yet falls back to organic, same never-throw contract
   // as Engine.resolveMaterial and the Canvas 2D drawSkinMaterial fallback.
-  const PIXI_SKIN_MATERIAL = { organic: pixiMatOrganic, brushedMetal: pixiMatBrushedMetal };
+  const PIXI_SKIN_MATERIAL = {
+    organic: pixiMatOrganic, brushedMetal: pixiMatBrushedMetal,
+    stone: pixiMatStone, charred: pixiMatCharred,
+  };
 
   // World-space port of fxSheen — a bright specular streak down one flank
   // and a dark rim down the other, on top of the universal shading every
