@@ -22,7 +22,10 @@
 // level, and the server decides the display name and whether the run is
 // plausible.
 //
-// Deploy:  npx wrangler deploy      (from this directory)
+// Deploy:  npm ci (repo root), then from this directory:
+//          ../node_modules/.bin/wrangler deploy
+// Wrangler is a pinned root devDependency (see package.json) — not fetched
+// fresh via npx at deploy time. See README.md's "Or from a laptop" section.
 
 import { CONFIG } from "../src/engine/config.js";
 import { validateSubmission, topRows, clampTopLimit } from "../src/engine/leaderboard.js";
