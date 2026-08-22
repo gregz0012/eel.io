@@ -14,10 +14,12 @@
 // vendor/README.md for the update procedure and CLAUDE.md §1/§8 for why this
 // carve-out exists and what it does and doesn't permit.
 //
-//   node build.mjs           write index.html from src/
-//   node build.mjs --check   fail if index.html is stale (used by npm run check)
+//   node build.mjs                 write the committed web build to index.html
+//   node build.mjs --target web    write dist/web/index.html
+//   node build.mjs --target app    write dist/app/index.html
+//   node build.mjs --check         fail if the committed index.html is stale
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createHash } from "node:crypto";
@@ -45,6 +47,7 @@ const ENGINE_MODULES = [
 ];
 
 const MARKER = "/* @inject:engine */";
+const BUILD_TARGET_MARKER = "/* @inject:build-target */";
 
 const IMPORT_LINE = /^\s*import\s[^;]*;\s*$/gm;
 const EXPORT_DECL = /^(\s*)export\s+(?=(?:async\s+)?(?:function|const|let|class)\b)/gm;
@@ -110,7 +113,7 @@ function readVendorPixi() {
   return js;
 }
 
-function build() {
+function build(target) {
   let shell = readFileSync(join(root, "src/index.html"), "utf8");
   if (!shell.includes(MARKER)) {
     throw new Error(`src/index.html is missing the ${MARKER} marker`);
@@ -118,6 +121,14 @@ function build() {
   if (!shell.includes(VENDOR_MARKER)) {
     throw new Error(`src/index.html is missing the ${VENDOR_MARKER} marker`);
   }
+  if (!shell.includes(BUILD_TARGET_MARKER)) {
+    throw new Error(`src/index.html is missing the ${BUILD_TARGET_MARKER} marker`);
+  }
+
+  shell = shell.replace(
+    BUILD_TARGET_MARKER,
+    () => `const BUILD_TARGET = ${JSON.stringify(target)};`
+  );
 
   // Both splices below use a replacer *function*, not a replacement string.
   // String.prototype.replace(searchString, replacementString) still treats
@@ -137,17 +148,34 @@ function build() {
   return shell.replace(indent + MARKER, () => bundle);
 }
 
-const out = build();
-const target = join(root, "index.html");
+function requestedTarget(argv) {
+  const index = argv.indexOf("--target");
+  if (index === -1) return "web";
+  const value = argv[index + 1];
+  if (value !== "web" && value !== "app") {
+    throw new Error('--target must be either "web" or "app"');
+  }
+  return value;
+}
+
+const buildTarget = requestedTarget(process.argv.slice(2));
+const out = build(buildTarget);
+const explicitTarget = process.argv.includes("--target");
+const outputFile = explicitTarget
+  ? join(root, "dist", buildTarget, "index.html")
+  : join(root, "index.html");
 
 if (process.argv.includes("--check")) {
-  const current = readFileSync(target, "utf8");
+  const current = readFileSync(outputFile, "utf8");
   if (current !== out) {
-    console.error("index.html is out of date — run `npm run build` and commit the result.");
+    console.error(`${outputFile} is out of date — rebuild it before continuing.`);
     process.exit(1);
   }
-  console.log("index.html is up to date.");
+  console.log(`${outputFile} is up to date.`);
 } else {
-  writeFileSync(target, out);
-  console.log(`Wrote index.html (${ENGINE_MODULES.length} engine module(s) inlined).`);
+  mkdirSync(dirname(outputFile), { recursive: true });
+  writeFileSync(outputFile, out);
+  console.log(
+    `Wrote ${outputFile} for ${buildTarget} (${ENGINE_MODULES.length} engine module(s) inlined).`
+  );
 }

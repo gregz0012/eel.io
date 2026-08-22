@@ -1,7 +1,7 @@
 # Eel Shock — native wrapper (Capacitor)
 
-Wraps the built [`../index.html`](../index.html) in a native WebView for iOS
-and Android, via [Capacitor](https://capacitorjs.com/). This is a separate,
+Wraps the shared app artifact at `../dist/app/index.html` in a native WebView
+for iOS and Android, via [Capacitor](https://capacitorjs.com/). This is a separate,
 additive project: nothing here touches `src/**`, `build.mjs`, or the test
 suite, and none of its dependencies ship to the browser version of the game.
 
@@ -15,32 +15,29 @@ time without affecting it.
 
 ```bash
 cd capacitor
-npm install
+npm ci
 npx cap add ios       # needs Xcode, macOS only
 npx cap add android    # needs Android Studio
 ```
 
-`ios/` and `android/` are the generated native projects. They're gitignored —
-`npx cap add` regenerates them from `capacitor.config.json` and the contents
-of `www/`, so there's nothing platform-specific to keep in version control
-here. Icons, splash screens, the app's signing identity, and store-listing
-details (screenshots, description, age rating) all live in those generated
-projects or in App Store Connect / Google Play Console directly — none of
-that is scoped by this PR.
+The pinned Capacitor 8 toolchain requires Node.js 22 or newer. GitHub Actions
+already uses Node 22; use the same supported baseline on release machines.
+
+`ios/` and `android/` are currently generated locally and gitignored. A later
+release-automation slice of #144 will decide when those projects become signed,
+versioned release inputs. Icons, splash screens, signing identities and store
+listings are outside this build-foundation slice.
 
 ## Every time the web game changes
 
 ```bash
-npm run build     # at the repo root — regenerates index.html from src/
-cd capacitor
-npm run sync       # copies index.html into www/, then npx cap sync
+npm run sync:app   # at the repo root
 ```
 
-`npm run sync` (or `open:ios` / `open:android`, which also open the native
-IDE) always copies the *root* `index.html` fresh — `www/` is derived, never
-edited by hand, and is gitignored for the same reason the root `index.html`
-is not: one is the single source of truth, the other is just this wrapper's
-local copy of it.
+This runs `build:app`, stages `dist/app/index.html` in `capacitor/www`, then
+runs `cap sync`. From inside this directory, `npm run sync` performs the same
+fresh-build flow. `www/` and `dist/` are derived and must never be edited by
+hand.
 
 ## Building and shipping
 
@@ -62,3 +59,7 @@ project's "zero runtime dependencies ship to the browser" guarantee
 (see [`../CLAUDE.md`](../CLAUDE.md) §1) stays literally true: nothing here is
 ever `npm install`ed at the repo root, and `index.html` remains exactly what
 it always was.
+
+All Capacitor packages are pinned to the same exact version and captured in
+`capacitor/package-lock.json`. Use `npm ci`; update the four packages together
+in a reviewed change rather than resolving floating versions during a release.

@@ -154,7 +154,7 @@ It needs two repository secrets — **Settings → Secrets and variables → Act
 
 | Secret | Where it comes from |
 | --- | --- |
-| `CLOUDFLARE_API_TOKEN` | Cloudflare dashboard → My Profile → API Tokens → Create Token. Use the **Edit Cloudflare Workers** template, and add **D1 → Edit** so it can create the table too. |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare dashboard → My Profile → API Tokens → Create Token. Grant only **Account → Workers Scripts → Edit** and **Account → D1 → Edit**, scoped to the Cloudflare account that owns Eel Shock. Do not use the Global API Key or an all-accounts token. Add an expiry and IP restriction if they fit the deployment setup. |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare dashboard → Workers & Pages → right-hand sidebar (or the hex string in the dashboard URL). |
 
 The workflow refuses to start if either is missing, and it runs the unit tests
@@ -168,10 +168,17 @@ in the source rather than in a secret.
 ### Or from a laptop
 
 ```bash
+npm ci
 cd worker
-npx wrangler d1 execute eelio --remote --file=./schema.sql   # create the table, once
-npx wrangler deploy                                          # prints the Worker's URL
+../node_modules/.bin/wrangler d1 execute eelio --remote --file=./schema.sql
+../node_modules/.bin/wrangler deploy
 ```
+
+Wrangler is an exact root dev dependency and is recorded in
+`package-lock.json`. CI and local deploys use that reviewed version rather
+than downloading whichever release happens to match a major version during a
+privileged deployment. Rotate the API token if it is ever exposed, and review
+its permissions whenever the deployment workflow changes.
 
 ## Working on it
 
@@ -182,8 +189,17 @@ core), and `build.mjs` inlines them into the single file the browser gets.
 ```bash
 npm install      # dev-only tools (vitest, cucumber) — nothing ships to the browser
 npm run build    # regenerate index.html from src/
+npm run build:web # write the web artifact to dist/web/index.html
+npm run build:app # write the Capacitor artifact to dist/app/index.html
 npm run check    # build freshness + acceptance scenarios + unit tests
 ```
+
+The committed root `index.html` remains the self-contained web build that can
+be opened directly or served by GitHub Pages. The two `dist/` directories are
+derived release artifacts and are intentionally ignored by Git. Both are built
+from the same source; their only current difference is the injected
+`BUILD_TARGET` value (`web` or `app`) reserved for small platform-specific
+shell behaviour. Gameplay code must not branch or be duplicated by platform.
 
 `npm run check` also runs on every push, via the
 [`check`](.github/workflows/check.yml) workflow.
@@ -193,11 +209,16 @@ See [`CLAUDE.md`](CLAUDE.md) for the architecture and the BDD → TDD workflow.
 ## Native app (iOS / Android)
 
 Eel Shock plays fine as a web page — but if you want it installable, the
-[`capacitor/`](capacitor/) directory wraps the built `index.html` in a
+[`capacitor/`](capacitor/) directory wraps `dist/app/index.html` in a
 [Capacitor](https://capacitorjs.com/) WebView for iOS and Android. It's a
 separate, additive project: nothing in it touches `src/**`, `build.mjs`, or
 the test suite, and none of its dependencies ship to the browser version.
 See [`capacitor/README.md`](capacitor/README.md) for setup.
+
+Capacitor dependencies are pinned to exact versions in its own committed
+`package-lock.json`. Run `npm run sync:app` at the repository root to rebuild
+the app target, stage it in `capacitor/www`, and sync any locally generated
+native projects.
 
 ## Enable the online version (GitHub Pages)
 

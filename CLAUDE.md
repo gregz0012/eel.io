@@ -47,7 +47,10 @@ The goal is to make behaviour **testable without a browser** by separating a **p
 
 ```
 eel.io/
-├── index.html            # BUILD OUTPUT — do not edit by hand. Generated, committed, shipped.
+├── index.html            # WEB BUILD OUTPUT — generated, committed, directly playable.
+├── dist/                 # DERIVED release outputs — ignored, never hand-edited.
+│   ├── web/index.html    # npm run build:web
+│   └── app/index.html    # npm run build:app; source for capacitor/www
 ├── build.mjs             # inlines src/engine/** and vendor/pixi.min.js into index.html
 ├── vendor-pixi.mjs       # `npm run vendor:pixi` — copies+scrubs+pins PixiJS into vendor/
 ├── vendor/               # ONE vendored, pinned, offline library (PixiJS, #85) — see vendor/README.md
@@ -145,7 +148,7 @@ on anything above; the web version is still the primary target.
 
 The engine is written as ES modules so Node can import it directly in tests. Browsers refuse to load ES modules over `file://`, and design value #2 says Eel Shock stays a single file you can double-click or email to a kid. Those two facts are irreconcilable without a build.
 
-So `build.mjs` concatenates the engine modules into one scope, exposes them to the shell as `Engine`, and writes the root `index.html`. There is still **no *bundler*** in the traditional sense — nothing is tree-shaken, transpiled, or module-resolved; the output is plain HTML/CSS/JS, and the build is a small amount of readable Node with no build-tool packages behind it.
+So `build.mjs` concatenates the engine modules into one scope, exposes them to the shell as `Engine`, and writes either the committed root `index.html`, `dist/web/index.html`, or `dist/app/index.html`. There is still **no *bundler*** in the traditional sense — nothing is tree-shaken, transpiled, or module-resolved; the output is plain HTML/CSS/JS, and the build is a small amount of readable Node with no build-tool packages behind it. The target builds differ only by an injected `BUILD_TARGET` constant reserved for small shell integrations; gameplay and progression code stay shared.
 
 Since the WebGL renderer (#85), `build.mjs` also splices one pinned, offline vendored library — PixiJS's built bundle at `vendor/pixi.min.js` — into its own `<script id="vendor-pixi">` block, verbatim, never through `bundleEngine()`'s regex transform (which is written only for `src/engine/`'s hand-authored export style and would mangle a real third-party UMD bundle). A SHA-256 pinned in `vendor/PIXI_VERSION` is checked on every build and guards against the committed file drifting or being hand-edited outside the documented update procedure. See `vendor/README.md` for that procedure, and §8's vendoring guardrail for what this carve-out does and doesn't permit.
 
@@ -153,6 +156,7 @@ Consequences to respect:
 
 - **Never hand-edit the root `index.html`.** Edit `src/index.html` or `src/engine/**`, then `npm run build`.
 - **The built `index.html` is committed.** GitHub Pages serves it and people double-click it. `npm run check` fails if it is stale.
+- **The `dist/` targets are derived.** Build them with `npm run build:web` and `npm run build:app`; do not commit or hand-edit them.
 - **Engine exports share one scope after bundling.** Two modules exporting the same name is a build error, by design.
 
 ### The one rule that makes this work: keep `engine/` pure

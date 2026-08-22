@@ -24,3 +24,5 @@ jobs:
       # build freshness + Cucumber scenarios + Vitest units. A stale committed
       # index.html fails here, which is the point: Pages serves that file.
       - run: npm run check
+      # Both distribution targets must remain buildable from the same source.
+      - run: npm run build:targets

@@ -43,7 +43,8 @@ when they preserve the visible request and these guardrails.
 - `src/engine/`: deterministic, DOM-free game rules and data.
 - `index.html`: generated, committed, self-contained build output. Never edit it
   by hand.
-- `build.mjs`: inlines engine modules and the pinned PixiJS vendor bundle.
+- `build.mjs`: inlines engine modules and the pinned PixiJS vendor bundle into
+  the committed root web build or derived `dist/web` and `dist/app` targets.
 - `vendor/`: pinned offline PixiJS distribution. Do not hand-edit it.
 - `test/`: Vitest unit tests.
 - `features/`: Cucumber acceptance scenarios and step definitions.
@@ -78,6 +79,10 @@ New engine modules require a corresponding `test/*.test.js` file and an entry in
 - Run `npm run build` after every source change.
 - Commit the regenerated root `index.html` with its source.
 - `npm run build:check` must report that the build is current.
+- `npm run build:web` and `npm run build:app` must use the same source. Only
+  small shell integrations may branch on the injected `BUILD_TARGET`; gameplay
+  logic must remain shared.
+- `dist/` and `capacitor/www/` are derived artifacts and are not committed.
 
 ### Dependencies and offline operation
 
@@ -167,6 +172,9 @@ refactors, comments, and build changes do not require a new Gherkin scenario.
 ```bash
 npm install          # install dev dependencies
 npm run build        # regenerate root index.html
+npm run build:web    # write dist/web/index.html
+npm run build:app    # write dist/app/index.html
+npm run sync:app     # build app target and sync a configured Capacitor project
 npm run build:check  # verify generated output is current
 npm test             # Vitest unit suite
 npm run bdd          # Cucumber acceptance suite
@@ -234,4 +242,3 @@ A task is complete only when applicable items are true:
 - Documentation/comments are updated when architecture or non-obvious contracts
   change.
 - The PR accurately states what changed and what was validated.
-
