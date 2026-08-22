@@ -13,7 +13,7 @@ Design values, in priority order:
 1. **No ads, no accounts, no tracking.** Ever. The leaderboard is opt-in and
    anonymous — see §4; if a feature needs to know *who* someone is, it is the
    wrong feature.
-2. **Runs offline, zero runtime dependencies.** The shipped `index.html` is one self-contained file of plain HTML/CSS/JS on a `<canvas>`. No frameworks or libraries reach the browser.
+2. **Runs offline, no network-fetched runtime dependency.** The shipped `index.html` is one self-contained file you can double-click or email to a kid — nothing it needs is ever fetched over the network at load or play time. As of the WebGL renderer (#85), one exception is deliberately carved out: PixiJS is vendored into the file itself — pinned, hash-checked, and inlined as static text at build time, never referenced via `<script src=` and never touched over HTTP(S) — so "zero runtime dependency" becomes "zero *network* runtime dependency, one vendored offline one, by design and reviewed as such." Nothing else gets this exception without equally deliberate sign-off; see §8's vendoring guardrail.
 3. **Family-friendly and approachable.** It's played by kids. Keep controls forgiving and difficulty fair.
 4. **Readable over clever.** This is a hobby project meant to be understood and tinkered with.
 
@@ -48,7 +48,9 @@ The goal is to make behaviour **testable without a browser** by separating a **p
 ```
 eel.io/
 ├── index.html            # BUILD OUTPUT — do not edit by hand. Generated, committed, shipped.
-├── build.mjs             # inlines src/engine/** into index.html
+├── build.mjs             # inlines src/engine/** and vendor/pixi.min.js into index.html
+├── vendor-pixi.mjs       # `npm run vendor:pixi` — copies+scrubs+pins PixiJS into vendor/
+├── vendor/               # ONE vendored, pinned, offline library (PixiJS, #85) — see vendor/README.md
 ├── src/
 │   ├── index.html        # the shell: canvas + HUD + game loop, with /* @inject:engine */
 │   ├── engine/           # PURE game core — no DOM, no canvas, no globals, no wall-clock, no Math.random
@@ -102,7 +104,9 @@ eel.io/
 │   ├── worker.test.js    # the Worker's decisions, against a stubbed D1
 │   └── build.test.js     # the build output stays in sync and actually executes
 ├── cucumber.js
-└── package.json          # dev-only deps (vitest, cucumber); ZERO runtime deps
+└── package.json          # dev-only deps (vitest, cucumber, pixi.js — the
+                           #   last used only to vendor vendor/pixi.min.js);
+                           #   no network-fetched runtime deps
 ```
 
 `config.js`, `rng.js`, `scoring.js`, `identity.js`, `leaderboard.js`, `session.js`,
@@ -120,7 +124,9 @@ on anything above; the web version is still the primary target.
 
 The engine is written as ES modules so Node can import it directly in tests. Browsers refuse to load ES modules over `file://`, and design value #2 says Eel Shock stays a single file you can double-click or email to a kid. Those two facts are irreconcilable without a build.
 
-So `build.mjs` concatenates the engine modules into one scope, exposes them to the shell as `Engine`, and writes the root `index.html`. There is still **no runtime dependency and no bundler** — the output is plain HTML/CSS/JS, and the build is ~90 lines of readable Node with no packages behind it.
+So `build.mjs` concatenates the engine modules into one scope, exposes them to the shell as `Engine`, and writes the root `index.html`. There is still **no *bundler*** in the traditional sense — nothing is tree-shaken, transpiled, or module-resolved; the output is plain HTML/CSS/JS, and the build is a small amount of readable Node with no build-tool packages behind it.
+
+Since the WebGL renderer (#85), `build.mjs` also splices one pinned, offline vendored library — PixiJS's built bundle at `vendor/pixi.min.js` — into its own `<script id="vendor-pixi">` block, verbatim, never through `bundleEngine()`'s regex transform (which is written only for `src/engine/`'s hand-authored export style and would mangle a real third-party UMD bundle). A SHA-256 pinned in `vendor/PIXI_VERSION` is checked on every build and guards against the committed file drifting or being hand-edited outside the documented update procedure. See `vendor/README.md` for that procedure, and §8's vendoring guardrail for what this carve-out does and doesn't permit.
 
 Consequences to respect:
 
@@ -501,12 +507,12 @@ it off with `npx wrangler telemetry disable` or `WRANGLER_SEND_METRICS=false`.
   exactly (absent ⇒ not muted).
 - **Anything random in `engine/` takes an `rng` argument** — `rollPresent(rng)`, never `Math.random()`. The shell passes the real thing.
 - **Determinism:** every test that touches randomness seeds the RNG. No test may depend on wall-clock time or real randomness.
-- **No runtime dependencies ship to the browser.** `vitest` and `cucumber` are `devDependencies` only. Keep it that way — `test/build.test.js` asserts the shipped file loads nothing external.
+- **No *network-fetched* runtime dependency ships to the browser.** `vitest` and `cucumber` remain `devDependencies` only, never shipped. As of #85, PixiJS is the one deliberate exception to "no libraries reach the browser" — it reaches the browser as vendored, pinned, hash-checked static text inlined at build time (`vendor/pixi.min.js`), never as a live `npm` dependency resolved into the shipped file and never fetched from a CDN. `test/build.test.js` still asserts the shipped file loads nothing external over the network (no `<script src=`, no bare `https?://` outside the one documented `LEADERBOARD_URL` exception) — a vendored library must pass that same bar, not weaken it. Don't add a second vendored library without equally deliberate sign-off; this is a carve-out for the renderer specifically, not a general license to add frameworks.
 - **The leaderboard server derives the player's name; it never accepts one.** See §4.
 - **Nothing the leaderboard needs may become something the game needs.** With no
   server configured, or no network, the game must play exactly as it does today.
 - **Small commits, green suite.** Don't commit red.
-- **Preserve the design values in §1.** Reject changes that add ads, tracking, accounts, or a heavy runtime dependency.
+- **Preserve the design values in §1.** Reject changes that add ads, tracking, accounts, or a *network-fetched* runtime dependency. A vendored, pinned, offline library is only acceptable when it's inlined into the shipped file (never `src=`'d, never CDN-loaded) and reviewed deliberately, as PixiJS was for the WebGL renderer (#85) — that is the bar for any future addition too, not an opened door.
 
 ---
 
