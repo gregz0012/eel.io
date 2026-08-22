@@ -2828,6 +2828,20 @@
     }
   }
 
+  // World-space port of matChitin (Orbweaver) — restrained plated-surface
+  // read via the same pixiMottlePatches technique stone/charred already
+  // established, muted copper/bronze patches over the crimson/charcoal
+  // base. Deliberately no sheen/mirror highlight the way brushedMetal gets
+  // one — this is meant to read as living tissue, not metal armour.
+  function pixiMatChitin(bodyG, body, step, bodyLength, radius, skin, detail){
+    const m = Engine.resolveMaterial(skin);
+    const count = Math.max(3, Math.round(6 * m.strength * detail));
+    const copper = hslToHex(28, 55, 42);
+    pixiMottlePatches(bodyG, body, step, bodyLength, radius, count, hash =>
+      hash > 0.5 ? { color: copper, alpha: 0.08 + 0.09 * m.strength }
+                  : { color: 0x000000, alpha: 0.06 + 0.08 * m.strength });
+  }
+
   // Dispatch table mirroring Canvas 2D's SKIN_MATERIAL — a material id that
   // has no WebGL entry yet falls back to organic, same never-throw contract
   // as Engine.resolveMaterial and the Canvas 2D drawSkinMaterial fallback.
@@ -2835,7 +2849,7 @@
     organic: pixiMatOrganic, brushedMetal: pixiMatBrushedMetal,
     stone: pixiMatStone, charred: pixiMatCharred, crystal: pixiMatCrystal,
     water: pixiMatWater, air: pixiMatAir, charged: pixiMatCharged,
-    liquid: pixiMatLiquid,
+    liquid: pixiMatLiquid, chitin: pixiMatChitin,
   };
 
   // World-space port of fxSheen — a bright specular streak down one flank
@@ -3345,11 +3359,66 @@
     }
   }
 
+  // World-space port of fxSilk (Orbweaver) — two parts, matching Canvas 2D
+  // exactly. Part 1: a handful of thin, asymmetric strand bows (a
+  // quadraticCurveTo per strand, the same curve call Canvas 2D uses —
+  // PIXI.Graphics supports it directly, no polyline approximation needed),
+  // static per frame since their placement is deterministic from `j` and
+  // `bodyLength`, never `nowMs`. Part 2: a rare, self-terminating fine
+  // strand between two sample points a fixed slot-gap apart, drawn only
+  // when their current world distance is small (the body has curled
+  // tightly there) and a low-probability time-bucket hash passes — omitted
+  // entirely under reduced motion, matching Canvas 2D's own gate; the
+  // static bows in part 1 are unaffected, since those were never
+  // time-based to begin with. Both parts operate in "sample slot" units
+  // (slots = body.length/step) rather than Canvas 2D's already-sampled
+  // `pts.length`, the same conversion pixiDrawAccentPatches/pixiMottlePatches
+  // already established, so the same span/gap formulas produce the same
+  // apparent density. Normal blend throughout — Canvas 2D never sets
+  // globalCompositeOperation for silk — so both parts draw into `bodyG`,
+  // not `glowG`.
+  function pixiFxSilk(glowG, bodyG, body, step, bodyLength, radius, skin, nowMs){
+    const slots = Math.floor(body.length / step);
+    if (slots < 8) return;
+    const strandCount = Math.max(3, Math.round(slots / 20));
+    for (let j = 0; j < strandCount; j++){
+      const hash = (((Math.sin(j * 31.7 + bodyLength * 0.011) * 27431.5) % 1) + 1) % 1;
+      const spanHash = (((Math.sin(j * 9.3 + 4.1) * 8123.7) % 1) + 1) % 1;
+      const loS = Math.max(0, Math.min(slots - 5, Math.floor(hash * (slots - 6))));
+      const hiS = Math.min(slots - 1, loS + 3 + Math.floor(spanHash * 6));
+      if (hiS <= loS + 1) continue;
+      const lo = loS * step, hi = Math.min(body.length - 1, hiS * step);
+      const p0 = body[lo], p2 = body[hi];
+      const dx = p2.x - p0.x, dy = p2.y - p0.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      const side = hash > 0.5 ? 1 : -1;
+      const bow = side * (0.15 + spanHash * 0.35) * len;
+      const mx = (p0.x + p2.x) / 2 + nx * bow, my = (p0.y + p2.y) / 2 + ny * bow;
+      bodyG.moveTo(p0.x, p0.y).quadraticCurveTo(mx, my, p2.x, p2.y)
+        .stroke({ width: Math.max(0.5, radius * 0.05), color: 0xc49e6e, alpha: 0.4 });
+    }
+
+    if (!reduceMotion){
+      const gap = Math.max(6, Math.round(slots / 6));
+      const stride = Math.max(4, Math.round(slots / 8));
+      for (let kS = 0; kS + gap < slots; kS += stride){
+        const k = kS * step, kg = Math.min(body.length - 1, (kS + gap) * step);
+        const a = body[k], b = body[kg];
+        if (Math.hypot(a.x - b.x, a.y - b.y) > radius * 1.4) continue;
+        const hash = (((Math.sin(k * 7.13 + Math.floor(nowMs / 1400)) * 5871.3) % 1) + 1) % 1;
+        if (hash < 0.9) continue;
+        bodyG.moveTo(a.x, a.y).lineTo(b.x, b.y)
+          .stroke({ width: Math.max(0.4, radius * 0.03), color: 0xdcbe96, alpha: 0.5 });
+        break;
+      }
+    }
+  }
+
   // Dispatch table for skin.fx — unlike PIXI_SKIN_MATERIAL, no fallback: not
   // having an fx is a valid state (mirrors Canvas 2D's drawSkinFx, which
   // just no-ops when SKIN_FX[skin.fx] is undefined). Only ripple, vortex,
-  // cracks, ember, arc, sparkle, molten, afterimage, stars, spots and slime
-  // are ported so far (see PRs AY-BD in the plan file); every other fx
+  // cracks, ember, arc, sparkle, molten, afterimage, stars, spots, slime and
+  // silk are ported so far (see PRs AY-BH in the plan file); every other fx
   // stays Canvas-2D-only, drawn on top of the WebGL body exactly as before.
   // fade and iridescent (PR BE) are deliberately absent from this table —
   // they recolour the base-fill stroke itself (pixiBodyFxStyle, called
@@ -3361,7 +3430,7 @@
     cracks: pixiFxCracks, ember: pixiFxEmber, arc: pixiFxArc,
     sparkle: pixiFxSparkle, molten: pixiFxMolten,
     afterimage: pixiFxAfterimage, stars: pixiFxStars,
-    spots: pixiFxSpots, slime: pixiFxSlime,
+    spots: pixiFxSpots, slime: pixiFxSlime, silk: pixiFxSilk,
   };
 
   // Shared by the player and every rival — draws exactly the two layers
@@ -3478,6 +3547,40 @@
     bodyG.circle(cx, cy, Math.max(1, size * 0.09)).fill({ color: 0x2a2018 });
   }
 
+  // World-space port of drawOrbweaverMark (Orbweaver's "orbweave" body
+  // mark) — two mirrored, off-axis loops around a small center hub, an
+  // original abstract shape (never a literal spider silhouette). Each loop
+  // is an ellipse with its own local rotation nested inside the icon's
+  // overall placement transform: unlike pixiDrawCrossedSwords' straight
+  // strokes (a single pixiLocalToWorld call per endpoint), a rotated
+  // ellipse has no direct PixiJS Graphics equivalent, so this samples
+  // points around the ellipse in its own local frame — offset by its
+  // Canvas-2D-matching center and rotation — and feeds every sampled point
+  // through pixiLocalToWorld individually, closing the loop into a single
+  // stroked path. The composition (icon placement transform applied last,
+  // outside the ellipse's own local center+rotation) matches how nesting
+  // ctx.ellipse(...) inside an already translate/rotate'd context works in
+  // Canvas 2D, just done by hand instead of via a context stack.
+  function pixiDrawOrbweaverMark(bodyG, cx, cy, ang, size){
+    const segments = 24;
+    for (const side of [-1, 1]){
+      const rx = size * 0.34, ry = size * 0.5, rot = side * 0.5;
+      const cosR = Math.cos(rot), sinR = Math.sin(rot);
+      const ecx = side * size * 0.32, ecy = 0;
+      for (let k = 0; k <= segments; k++){
+        const theta = (k / segments) * Math.PI * 2;
+        const ex = rx * Math.cos(theta), ey = ry * Math.sin(theta);
+        const lx = ecx + ex * cosR - ey * sinR;
+        const ly = ecy + ex * sinR + ey * cosR;
+        const [wx, wy] = pixiLocalToWorld(cx, cy, ang, lx, ly);
+        if (k === 0) bodyG.moveTo(wx, wy);
+        else bodyG.lineTo(wx, wy);
+      }
+      bodyG.stroke({ width: Math.max(1, size * 0.09), color: 0xc49e6e, alpha: 0.55 });
+    }
+    bodyG.circle(cx, cy, Math.max(1, size * 0.1)).fill({ color: 0xc49e6e, alpha: 0.7 });
+  }
+
   function drawEelRibbon(glowG, bodyG, body, step, radius, skin, glow, detail, nowMs){
     const { hue, sat, bodyLight, headLight, accent, accentRatio = 0.5, sheen = 0, gem } = skin;
     const marks = [].concat(skin.mark ?? []);
@@ -3540,6 +3643,21 @@
       const tail = body[Math.min(body.length - 1, si + 5)];
       pixiDrawCrossedSwords(bodyG, body[si].x, body[si].y,
         Math.atan2(body[si].y - tail.y, body[si].x - tail.x), radius * 2.1);
+    }
+
+    // "orbweave": Orbweaver's dorsal marking, sitting a little further back
+    // than "swords"/"emblem" do — matches Canvas 2D's own longer travel
+    // distance (radius*4 vs. radius*3.1) so it reads as a marking on the
+    // back proper, not right behind the head.
+    if (marks.includes("orbweave")){
+      let travelled = 0, oi = 0;
+      while (oi < body.length - 2 && travelled < radius * 4){
+        travelled += Math.hypot(body[oi + 1].x - body[oi].x, body[oi + 1].y - body[oi].y);
+        oi++;
+      }
+      const back = body[Math.min(body.length - 1, oi + 5)];
+      pixiDrawOrbweaverMark(bodyG, body[oi].x, body[oi].y,
+        Math.atan2(body[oi].y - back.y, body[oi].x - back.x), radius * 1.1);
     }
   }
 
