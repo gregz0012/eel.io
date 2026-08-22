@@ -6401,6 +6401,70 @@
     while (container.children.length > n) container.removeChildAt(container.children.length - 1).destroy();
   }
 
+  // World-space port of the Canvas 2D bodyRibbon(ctx2d, pts, ...) helper
+  // (above drawBodyShading in the Canvas 2D section) — a tapered, filled
+  // band walking a slice of the body along one signed local-radius offset
+  // and back along another. Operates directly on the raw `body` array
+  // (world coordinates, not the screen-projected/pooled `pts` the Canvas 2D
+  // version reads), sampling every `step`'th point same as the rest of
+  // this ribbon. `lo`/`hi` default to the whole body.
+  function pixiBodyRibbon(g, body, step, bodyLength, radius, from, to, color, alpha, lo, hi){
+    lo = lo ?? 0; hi = hi ?? (body.length - 1);
+    if (hi - lo < step) return;
+    const poly = [];
+    for (let i = lo; i <= hi; i += step){
+      const qi = Math.max(lo, i - step);
+      const p = body[i], q = body[qi];
+      const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      const r = radius * (0.35 + 0.65 * (1 - i / bodyLength));
+      poly.push(p.x + nx*r*from, p.y + ny*r*from);
+    }
+    for (let i = hi; i >= lo; i -= step){
+      const qi = Math.max(lo, i - step);
+      const p = body[i], q = body[qi];
+      const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      const r = radius * (0.35 + 0.65 * (1 - i / bodyLength));
+      poly.push(p.x + nx*r*to, p.y + ny*r*to);
+    }
+    if (poly.length >= 6) g.poly(poly).fill({ color, alpha });
+  }
+
+  // World-space port of drawBodyShading — three hue-agnostic ribbons (dark
+  // underside, broad soft highlight, narrow specular streak) every eel
+  // gets, before any per-material texture. Same offsets/alphas as the
+  // Canvas 2D version.
+  function pixiDrawBodyShading(bodyG, body, step, bodyLength, radius){
+    pixiBodyRibbon(bodyG, body, step, bodyLength, radius, -1.0, -0.5, 0x000000, 0.22);
+    pixiBodyRibbon(bodyG, body, step, bodyLength, radius, 0.05, 0.55, 0xffffff, 0.10);
+    pixiBodyRibbon(bodyG, body, step, bodyLength, radius, 0.55, 0.72, 0xffffff, 0.16);
+  }
+
+  // World-space port of matOrganic — the subtle, slightly irregular surface
+  // variation every eel without a fancier material gets (only `organic` is
+  // ported in this PR; the other 11 SKIN_MATERIAL entries stay Canvas 2D
+  // until their own PRs, per the plan). The hash seed uses each slice's raw
+  // body index rather than the Canvas 2D version's screen-space arc-length
+  // (`pts[lo].s`) — arc-length purity only matters for shop-preview-vs-game
+  // parity, and the preview stays Canvas 2D until PR BB, so this is a safe
+  // simplification for now, not a shortcut that needs undoing later.
+  function pixiMatOrganic(bodyG, body, step, bodyLength, radius){
+    const n = body.length;
+    if (n < 4) return;
+    const slices = 3;
+    for (let j = 0; j < slices; j++){
+      const lo = Math.floor((j / slices) * (n - 1));
+      const hi = Math.floor(((j + 0.6) / slices) * (n - 1));
+      if (hi - lo < step) continue;
+      const hash = (((Math.sin(lo * 0.02 + j * 3.1) * 43758.5453) % 1) + 1) % 1;
+      const side = hash > 0.5 ? 1 : -1;
+      const from = side * (0.15 + hash * 0.2);
+      const to = side * (0.35 + hash * 0.15);
+      pixiBodyRibbon(bodyG, body, step, bodyLength, radius, from, to, 0xffffff, 0.06, lo, hi);
+    }
+  }
+
   // Shared by the player and every rival — draws exactly the two layers
   // described above into the given pair of (already-cleared) Graphics.
   function drawEelRibbon(glowG, bodyG, body, step, radius, skin, glow){
@@ -6425,6 +6489,15 @@
       bodyG.moveTo(p.x, p.y).lineTo(q.x, q.y)
         .stroke({ width: r * 2, cap: "round", join: "round", color: hslToHex(bh, bs, bl + t * 18) });
     }
+
+    // Universal baseline shading, then the organic material — every eel
+    // gets both, same order as the Canvas 2D pass (drawBodyShading, then
+    // drawSkinMaterial). Only `organic` is ported so far (see PR AS in the
+    // plan file); every other SKIN_MATERIAL id falls back to organic here
+    // too for now, matching resolveMaterial's own never-throw fallback —
+    // their bespoke textures are still Canvas 2D until their own PRs.
+    pixiDrawBodyShading(bodyG, body, step, body.length, radius);
+    pixiMatOrganic(bodyG, body, step, body.length, radius);
   }
 
   function drawPlayerRibbonPixi(body, step, radius, skin, glow){
