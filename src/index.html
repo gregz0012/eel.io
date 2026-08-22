@@ -2445,8 +2445,8 @@
   // "ears" face-mask band already established, since a PixiJS Graphics
   // path is consumed by the paint call that uses it.
   function pixiTraceXrayJawWedge(g, cx, cy, ang, radius, jawTipX, jawTipR){
-    const start = pixiLocalToWorld(cx, cy, ang, -radius * 0.05, -radius * 0.38);
-    const c1 = pixiLocalToWorld(cx, cy, ang, radius * 0.55, -radius * 0.3);
+    const start = pixiLocalToWorld(cx, cy, ang, -radius * 0.05, -radius * 0.28);
+    const c1 = pixiLocalToWorld(cx, cy, ang, radius * 0.68, -radius * 0.13);
     const tip0 = pixiLocalToWorld(cx, cy, ang, jawTipX, -jawTipR);
     g.moveTo(start[0], start[1]).quadraticCurveTo(c1[0], c1[1], tip0[0], tip0[1]);
     const archSegs = 16;
@@ -2455,8 +2455,8 @@
       const p = pixiLocalToWorld(cx, cy, ang, jawTipX + jawTipR * Math.cos(theta), jawTipR * Math.sin(theta));
       g.lineTo(p[0], p[1]);
     }
-    const c2 = pixiLocalToWorld(cx, cy, ang, radius * 0.55, radius * 0.3);
-    const end = pixiLocalToWorld(cx, cy, ang, -radius * 0.05, radius * 0.38);
+    const c2 = pixiLocalToWorld(cx, cy, ang, radius * 0.68, radius * 0.13);
+    const end = pixiLocalToWorld(cx, cy, ang, -radius * 0.05, radius * 0.28);
     g.quadraticCurveTo(c2[0], c2[1], end[0], end[1]).closePath();
   }
 
@@ -2485,16 +2485,17 @@
     for (let i = 1; i < domeArc.length; i++) wrap._glow.lineTo(domeArc[i][0], domeArc[i][1]);
     wrap._glow.stroke({ width: Math.max(0.8, radius * 0.055), color: boneColor, alpha: boneAlpha, cap: "round", join: "round" });
 
-    // tapering jaw/snout wedge
-    const jawTipX = radius * 0.85, jawTipR = radius * 0.24;
+    // tapering jaw/snout wedge — a long, narrowing snout converging to a
+    // near-point (not a rounded bulb)
+    const jawTipX = radius * 1.05, jawTipR = radius * 0.05;
     pixiTraceXrayJawWedge(wrap._glow, cx, cy, ang, radius, jawTipX, jawTipR);
     wrap._glow.fill({ color: glowColor, alpha: glowAlpha });
     pixiTraceXrayJawWedge(wrap._glow, cx, cy, ang, radius, jawTipX, jawTipR);
     wrap._glow.stroke({ width: Math.max(0.7, radius * 0.045), color: boneColor, alpha: boneAlpha, cap: "round", join: "round" });
 
-    // central nasal ridge
+    // central nasal ridge — stops short of the jaw's own tip
     const rStart = pixiLocalToWorld(cx, cy, ang, -radius * 0.2, 0);
-    const rEnd = pixiLocalToWorld(cx, cy, ang, jawTipX, 0);
+    const rEnd = pixiLocalToWorld(cx, cy, ang, jawTipX * 0.65, 0);
     wrap._glow.moveTo(rStart[0], rStart[1]).lineTo(rEnd[0], rEnd[1])
       .stroke({ width: Math.max(0.6, radius * 0.04), color: coreColor, alpha: coreAlpha, cap: "round", join: "round" });
 
@@ -2504,9 +2505,11 @@
     wrap._glow.moveTo(n0[0], n0[1]).lineTo(n1[0], n1[1])
       .stroke({ width: Math.max(0.8, radius * 0.06), color: boneColor, alpha: boneAlpha, cap: "round", join: "round" });
 
-    // dark eye-socket voids — normal blend, drawn last
+    // dark eye-socket voids — normal blend, drawn last — set back near the
+    // cranium/jaw junction rather than flanking the snout's base, and
+    // angled (not round) for a more reptilian read
     for (const s of [-1, 1]){
-      const poly = pixiEllipsePoly(cx, cy, ang, radius * 0.42, s * radius * 0.48, radius * 0.26, radius * 0.22, 0, segments);
+      const poly = pixiEllipsePoly(cx, cy, ang, radius * 0.16, s * radius * 0.30, radius * 0.17, radius * 0.13, s * 0.35, segments);
       wrap._marks.poly(poly).fill({ color: 0x020a0e, alpha: 0.92 });
       wrap._marks.poly(poly).stroke({ width: Math.max(0.6, radius * 0.04), color: 0x78d2eb, alpha: 0.5 + 0.4 * g });
     }
@@ -4858,30 +4861,30 @@
     ctx2d.ellipse(-radius*0.62, 0, radius*0.56, radius*0.72, 0, Math.PI*0.12, Math.PI*1.88);
     ctx2d.stroke();
 
-    // tapering jaw/snout, toward the front — a short, blunt-tipped wedge
-    // (not a sharp arrowhead), staying well inside the head's own
-    // silhouette
-    const jawTipX = radius*0.85, jawTipR = radius*0.24;
+    // tapering jaw/snout, toward the front — a long, narrowing snout
+    // converging to a near-point (not a rounded bulb), staying well inside
+    // the head's own silhouette
+    const jawTipX = radius*1.05, jawTipR = radius*0.05;
     ctx2d.fillStyle = glowC;
     ctx2d.beginPath();
-    ctx2d.moveTo(-radius*0.05, -radius*0.38);
-    ctx2d.quadraticCurveTo(radius*0.55, -radius*0.3, jawTipX, -jawTipR);
+    ctx2d.moveTo(-radius*0.05, -radius*0.28);
+    ctx2d.quadraticCurveTo(radius*0.68, -radius*0.13, jawTipX, -jawTipR);
     ctx2d.arc(jawTipX, 0, jawTipR, -Math.PI/2, Math.PI/2);
-    ctx2d.quadraticCurveTo(radius*0.55, radius*0.3, -radius*0.05, radius*0.38);
+    ctx2d.quadraticCurveTo(radius*0.68, radius*0.13, -radius*0.05, radius*0.28);
     ctx2d.closePath();
     ctx2d.fill();
     ctx2d.strokeStyle = boneC;
     ctx2d.lineWidth = Math.max(0.7, radius*0.045);
     ctx2d.stroke();
 
-    // central nasal ridge — stops at the same point the jaw's own rounded
-    // tip does, so it reads as the ridge along the snout rather than a
-    // shaft poking out past it
+    // central nasal ridge — stops short of the jaw's own tip, so it reads
+    // as a ridge along the base of the snout rather than a seam running a
+    // shaft's full length to its point
     ctx2d.strokeStyle = coreC;
     ctx2d.lineWidth = Math.max(0.6, radius*0.04);
     ctx2d.beginPath();
     ctx2d.moveTo(-radius*0.2, 0);
-    ctx2d.lineTo(jawTipX, 0);
+    ctx2d.lineTo(jawTipX * 0.65, 0);
     ctx2d.stroke();
 
     // a small notch where the skull's back edge meets the neck, visually
@@ -4895,13 +4898,14 @@
 
     ctx2d.restore();
 
-    // dark eye-socket voids — near-black fill, thin cyan rim — positioned
-    // forward of the cranium, clear of its outline; explicitly no bright
-    // pupil-and-white shapes
+    // dark eye-socket voids — near-black fill, thin cyan rim — set back
+    // near the cranium/jaw junction rather than flanking the snout's base,
+    // and angled (not round) for a more reptilian read; explicitly no
+    // bright pupil-and-white shapes
     for (const s of [-1, 1]){
       ctx2d.fillStyle = "rgba(2,10,14,0.92)";
       ctx2d.beginPath();
-      ctx2d.ellipse(radius*0.42, s*radius*0.48, radius*0.26, radius*0.22, 0, 0, TAU);
+      ctx2d.ellipse(radius*0.16, s*radius*0.30, radius*0.17, radius*0.13, s*0.35, 0, TAU);
       ctx2d.fill();
       ctx2d.strokeStyle = `rgba(120,210,235,${0.5 + 0.4*g})`;
       ctx2d.lineWidth = Math.max(0.6, radius*0.04);
