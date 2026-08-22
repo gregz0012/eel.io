@@ -2810,7 +2810,7 @@
   // as Engine.resolveMaterial and the Canvas 2D drawSkinMaterial fallback.
   const PIXI_SKIN_MATERIAL = {
     organic: pixiMatOrganic, brushedMetal: pixiMatBrushedMetal,
-    stone: pixiMatStone, charred: pixiMatCharred,
+    stone: pixiMatStone, charred: pixiMatCharred, crystal: pixiMatCrystal,
   };
 
   // World-space port of fxSheen — a bright specular streak down one flank
@@ -2829,10 +2829,102 @@
       hslToHex(hue, Math.max(0, sat - 30), Math.min(98, headLight + 24)), 0.6 * sheen);
   }
 
+  // World-space port of matCrystal — faceted geometric regions rather than
+  // random noise. Canvas 2D groups points into facets by the body's own
+  // screen-space arc-length `s` (a field pooled in SKIN_FX_SCRATCH); this
+  // computes an equivalent world-space cumulative arc-length inline, over
+  // just the sampled points, rather than reusing the raw-body-index
+  // simplification pixiMatOrganic/pixiDrawCrackLips made — a facet's
+  // apparent *size* is the whole visual point here (matching physical body
+  // length, not sample count), so unlike those simpler textures this one is
+  // worth the extra pass. `s` is still recomputed fresh per call rather than
+  // pooled/persisted, since it's only ever consumed within this one
+  // function, immediately after being built.
+  function pixiMatCrystal(bodyG, body, step, bodyLength, radius, skin, detail){
+    const m = Engine.resolveMaterial(skin);
+    const n = body.length;
+    if (n < 3) return;
+    const facetSize = Math.max(1, (radius * 1.6) / Math.max(0.3, m.scale));
+    const sVals = [];
+    let s = 0;
+    for (let i = 0, k = 0; i < n; i += step, k++){
+      if (k > 0) s += Math.hypot(body[i].x - body[i - step].x, body[i].y - body[i - step].y);
+      sVals.push(s);
+    }
+    const slots = sVals.length;
+    if (slots < 2) return;
+    let flank = 1, runStartK = 0, runFacet = Math.floor(sVals[0] / facetSize);
+    for (let k = 1; k <= slots; k++){
+      const facet = k < slots ? Math.floor(sVals[k] / facetSize) : -1;
+      if (facet !== runFacet){
+        const k1 = k - 1;
+        if (k1 > runStartK){
+          const hash = (((Math.sin(runFacet * 27.13 + bodyLength * 0.005) * 91731.234) % 1) + 1) % 1;
+          const strength = Math.max(0.3, m.strength) * detail;
+          const bright = hash > 0.55;
+          const color = bright ? 0xffffff : 0x000000;
+          const alpha = bright ? (0.08 + hash * 0.18) * strength : (0.06 + (1 - hash) * 0.12) * strength;
+          const near = flank * (0.12 + hash * 0.35);
+          const far = flank * (0.45 + hash * 0.3);
+          const lo = runStartK * step, hi = Math.min(n - 1, k1 * step);
+          pixiBodyRibbon(bodyG, body, step, bodyLength, radius, Math.min(near, far), Math.max(near, far), color, alpha, lo, hi);
+        }
+        flank *= -1;
+        runStartK = k - 1;
+        runFacet = facet;
+      }
+    }
+
+    // dispersion glint — disclosed simplification: Canvas 2D draws this with
+    // globalCompositeOperation "lighter" for a true additive sparkle; bodyG
+    // has one blend mode for its whole content (already normal-blend for
+    // every pass above), so this draws as small normal-blend circles at a
+    // boosted alpha instead, the same trade-off pixiMatCharred's ember
+    // patches made for the identical structural reason.
+    for (let i = 0; i < n; i += step * 4){
+      const hash = (((Math.sin(i * 9.87 + 1.7) * 5432.1) % 1) + 1) % 1;
+      if (hash < 0.72) continue;
+      const t = 1 - i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const glint = ((hash - 0.72) / 0.28) * m.strength * detail;
+      if (glint < 0.02) continue;
+      const dispersionHue = (hash * 360) % 360;
+      const p = body[i];
+      bodyG.circle(p.x, p.y, Math.max(0.7, r * 0.09))
+        .fill({ color: hslToHex(dispersionHue, 85, 88), alpha: Math.min(0.7, glint * 0.6) });
+    }
+  }
+
+  // World-space port of fxGemTwinkle — a travelling sparkle riding over
+  // crystal's facets, gated on skin.gem (Emerald/Ruby/Diamond only; Frost
+  // and Prism use the crystal material without gem:true and get their own
+  // fx, "sparkle"/"iridescent", both still Canvas 2D). Canvas 2D offsets the
+  // twinkle by a fixed screen-space "up" (p.y - r*0.4); body is world space
+  // here with no fixed camera-relative up, so this offsets along the local
+  // body normal instead — the same convention every other world-space pixi
+  // shading pass in this file already uses. Drawn as normal-blend circles at
+  // boosted alpha, the same additive-to-normal-blend trade-off as the
+  // dispersion glint above.
+  function pixiFxGemTwinkle(bodyG, body, step, bodyLength, radius, skin, nowMs){
+    const { hue, sat, headLight } = skin;
+    const color = hslToHex(hue, Math.min(100, sat + 15), Math.min(96, headLight + 22));
+    for (let i = step; i < body.length; i += step){
+      const p = body[i], q = body[i - step];
+      const t = 1 - i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const twinkle = Math.sin(nowMs * 0.004 + i * 0.6);
+      if (twinkle < 0.55) continue;
+      const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      const alpha = Math.min(0.85, ((twinkle - 0.55) / 0.45) * 1.7);
+      bodyG.circle(p.x + nx * r * 0.4, p.y + ny * r * 0.4, Math.max(1.4, r * 0.3)).fill({ color, alpha });
+    }
+  }
+
   // Shared by the player and every rival — draws exactly the two layers
   // described above into the given pair of (already-cleared) Graphics.
-  function drawEelRibbon(glowG, bodyG, body, step, radius, skin, glow, detail){
-    const { hue, sat, bodyLight, headLight, accent, accentRatio = 0.5, sheen = 0 } = skin;
+  function drawEelRibbon(glowG, bodyG, body, step, radius, skin, glow, detail, nowMs){
+    const { hue, sat, bodyLight, headLight, accent, accentRatio = 0.5, sheen = 0, gem } = skin;
     const marks = [].concat(skin.mark ?? []);
     const BAND = 52;
 
@@ -2855,23 +2947,25 @@
     }
 
     // Universal baseline shading, then whatever material this skin resolves
-    // to, then sheen on top — same order as the Canvas 2D pass
-    // (drawBodyShading, drawSkinMaterial, fxSheen). Only organic and
-    // brushedMetal are ported so far (see PRs AS/AT in the plan file); every
-    // other SKIN_MATERIAL id falls back to organic here too for now,
-    // matching resolveMaterial's own never-throw fallback — their bespoke
-    // textures are still Canvas 2D until their own PRs.
+    // to, then sheen and a gem's twinkle on top — same order as the Canvas
+    // 2D pass (drawBodyShading, drawSkinMaterial, fxSheen, fxGemTwinkle).
+    // Only organic, brushedMetal, stone, charred and crystal are ported so
+    // far (see PRs AS-AV in the plan file); every other SKIN_MATERIAL id
+    // falls back to organic here too for now, matching resolveMaterial's
+    // own never-throw fallback — their bespoke textures are still Canvas 2D
+    // until their own PRs.
     pixiDrawBodyShading(bodyG, body, step, body.length, radius);
     const matType = Engine.resolveMaterial(skin).type;
     const drawMat = PIXI_SKIN_MATERIAL[matType] ?? PIXI_SKIN_MATERIAL.organic;
     drawMat(bodyG, body, step, body.length, radius, skin, detail);
     if (sheen > 0) pixiFxSheen(bodyG, body, step, body.length, radius, skin);
+    if (gem) pixiFxGemTwinkle(bodyG, body, step, body.length, radius, skin, nowMs);
   }
 
-  function drawPlayerRibbonPixi(body, step, radius, skin, glow){
+  function drawPlayerRibbonPixi(body, step, radius, skin, glow, nowMs){
     ensurePixiEelLayers();
     pixiPlayerGlow.clear(); pixiPlayerBody.clear();
-    drawEelRibbon(pixiPlayerGlow, pixiPlayerBody, body, step, radius, skin, glow, 1);
+    drawEelRibbon(pixiPlayerGlow, pixiPlayerBody, body, step, radius, skin, glow, 1, nowMs);
   }
 
   function drawRivalRibbonsBegin(){
@@ -2880,10 +2974,10 @@
     ensurePoolSize(pixiRivalBody, eels.length, () => new PIXI.Graphics());
   }
 
-  function drawRivalRibbonPixi(idx, body, step, radius, skin, glow){
+  function drawRivalRibbonPixi(idx, body, step, radius, skin, glow, nowMs){
     const glowG = pixiRivalGlow.children[idx], bodyG = pixiRivalBody.children[idx];
     glowG.clear(); bodyG.clear();
-    drawEelRibbon(glowG, bodyG, body, step, radius, skin, glow, 0.5);
+    drawEelRibbon(glowG, bodyG, body, step, radius, skin, glow, 0.5, nowMs);
   }
 
   // Split from the actual render() call on purpose: this syncs everything
@@ -4637,8 +4731,8 @@
     // gem, fx, the head) stays on Canvas 2D unconditionally — see the "eel
     // body ribbons" comment for why this PR stops here.
     if (pixiReady){
-      if (isPlayer) drawPlayerRibbonPixi(body, step, radius, skin, glow);
-      else drawRivalRibbonPixi(rivalIdx, body, step, radius, skin, glow);
+      if (isPlayer) drawPlayerRibbonPixi(body, step, radius, skin, glow, nowMs);
+      else drawRivalRibbonPixi(rivalIdx, body, step, radius, skin, glow, nowMs);
     } else {
       // glow underlay — gems run a little hotter than plain metal
       ctx.save();
