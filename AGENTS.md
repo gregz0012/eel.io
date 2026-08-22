@@ -50,6 +50,11 @@ when they preserve the visible request and these guardrails.
 - `features/`: Cucumber acceptance scenarios and step definitions.
 - `worker/`: optional Cloudflare Worker + D1 leaderboard backend.
 - `capacitor/`: optional Android/iOS wrapper around the same built game.
+- `wrangler.web.jsonc`: Workers Static Assets configuration for the free web
+  build at `eelshock.com`.
+- `.github/workflows/web.yml`: tested `main` to production web deployment.
+- `.github/workflows/mobile-release.yml`: version tag to unsigned Android/iOS
+  release inputs; it must never publish a store release implicitly.
 
 The renderer intentionally remains inline in `src/index.html`. Do not extract it
 into `src/render/` unless the task explicitly includes the required build-system
@@ -83,6 +88,9 @@ New engine modules require a corresponding `test/*.test.js` file and an entry in
   small shell integrations may branch on the injected `BUILD_TARGET`; gameplay
   logic must remain shared.
 - `dist/` and `capacitor/www/` are derived artifacts and are not committed.
+- Web production deploys only from `main`. Mobile release inputs are prepared
+  only from semantic version tags; ordinary merges must not publish or prepare
+  a store version.
 
 ### Dependencies and offline operation
 

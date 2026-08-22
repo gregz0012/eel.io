@@ -16,6 +16,7 @@ time without affecting it.
 ```bash
 cd capacitor
 npm ci
+npx cap telemetry off # project policy: native tooling must not report usage
 npx cap add ios       # needs Xcode, macOS only
 npx cap add android    # needs Android Studio
 ```

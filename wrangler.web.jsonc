@@ -1,0 +1,16 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "eel-shock-web",
+  "compatibility_date": "2026-08-22",
+  "assets": {
+    "directory": "./dist/web",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "none"
+  },
+  "routes": [
+    {
+      "pattern": "eelshock.com",
+      "custom_domain": true
+    }
+  ]
+}

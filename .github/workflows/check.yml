@@ -26,3 +26,9 @@ jobs:
       - run: npm run check
       # Both distribution targets must remain buildable from the same source.
       - run: npm run build:targets
+      # Validate the production Static Assets configuration without contacting
+      # Cloudflare or requiring deployment credentials.
+      - name: Check web deployment configuration
+        env:
+          WRANGLER_SEND_METRICS: "false"
+        run: ./node_modules/.bin/wrangler deploy --dry-run --config wrangler.web.jsonc

@@ -1,0 +1,70 @@
+# A version tag prepares reproducible Android and iOS project inputs from the
+# same dist/app artifact. It deliberately does not sign, upload or publish a
+# store release; those remain explicit release-owner actions.
+name: mobile-release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: read
+
+jobs:
+  app:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build:app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eel-shock-app-${{ github.ref_name }}
+          path: dist/app/
+          if-no-files-found: error
+          retention-days: 30
+
+  native-project:
+    needs: app
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: android
+            os: ubuntu-latest
+          - platform: ios
+            os: macos-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: capacitor/package-lock.json
+      - run: npm ci --prefix capacitor
+      - uses: actions/download-artifact@v4
+        with:
+          name: eel-shock-app-${{ github.ref_name }}
+          path: dist/app
+      - run: npm --prefix capacitor run stage
+      - name: Disable Capacitor telemetry
+        working-directory: capacitor
+        run: ./node_modules/.bin/cap telemetry off
+      - name: Generate and sync ${{ matrix.platform }} project
+        working-directory: capacitor
+        run: |
+          ./node_modules/.bin/cap add ${{ matrix.platform }}
+          ./node_modules/.bin/cap sync ${{ matrix.platform }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eel-shock-${{ matrix.platform }}-${{ github.ref_name }}
+          path: capacitor/${{ matrix.platform }}/
+          if-no-files-found: error
+          retention-days: 30
