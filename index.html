@@ -7280,14 +7280,89 @@
     pixiDrawRazorbackSlashes(glowG, body, step, bodyLength, radius, m.strength, true);
   }
 
+  // World-space port of fxTendril (Voidbond) — three parts, matching Canvas
+  // 2D exactly. Part 1: jagged dark vein strokes, walking consecutive
+  // "sample slot" indices (raw body indices `step` apart) the same way this
+  // phase's earlier multi-point stroke passes (e.g. pixiDrawWebMark)
+  // already do. Part 2: iridescent teal/purple channel ribbons, hash-gated
+  // and scaled by local curvature (the turn angle between two consecutive
+  // segment vectors, the same approximation Canvas 2D uses) — genuinely
+  // additive via `glowG` (PR AY's discovery), matching Canvas 2D's own
+  // "lighter" composite for this exact pass. Part 3: a rare rising
+  // tendril, self-terminating and gated on `reduceMotion` exactly like
+  // Canvas 2D, drawn at normal blend into `bodyG` since Canvas 2D's own
+  // version runs *after* its "lighter" block's `restore()` — not additive,
+  // unlike part 2. Every hash seed uses the sample-slot loop index
+  // directly (matching Canvas 2D's own `k`, itself a sample-slot index
+  // into the already-sampled `pts` array), not a raw body index —
+  // consistent with how every other multi-slot pass in this phase seeds
+  // its hash.
+  function pixiFxTendril(glowG, bodyG, body, step, bodyLength, radius, skin, nowMs){
+    const slots = Math.floor(body.length / step);
+    if (slots < 8) return;
+
+    const veinCount = Math.max(3, Math.round(slots / 22));
+    for (let j = 0; j < veinCount; j++){
+      const hash = (((Math.sin(j * 13.9 + bodyLength * 0.008) * 19571.3) % 1) + 1) % 1;
+      const loS = Math.max(1, Math.min(slots - 4, Math.floor(hash * (slots - 5))));
+      const hiS = Math.min(slots - 1, loS + 2 + Math.floor(((hash * 11) % 1) * 4));
+      if (hiS <= loS) continue;
+      bodyG.moveTo(body[loS * step].x, body[loS * step].y);
+      for (let kS = loS + 1; kS <= hiS; kS++){
+        const k = Math.min(body.length - 1, kS * step);
+        bodyG.lineTo(body[k].x, body[k].y);
+      }
+      bodyG.stroke({ width: Math.max(0.5, radius * 0.05), color: 0x0a0814, alpha: 0.35 });
+    }
+
+    for (let kS = 2; kS < slots - 1; kS += 3){
+      const k0 = (kS - 2) * step, k1 = (kS - 1) * step, k2 = Math.min(body.length - 1, kS * step);
+      const p0 = body[k0], p1 = body[k1], p2 = body[k2];
+      const v1x = p1.x - p0.x, v1y = p1.y - p0.y, v2x = p2.x - p1.x, v2y = p2.y - p1.y;
+      const len1 = Math.hypot(v1x, v1y) || 1, len2 = Math.hypot(v2x, v2y) || 1;
+      const cosT = Math.max(-1, Math.min(1, (v1x * v2x + v1y * v2y) / (len1 * len2)));
+      const bend = (1 - cosT) * 0.5;
+      const hash = (((Math.sin(kS * 5.3 + 2.1) * 12345.6) % 1) + 1) % 1;
+      if (hash < 0.4) continue;
+      const t = 1 - k2 / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const hue = hash > 0.5 ? 180 : 280;
+      const alpha = Math.min(0.55, 0.06 + bend * 0.5);
+      const side = hash > 0.5 ? 1 : -1;
+      const nx = -v2y / len2, ny = v2x / len2;
+      glowG.moveTo(p1.x + nx * r * 0.3 * side, p1.y + ny * r * 0.3 * side)
+        .lineTo(p2.x + nx * r * 0.3 * side, p2.y + ny * r * 0.3 * side)
+        .stroke({ width: Math.max(0.6, r * 0.12), color: hslToHex(hue, 70, 60), alpha });
+    }
+
+    if (!reduceMotion){
+      const stride = Math.max(4, Math.round(slots / 9));
+      for (let kS = 1; kS < slots; kS += stride){
+        const k = Math.min(body.length - 1, kS * step), q = Math.max(0, (kS - 1) * step);
+        const a = body[k], qp = body[q];
+        const hash = (((Math.sin(kS * 6.7 + Math.floor(nowMs / 1600)) * 4213.7) % 1) + 1) % 1;
+        if (hash < 0.92) continue;
+        const t = 1 - k / bodyLength;
+        const r = radius * (0.35 + 0.65 * t);
+        const rise = Math.sin(((nowMs % 1600) / 1600) * Math.PI);
+        const dx = a.x - qp.x, dy = a.y - qp.y, len = Math.hypot(dx, dy) || 1;
+        const nx = -dy / len, ny = dx / len;
+        bodyG.moveTo(a.x, a.y)
+          .lineTo(a.x + nx * r * 0.9 * rise, a.y + ny * r * 0.9 * rise)
+          .stroke({ width: Math.max(0.5, r * 0.08), color: hslToHex(190, 70, 65), alpha: 0.4 * rise });
+        break;
+      }
+    }
+  }
+
   // Dispatch table for skin.fx — unlike PIXI_SKIN_MATERIAL, no fallback: not
   // having an fx is a valid state (mirrors Canvas 2D's drawSkinFx, which
   // just no-ops when SKIN_FX[skin.fx] is undefined). Only ripple, vortex,
   // cracks, ember, arc, sparkle, molten, afterimage, stars, spots, slime,
-  // silk and feral are ported so far (see PRs AY-BI in the plan file);
-  // every other fx stays Canvas-2D-only, drawn on top of the WebGL body
-  // exactly as before. fade and iridescent (PR BE) are deliberately absent
-  // from this table — they recolour the base-fill stroke itself
+  // silk, feral and tendril are ported so far (see PRs AY-BK in the plan
+  // file); every other fx stays Canvas-2D-only, drawn on top of the WebGL
+  // body exactly as before. fade and iridescent (PR BE) are deliberately
+  // absent from this table — they recolour the base-fill stroke itself
   // (pixiBodyFxStyle, called inline from drawEelRibbon's own base-fill loop
   // below) rather than drawing an overlay afterward, so they can never be
   // dispatched the same way as everything else here.
@@ -7297,6 +7372,7 @@
     sparkle: pixiFxSparkle, molten: pixiFxMolten,
     afterimage: pixiFxAfterimage, stars: pixiFxStars,
     spots: pixiFxSpots, slime: pixiFxSlime, silk: pixiFxSilk, feral: pixiFxFeral,
+    tendril: pixiFxTendril,
   };
 
   // Shared by the player and every rival — draws exactly the two layers
