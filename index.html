@@ -9746,9 +9746,9 @@
 
     // glow underlay + tapered accent-banded fill: WebGL once it's ready
     // (see drawEelRibbon, above drawPixiFrame), Canvas 2D exactly as before
-    // otherwise. Everything from here on (shading, materials, marks, sheen,
-    // gem, fx, the head) stays on Canvas 2D unconditionally — see the "eel
-    // body ribbons" comment for why this PR stops here.
+    // otherwise. Shading/materials/marks/sheen/gem/fx and the head (below)
+    // are the same split now — WebGL once ready, Canvas 2D only as the
+    // no-WebGL-at-all fallback.
     if (pixiReady){
       if (isPlayer) drawPlayerRibbonPixi(body, step, radius, skin, glow, nowMs);
       else drawRivalRibbonPixi(rivalIdx, body, step, radius, skin, glow, nowMs);
@@ -9784,6 +9784,24 @@
       }
     }
 
+    // computed once and reused by drawEelHead below, so the skull (X-Ray)
+    // flares in lockstep with the body skeleton rather than a second,
+    // independently-timed read of the same zap state
+    const skinGlow = skin.fx === "xray" ? Engine.chargeGlow(zap, zapFlashT / ZAP_FLASH_S)
+      : skin.fx === "feral" ? (pointer.boosting ? 1 : 0)
+      : undefined;
+
+    // Shading, materials, marks, sheen, gem and fx all have WebGL
+    // equivalents now (PRs AS-BK) — this whole block is the Canvas 2D
+    // fallback for when there's no WebGL context at all, matching the head
+    // block below. It used to run unconditionally, back when WebGL only
+    // had the base ribbon (PR AQ); left ungated as later PRs ported each
+    // piece to WebGL, it was quietly drawing the same content on top of
+    // the WebGL layer every frame — same pixels, pure wasted CPU for the
+    // player and up to 14 rivals. Confirmed via a Playwright screenshot
+    // diff (WebGL alone vs. WebGL+this block, gold/diamond/fire) showing
+    // no visual difference before this gate was added.
+    if (!pixiReady) {
     // universal baseline shading — every skin gets this, before any themed
     // finish; sheen (below) then adds *more* shine on top of it.
     drawBodyShading(ctx, pts, body.length, radius, skin);
@@ -9820,12 +9838,6 @@
     // projection built above.
     if (sheen > 0) fxSheen(ctx, pts, body.length, radius, skin);
     if (gem) fxGemTwinkle(ctx, pts, 4, body.length, radius, skin, nowMs);
-    // computed once and reused by drawEelHead below, so the skull (X-Ray)
-    // flares in lockstep with the body skeleton rather than a second,
-    // independently-timed read of the same zap state
-    const skinGlow = skin.fx === "xray" ? Engine.chargeGlow(zap, zapFlashT / ZAP_FLASH_S)
-      : skin.fx === "feral" ? (pointer.boosting ? 1 : 0)
-      : undefined;
     if (skin.fx) drawSkinFx(ctx, pts, body.length, radius, skin, nowMs, skinGlow);
 
     // "swords": crossed on the back, a little way behind the head. Walk the
@@ -9882,6 +9894,7 @@
       const [gx,gy] = worldToScreen(body[gi].x, body[gi].y);
       drawScavengerGear(ctx, gx, gy,
         Math.atan2(body[gi].y - tail.y, body[gi].x - tail.x), radius*2.1);
+    }
     }
 
     // head — WebGL for every skin once it's ready (every head mark,
@@ -10845,6 +10858,7 @@
     if (!btn || CLICK_SOUND_EXCLUDE.has(btn.id)) return;
     fx("click");
   });
+
 })();
 </script>
 </body>
