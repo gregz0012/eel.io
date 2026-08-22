@@ -134,6 +134,11 @@ the top five. "See top 25" opens the full board. Both load in the background:
 the home screen is fully usable — you can dive straight away — before either
 has a chance to answer.
 
+Some rival eels borrow the anonymous names and most recently submitted skins
+of leaderboard players. Only the safe generated tag and catalogue skin are
+published—never the underlying player id. If the board is empty or offline,
+rivals keep using locally generated names and colours as before.
+
 The game does not need it: with no server configured, or with no internet, it
 plays exactly the same and your best score is still kept on your own device.
 

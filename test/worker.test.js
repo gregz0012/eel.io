@@ -12,8 +12,9 @@ const ORIGIN = "https://gregz0012.github.io";
 const uuid = (n) => "11111111-2222-4333-8444-" + String(n).padStart(12, "0");
 
 function fakeDB(rows = []) {
+  const profiles = [];
   return {
-    rows,
+    rows, profiles,
     prepare(sql) {
       const stmt = {
         args: [],
@@ -29,6 +30,13 @@ function fakeDB(rows = []) {
           throw new Error("unexpected first(): " + sql);
         },
         async all() {
+          if (/FROM scores LEFT JOIN profiles/.test(sql)) {
+            const limit = stmt.args[0] ?? rows.length;
+            return { results: [...rows]
+              .sort((a, b) => b.updated_at - a.updated_at)
+              .slice(0, limit)
+              .map(row => ({ id: row.id, skin_id: profiles.find(p => p.id === row.id)?.skin_id })) };
+          }
           if (/SELECT id, score, level FROM scores ORDER BY score DESC/.test(sql)) {
             const limit = stmt.args[0] ?? rows.length;
             return { results: [...rows].sort((a, b) => b.score - a.score).slice(0, limit) };
@@ -49,6 +57,14 @@ function fakeDB(rows = []) {
           } else if (/^DELETE FROM scores/.test(sql)) {
             const i = rows.findIndex(r => r.id === stmt.args[0]);
             if (i >= 0) rows.splice(i, 1);
+          } else if (/^INSERT INTO profiles/.test(sql.trim())) {
+            const [id, skin_id, updated_at] = stmt.args;
+            const profile = profiles.find(p => p.id === id);
+            if (profile) Object.assign(profile, { skin_id, updated_at });
+            else profiles.push({ id, skin_id, updated_at });
+          } else if (/^DELETE FROM profiles/.test(sql)) {
+            const i = profiles.findIndex(p => p.id === stmt.args[0]);
+            if (i >= 0) profiles.splice(i, 1);
           } else throw new Error("unexpected run(): " + sql);
           return { success: true };
         },
@@ -163,6 +179,16 @@ describe("POST /scores", () => {
     expect(Object.keys(env.DB.rows[0]).sort())
       .toEqual(["created_at", "duration_ms", "id", "level", "score", "updated_at"]);
   });
+
+  it("stores the latest catalogue skin as a separate public profile", async () => {
+    await worker.fetch(post("/scores", { ...goodRun(uuid(1)), skinId: "copper" }), env);
+    expect(env.DB.profiles).toEqual([{ id: uuid(1), skin_id: "copper", updated_at: expect.any(Number) }]);
+  });
+
+  it("falls back to Volt instead of storing an invented skin", async () => {
+    await worker.fetch(post("/scores", { ...goodRun(uuid(1)), skinId: "hacked-rainbow" }), env);
+    expect(env.DB.profiles[0].skin_id).toBe("volt");
+  });
 });
 
 describe("GET /top", () => {
@@ -227,6 +253,46 @@ describe("GET /top?limit=", () => {
   });
 });
 
+describe("GET /rivals", () => {
+  it("returns recent real players with derived tags and catalogue skins", async () => {
+    await worker.fetch(post("/scores", { ...goodRun(uuid(1)), skinId: "copper" }), env);
+    env.DB.rows[0].updated_at -= L.submitCooldownMs;
+    await worker.fetch(post("/scores", { ...goodRun(uuid(2)), skinId: "gold" }), env);
+    const rows = await (await worker.fetch(get("/rivals?limit=14"), env)).json();
+    expect(rows).toEqual([
+      { tag: tagFor(uuid(2)), skinId: "gold" },
+      { tag: tagFor(uuid(1)), skinId: "copper" },
+    ]);
+  });
+
+  it("uses Volt for players without a saved appearance", async () => {
+    env.DB.rows.push({ id: uuid(1), score: 100, level: 2, duration_ms: 120000, created_at: 0, updated_at: 1 });
+    expect(await (await worker.fetch(get("/rivals"), env)).json())
+      .toEqual([{ tag: tagFor(uuid(1)), skinId: "volt" }]);
+  });
+
+  it("never leaks player ids", async () => {
+    await worker.fetch(post("/scores", { ...goodRun(uuid(1)), skinId: "ruby" }), env);
+    const body = await (await worker.fetch(get("/rivals"), env)).text();
+    expect(body).not.toContain(uuid(1));
+    expect(Object.keys(JSON.parse(body)[0]).sort()).toEqual(["skinId", "tag"]);
+  });
+});
+
+describe("POST /profile", () => {
+  it("updates a joined identity's latest skin independently of a run", async () => {
+    const res = await worker.fetch(post("/profile", { id: uuid(1), skinId: "diamond" }), env);
+    expect(await res.json()).toEqual({ updated: true });
+    expect(env.DB.profiles[0]).toMatchObject({ id: uuid(1), skin_id: "diamond" });
+  });
+
+  it("normalises unknown skins and rejects non-UUID identities", async () => {
+    await worker.fetch(post("/profile", { id: uuid(1), skinId: "made-up" }), env);
+    expect(env.DB.profiles[0].skin_id).toBe("volt");
+    expect((await worker.fetch(post("/profile", { id: "alex", skinId: "gold" }), env)).status).toBe(400);
+  });
+});
+
 describe("GET /rank", () => {
   it("is null for a player who has never joined", async () => {
     const res = await worker.fetch(get(`/rank?id=${uuid(1)}`), env);
@@ -276,6 +342,7 @@ describe("POST /forget", () => {
     const res = await worker.fetch(post("/forget", { id: uuid(1) }), env);
     expect(await res.json()).toEqual({ forgotten: true });
     expect(env.DB.rows).toHaveLength(0);
+    expect(env.DB.profiles).toHaveLength(0);
   });
 });
 

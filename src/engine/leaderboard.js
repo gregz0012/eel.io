@@ -1,4 +1,5 @@
 import { CONFIG } from "./config.js";
+import { isWellFormedTag } from "./identity.js";
 
 // Leaderboard rules. Pure, so the same code runs in the browser and in the
 // Cloudflare Worker — the client uses it to avoid pointless requests, the
@@ -76,4 +77,25 @@ export function clampTopLimit(requested) {
   const n = Math.floor(Number(requested));
   if (!Number.isFinite(n) || n <= 0) return L.topLimit;
   return Math.min(n, L.maxTopLimit);
+}
+/**
+ * Turn the Worker's public rival rows into safe in-game profiles.
+ * Player ids never enter this shape. Malformed rows and duplicate short names
+ * are dropped, and the local player's own name is never spawned as a rival.
+ */
+export function rivalProfiles(rows, excludedTag = "", limit = 14) {
+  const requested = Math.floor(Number(limit));
+  const cap = Number.isFinite(requested) ? Math.max(0, requested) : 14;
+  if (cap === 0) return [];
+  const profiles = [];
+  const seen = new Set();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    if (!isWellFormedTag(row?.tag) || typeof row?.skinId !== "string") continue;
+    const name = row.tag.replace(/-\d+$/, "");
+    if (name === excludedTag || seen.has(name)) continue;
+    seen.add(name);
+    profiles.push({ name, skinId: row.skinId });
+    if (profiles.length >= cap) break;
+  }
+  return profiles;
 }
