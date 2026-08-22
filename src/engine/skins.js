@@ -124,12 +124,12 @@ export const SKINS = [
   // over them. Diamond is tuned to the highest strength/scale of the three
   // (most facets, most visible dispersion glint), reading as the most
   // crystalline — the issue's own ask for it specifically.
-  { id: "emerald", tier: "gemstone",  name: "Emerald",  hue: 150, sat: 85, bodyLight: 34, headLight: 60, price: 7500, gem: true,
-    material: { type: "crystal", strength: 0.5, scale: 1.0 } },
-  { id: "ruby", tier: "gemstone",     name: "Ruby",     hue: 350, sat: 82, bodyLight: 36, headLight: 60, price: 7500, gem: true,
-    material: { type: "crystal", strength: 0.55, scale: 1.0 } },
-  { id: "diamond", tier: "gemstone",  name: "Diamond",  hue: 190, sat: 45, bodyLight: 58, headLight: 82, price: 7500, gem: true,
-    material: { type: "crystal", strength: 0.8, scale: 1.4 } },
+  { id: "emerald", tier: "gemstone",  name: "Emerald",  hue: 150, sat: 85, bodyLight: 28, headLight: 52, price: 7500, gem: true,
+    material: { type: "crystal", strength: 0.72, scale: 1.0, clarity: 0.46, roughness: 0.28, facetStrength: 0.78, refractionStrength: 0.12, dispersionStrength: 0.015, inclusionStrength: 0.34, internalGlow: 0.08 } },
+  { id: "ruby", tier: "gemstone",     name: "Ruby",     hue: 350, sat: 88, bodyLight: 30, headLight: 54, price: 7500, gem: true,
+    material: { type: "crystal", strength: 0.78, scale: 1.05, clarity: 0.34, roughness: 0.2, facetStrength: 0.86, refractionStrength: 0.1, dispersionStrength: 0.02, inclusionStrength: 0.12, internalGlow: 0.24 } },
+  { id: "diamond", tier: "gemstone",  name: "Diamond",  hue: 195, sat: 28, bodyLight: 62, headLight: 86, price: 7500, gem: true,
+    material: { type: "crystal", strength: 0.95, scale: 1.45, clarity: 0.92, roughness: 0.04, facetStrength: 1.1, refractionStrength: 0.28, dispersionStrength: 0.22, inclusionStrength: 0.02, internalGlow: 0.04 } },
 
   // the special finishes — the four here are each a variant of an Elements
   // effect (biolume from Water's dots, toxic from its bubble trail, frost
@@ -372,7 +372,7 @@ export const MATERIALS = {
   brushedMetal: { strength: 0.5, scale: 1, roughness: 0.5, reflectivity: 0.5, grainStrength: 0.5, highlightWidth: 0.35 },
   stone: { strength: 0.5, scale: 1 },
   charred: { strength: 0.5, scale: 1 },
-  crystal: { strength: 0.5, scale: 1 },
+  crystal: { strength: 0.5, scale: 1, clarity: 0.5, roughness: 0.2, facetStrength: 0.6, refractionStrength: 0.08, dispersionStrength: 0.03, inclusionStrength: 0, internalGlow: 0 },
   water: { strength: 0.5, scale: 1 },
   air: { strength: 0.5, scale: 1 },
   charged: { strength: 0.5, scale: 1 },
