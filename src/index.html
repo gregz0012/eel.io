@@ -2272,6 +2272,26 @@
     pixiWorld = new PIXI.Container();
     pixiApp.stage.addChild(pixiBg, pixiWorld);
     pixiReady = true;
+
+    // WebGL contexts can be lost at any time — not rare on Android under
+    // GPU memory pressure, a backgrounded tab, or a driver reset — and the
+    // browser only *attempts* to restore one if something calls
+    // preventDefault() on the loss event; left unhandled (as this was,
+    // entirely, before), a lost context simply never comes back; every
+    // frame after that renders into a dead context. `pixiReady = false`
+    // for that window falls back to the already-correct Canvas 2D path
+    // (same fallback initPixi's own catch above already relies on) rather
+    // than continuing to submit draws nothing will display; restoration
+    // hands GPU resource recreation to PixiJS's own ContextSystem and
+    // hands our own CPU-side draw caches to pixiHardReset (above).
+    glCanvas.addEventListener("webglcontextlost", (e) => {
+      e.preventDefault();
+      pixiReady = false;
+    }, false);
+    glCanvas.addEventListener("webglcontextrestored", () => {
+      pixiHardReset();
+      pixiReady = true;
+    }, false);
   }
   initPixi();
 
@@ -2916,6 +2936,40 @@
   function ensurePoolSize(container, n, makeChild){
     while (container.children.length < n) container.addChild(makeChild());
     while (container.children.length > n) container.removeChildAt(container.children.length - 1).destroy();
+  }
+
+  // Called after a WebGL context restore (see the webglcontextrestored
+  // listener in initPixi, below) — a real, previously-unhandled gap: this
+  // file never listened for context loss at all, so a lost context (not
+  // rare on Android under GPU memory pressure, backgrounding, or a driver
+  // reset) never had preventDefault() called on it, meaning the browser
+  // never even attempted to restore it, leaving every future frame
+  // rendering into a permanently dead context. Once that's fixed and a
+  // context genuinely does restore, PixiJS's own ContextSystem re-uploads
+  // GPU resources for anything still in the scene graph — but every entity
+  // pool in this file (bubbles, fish, presents, predators, eel ribbons,
+  // heads, ...) also keeps its own CPU-side "already drawn, skip the
+  // rebuild" cache (the `_drawnR`/`_drawnKey`-style checks throughout
+  // syncPixiWorld and the ribbon/head functions), and that bookkeeping has
+  // no way to know a GPU-side buffer it's about to skip rebuilding was
+  // just invalidated. Rather than threading an invalidation flag through
+  // every one of those caches individually, this destroys every lazily-
+  // created container so each one's own `if (!x) ...`/`if (x) return;`
+  // guard (ensurePixiEelLayers, ensurePixiEelHeadLayers, syncPixiWorld)
+  // rebuilds it from scratch on the very next frame — the same path
+  // first load already takes, so it's already proven correct.
+  function pixiHardReset(){
+    for (const c of [
+      pixiPlayerGlow, pixiPlayerBody, pixiRivalGlow, pixiRivalBody,
+      pixiPlayerHeadWrap, pixiRivalHeadPool,
+      pixiBubbles, pixiEnergy, pixiFish, pixiPresents, pixiStars,
+      pixiBabies, pixiPredators, pixiFeasts, pixiParticles,
+    ]) if (c) c.destroy({ children: true });
+    pixiPlayerGlow = pixiPlayerBody = pixiRivalGlow = pixiRivalBody = undefined;
+    pixiPlayerHeadWrap = pixiRivalHeadPool = undefined;
+    pixiBubbles = pixiEnergy = pixiFish = pixiPresents = pixiStars = undefined;
+    pixiBabies = pixiPredators = pixiFeasts = pixiParticles = undefined;
+    pixiBgDirty = true;
   }
 
   // World-space port of the Canvas 2D bodyRibbon(ctx2d, pts, ...) helper
