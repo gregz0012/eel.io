@@ -2629,14 +2629,9 @@
     pixiWorld.addChild(pixiRivalGlow, pixiRivalBody, pixiPlayerGlow, pixiPlayerBody);
   }
 
-  // ---- eel heads (PR BL/BL2 of #85) ----
-  // Base fill + universal shading + gem crown + eye-chain, ported to WebGL
-  // for every skin except X-Ray (mark "skull" — its own follow-up PR,
-  // since drawXraySkull is real-time zap-charge-driven and additive-blend,
-  // a different kind of risk than the mutually-exclusive eye-chain shapes
-  // ported here). Since skinFromHue (what every rival wears) never sets
-  // `mark`, PIXI_HEAD_MARKS is never true for a rival — only the player
-  // can ever take the Canvas 2D branch, and only while wearing X-Ray.
+  // ---- eel heads (PR BL/BL2/BL3 of #85) ----
+  // Base fill + universal shading + gem crown + every eye-chain mark
+  // (including X-Ray's skull, PR BL3), ported to WebGL for every skin.
   //
   // Unlike the body ribbon (drawn directly in world space into one shared
   // Graphics per eel), the head's shading (and "ears"'s face-mask band)
@@ -2657,9 +2652,12 @@
   // also z-order here: `_under` (ears' cowl / finridge's silhouette,
   // drawn under the head) → `_fill` → `_shade` (masked) → `_faceMask`
   // (masked, drawn after shading like Canvas 2D's own second ctx.clip()
-  // block) → `_marks` (gem crown, then the mutually-exclusive eye-chain —
-  // unmasked, drawn last, same as Canvas 2D's final eye pass).
-  const PIXI_HEAD_MARKS = new Set(["skull"]);
+  // block) → `_glow` (additive — X-Ray's skull only; blendMode "add", the
+  // same per-eel additive surface PR AY discovered on the body's `glowG`)
+  // → `_marks` (gem crown, then the mutually-exclusive eye-chain,
+  // including X-Ray's eye-socket voids on top of its own glow layer —
+  // unmasked, normal-blend, drawn last, same as Canvas 2D's final eye
+  // pass sitting outside its own "lighter" save/restore block).
 
   function makeHeadWrap(){
     const wrap = new PIXI.Container();
@@ -2670,10 +2668,11 @@
     shade.mask = maskG;
     const faceMask = new PIXI.Graphics();
     faceMask.mask = maskG;
+    const glow = new PIXI.Graphics(); glow.blendMode = "add";
     const marks = new PIXI.Graphics();
-    wrap.addChild(under, fill, shade, faceMask, marks);   // maskG deliberately not added
+    wrap.addChild(under, fill, shade, faceMask, glow, marks);   // maskG deliberately not added
     wrap._under = under; wrap._fill = fill; wrap._mask = maskG;
-    wrap._shade = shade; wrap._faceMask = faceMask; wrap._marks = marks;
+    wrap._shade = shade; wrap._faceMask = faceMask; wrap._glow = glow; wrap._marks = marks;
     return wrap;
   }
 
@@ -2690,10 +2689,85 @@
 
   function pixiClearHeadWrap(wrap){
     wrap._under.clear(); wrap._fill.clear(); wrap._mask.clear();
-    wrap._shade.clear(); wrap._faceMask.clear(); wrap._marks.clear();
+    wrap._shade.clear(); wrap._faceMask.clear(); wrap._glow.clear(); wrap._marks.clear();
   }
 
-  function pixiDrawEelHead(wrap, cx, cy, ang, radius, skin, marks){
+  // Traces the jaw/snout wedge's path (moveTo → quadraticCurveTo → an
+  // arc'd tip, sampled as a short line-segment fan → quadraticCurveTo →
+  // close) without filling or stroking it — called twice by
+  // pixiDrawXraySkull (once before `.fill()`, once before `.stroke()`),
+  // the same redeclare-the-shape-before-each-paint-op discipline PR BL2's
+  // "ears" face-mask band already established, since a PixiJS Graphics
+  // path is consumed by the paint call that uses it.
+  function pixiTraceXrayJawWedge(g, cx, cy, ang, radius, jawTipX, jawTipR){
+    const start = pixiLocalToWorld(cx, cy, ang, -radius * 0.05, -radius * 0.38);
+    const c1 = pixiLocalToWorld(cx, cy, ang, radius * 0.55, -radius * 0.3);
+    const tip0 = pixiLocalToWorld(cx, cy, ang, jawTipX, -jawTipR);
+    g.moveTo(start[0], start[1]).quadraticCurveTo(c1[0], c1[1], tip0[0], tip0[1]);
+    const archSegs = 16;
+    for (let k = 1; k <= archSegs; k++){
+      const theta = -Math.PI / 2 + Math.PI * (k / archSegs);
+      const p = pixiLocalToWorld(cx, cy, ang, jawTipX + jawTipR * Math.cos(theta), jawTipR * Math.sin(theta));
+      g.lineTo(p[0], p[1]);
+    }
+    const c2 = pixiLocalToWorld(cx, cy, ang, radius * 0.55, radius * 0.3);
+    const end = pixiLocalToWorld(cx, cy, ang, -radius * 0.05, radius * 0.38);
+    g.quadraticCurveTo(c2[0], c2[1], end[0], end[1]).closePath();
+  }
+
+  // World-space port of drawXraySkull — cranium dome, tapering jaw/snout
+  // wedge, central nasal ridge, and a small neck notch, all genuinely
+  // additive via `wrap._glow` (PR AY's discovery, the same surface the
+  // body ribbon's own `glowG` already uses), matching Canvas 2D's real
+  // "lighter" composite for this exact group of shapes; the dark
+  // eye-socket voids are drawn last, normal-blend, into `wrap._marks` —
+  // Canvas 2D draws them *after* its own "lighter" save/restore block
+  // ends, so this is a true parity port, not a simplification (the same
+  // in-block-vs-out-of-block distinction PR BK's tendril fx already had
+  // to get right for its own rising-tendril pass).
+  function pixiDrawXraySkull(wrap, cx, cy, ang, radius, glow){
+    const g = Math.max(0, Math.min(1, glow));
+    const glowColor = 0x5ac8e6, glowAlpha = 0.16 + 0.24 * g;
+    const boneColor = 0xb2e0f0, boneAlpha = 0.55 + 0.35 * g;
+    const coreColor = 0xebf8ff, coreAlpha = 0.7 + 0.3 * g;
+    const segments = 28;
+
+    // cranium dome
+    const domePoly = pixiEllipsePoly(cx, cy, ang, -radius * 0.62, 0, radius * 0.62, radius * 0.82, 0, segments);
+    wrap._glow.poly(domePoly).fill({ color: glowColor, alpha: glowAlpha });
+    const domeArc = pixiEllipseArcPoints(cx, cy, ang, -radius * 0.62, 0, radius * 0.56, radius * 0.72, Math.PI * 0.12, Math.PI * 1.88, 24);
+    wrap._glow.moveTo(domeArc[0][0], domeArc[0][1]);
+    for (let i = 1; i < domeArc.length; i++) wrap._glow.lineTo(domeArc[i][0], domeArc[i][1]);
+    wrap._glow.stroke({ width: Math.max(0.8, radius * 0.055), color: boneColor, alpha: boneAlpha, cap: "round", join: "round" });
+
+    // tapering jaw/snout wedge
+    const jawTipX = radius * 0.85, jawTipR = radius * 0.24;
+    pixiTraceXrayJawWedge(wrap._glow, cx, cy, ang, radius, jawTipX, jawTipR);
+    wrap._glow.fill({ color: glowColor, alpha: glowAlpha });
+    pixiTraceXrayJawWedge(wrap._glow, cx, cy, ang, radius, jawTipX, jawTipR);
+    wrap._glow.stroke({ width: Math.max(0.7, radius * 0.045), color: boneColor, alpha: boneAlpha, cap: "round", join: "round" });
+
+    // central nasal ridge
+    const rStart = pixiLocalToWorld(cx, cy, ang, -radius * 0.2, 0);
+    const rEnd = pixiLocalToWorld(cx, cy, ang, jawTipX, 0);
+    wrap._glow.moveTo(rStart[0], rStart[1]).lineTo(rEnd[0], rEnd[1])
+      .stroke({ width: Math.max(0.6, radius * 0.04), color: coreColor, alpha: coreAlpha, cap: "round", join: "round" });
+
+    // neck notch
+    const n0 = pixiLocalToWorld(cx, cy, ang, -radius * 1.3, 0);
+    const n1 = pixiLocalToWorld(cx, cy, ang, -radius * 1.05, 0);
+    wrap._glow.moveTo(n0[0], n0[1]).lineTo(n1[0], n1[1])
+      .stroke({ width: Math.max(0.8, radius * 0.06), color: boneColor, alpha: boneAlpha, cap: "round", join: "round" });
+
+    // dark eye-socket voids — normal blend, drawn last
+    for (const s of [-1, 1]){
+      const poly = pixiEllipsePoly(cx, cy, ang, radius * 0.42, s * radius * 0.48, radius * 0.26, radius * 0.22, 0, segments);
+      wrap._marks.poly(poly).fill({ color: 0x020a0e, alpha: 0.92 });
+      wrap._marks.poly(poly).stroke({ width: Math.max(0.6, radius * 0.04), color: 0x78d2eb, alpha: 0.5 + 0.4 * g });
+    }
+  }
+
+  function pixiDrawEelHead(wrap, cx, cy, ang, radius, skin, marks, glow = 0){
     const { hue, sat, headLight, gem, accent } = skin;
     pixiClearHeadWrap(wrap);
     const segments = 28;
@@ -2820,6 +2894,10 @@
           wrap._marks.circle(p[0], p[1], radius * 0.05).fill({ color: 0x9fe8ff, alpha: 0.7 });
         }
       }
+    } else if (marks.includes("skull")){
+      // X-Ray: a cranium/jaw/socket skull in place of the default eyes —
+      // see pixiDrawXraySkull, above.
+      pixiDrawXraySkull(wrap, cx, cy, ang, radius, glow);
     } else {
       // default eyes — reached by every skin with no eye-relevant mark,
       // including finridge-only skins (Razorback), exactly matching
@@ -3916,6 +3994,23 @@
       poly.push(wx, wy);
     }
     return poly;
+  }
+
+  // Samples `segments+1` points along an ellipse *arc* (not a closed loop)
+  // in head-local space, from angle `a0` to `a1`, transformed through
+  // pixiLocalToWorld — returns an array of [x,y] pairs (not flat, since
+  // callers walk it with moveTo/lineTo rather than `.poly`). Needed for
+  // X-Ray's cranium outline (PR BL3), which strokes a partial ellipse
+  // (Canvas 2D's `ctx.ellipse(..., a0, a1)`), unlike pixiEllipsePoly's
+  // always-closed full loop.
+  function pixiEllipseArcPoints(cx, cy, ang, lx, ly, rx, ry, a0, a1, segments){
+    const pts = [];
+    for (let k = 0; k <= segments; k++){
+      const theta = a0 + (a1 - a0) * (k / segments);
+      const ex = rx * Math.cos(theta), ey = ry * Math.sin(theta);
+      pts.push(pixiLocalToWorld(cx, cy, ang, lx + ex, ly + ey));
+    }
+    return pts;
   }
 
   // World-space port of drawCrossedSwords (Eel-pool's "swords" body mark) —
@@ -6022,25 +6117,17 @@
         Math.atan2(body[gi].y - tail.y, body[gi].x - tail.x), radius*2.1);
     }
 
-    // head — WebGL once it's ready, for every skin except X-Ray (mark
-    // "skull", see PIXI_HEAD_MARKS above); X-Ray stays on Canvas 2D
-    // exactly as before, unconditionally, until its own follow-up PR.
-    // Rivals never carry a mark (skinFromHue never sets one), so this
-    // only ever falls back to Canvas 2D for a player wearing X-Ray.
+    // head — WebGL for every skin once it's ready (every head mark,
+    // including X-Ray's skull, PR BL3, is now ported); Canvas 2D remains
+    // the only path when WebGL isn't available at all (pixiReady stays
+    // false — an old device, a WebView with no context).
     const ang = Math.atan2(body[0].y - body[Math.min(6,body.length-1)].y,
                            body[0].x - body[Math.min(6,body.length-1)].x);
-    const hasHeadMark = marks.some(m => PIXI_HEAD_MARKS.has(m));
-    if (pixiReady && !hasHeadMark){
+    if (pixiReady){
       ensurePixiEelHeadLayers();
       const wrap = isPlayer ? pixiPlayerHeadWrap : pixiRivalHeadPool.children[rivalIdx];
-      pixiDrawEelHead(wrap, body[0].x, body[0].y, ang, radius, skin, marks);
+      pixiDrawEelHead(wrap, body[0].x, body[0].y, ang, radius, skin, marks, skinGlow || 0);
     } else {
-      // a marked player skin: the player's own WebGL head slot (if any,
-      // from an earlier frame wearing an unmarked skin) needs clearing so
-      // a stale ellipse doesn't sit there — harmless since the opaque
-      // Canvas 2D head above always covers it, but not free to leave lying
-      // around either.
-      if (pixiReady && isPlayer){ ensurePixiEelHeadLayers(); pixiClearHeadWrap(pixiPlayerHeadWrap); }
       const [hx,hy] = worldToScreen(body[0].x, body[0].y);
       ctx.save();
       ctx.translate(hx,hy); ctx.rotate(ang);
