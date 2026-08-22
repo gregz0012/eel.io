@@ -1,7 +1,7 @@
 import { Given, When, Then } from "@cucumber/cucumber";
 import assert from "node:assert/strict";
 import { tagFor } from "../../src/engine/identity.js";
-import { validateSubmission, bestOf, topRows } from "../../src/engine/leaderboard.js";
+import { validateSubmission, bestOf, topRows, rivalProfiles } from "../../src/engine/leaderboard.js";
 
 // Stands in for the leaderboard server: the same pure rules, applied the same
 // way the Worker applies them. Score and level are each kept at their own
@@ -47,6 +47,14 @@ When("they submit {int} points earned in {int} seconds", function (score, second
   this.result = submit(this.board, this.id, score, seconds * 1000);
 });
 
+Given("they most recently wore the {string} skin", function (skinId) {
+  this.skinId = skinId;
+});
+
+When("rivals are chosen from leaderboard players", function () {
+  this.rivals = rivalProfiles([{ tag: this.name, skinId: this.skinId }]);
+});
+
 Then("they are shown the same name as before", function () {
   assert.equal(this.nameToday, this.name);
 });
@@ -80,4 +88,12 @@ Then("the run is refused", function () {
 
 Then("the board does not show them", function () {
   assert.equal(this.board.some(r => r.id === this.id), false);
+});
+
+Then("a rival is named after that player", function () {
+  assert.equal(this.rivals[0].name, this.name.replace(/-\d+$/, ""));
+});
+
+Then("that rival wears the {string} skin", function (skinId) {
+  assert.equal(this.rivals[0].skinId, skinId);
 });

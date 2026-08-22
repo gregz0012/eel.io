@@ -37,3 +37,10 @@ Feature: Anonymous leaderboard
     Given a player whose browser generated the id "3f2a9c14-0000-4000-8000-000000000001"
     When they submit 50000 points earned in 4 seconds
     Then the run is refused
+
+  Scenario: A leaderboard player can appear as a rival in their latest skin
+    Given a player whose browser generated the id "3f2a9c14-0000-4000-8000-000000000001"
+    And they most recently wore the "copper" skin
+    When rivals are chosen from leaderboard players
+    Then a rival is named after that player
+    And that rival wears the "copper" skin

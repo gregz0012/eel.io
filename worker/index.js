@@ -3,8 +3,10 @@
 //   GET  /top?limit=&by=    -> [{ tag, score, level }]  the board (by defaults
 //                              to "score"; "level" sorts the other board)
 //   GET  /rank?id=          -> { score:{rank,best}, level:{rank,best} } | null
+//   GET  /rivals?limit=     -> [{ tag, skinId }] anonymous recent players
+//   POST /profile           -> { updated } publish latest catalogue skin
 //   POST /scores            -> same shape as /rank — submit a run:
-//                              { id, score, level, durationMs }
+//                              { id, score, level, durationMs, skinId }
 //   POST /forget            -> { forgotten }     delete everything for { id }
 //
 // Two independent leaderboards, one row per player: the highest score anyone
@@ -25,6 +27,7 @@
 import { CONFIG } from "../src/engine/config.js";
 import { validateSubmission, topRows, clampTopLimit } from "../src/engine/leaderboard.js";
 import { tagFor } from "../src/engine/identity.js";
+import { skinById } from "../src/engine/skins.js";
 
 const L = CONFIG.leaderboard;
 
@@ -78,6 +81,24 @@ async function handleTop(request, env, cors) {
   return json(rows, 200, cors);
 }
 
+async function handleRivals(request, env, cors) {
+  const limit = clampTopLimit(new URL(request.url).searchParams.get("limit"));
+  const { results } = await env.DB.prepare(
+    `SELECT scores.id, profiles.skin_id
+       FROM scores LEFT JOIN profiles ON profiles.id = scores.id
+       ORDER BY scores.updated_at DESC LIMIT ?`,
+  ).bind(limit).all();
+
+  // As with /top, ids stop at the Worker. A missing profile belongs to a
+  // player who has not submitted since skins were added, so they safely wear
+  // Volt until their next accepted run updates it.
+  const rows = (results ?? []).map(row => ({
+    tag: tagFor(row.id),
+    skinId: skinById(row.skin_id).id,
+  }));
+  return json(rows, 200, cors);
+}
+
 /** How many rows beat this value on this metric. Shared by /rank and /scores. */
 async function rankFor(env, metric, value) {
   const column = metricColumn(metric);
@@ -118,7 +139,7 @@ async function handleSubmit(request, env, cors) {
     return json({ error: "expected a JSON body" }, 400, cors);
   }
 
-  const { id, score, level, durationMs } = body ?? {};
+  const { id, score, level, durationMs, skinId } = body ?? {};
   if (typeof id !== "string" || !UUID.test(id)) {
     return json({ error: "id must be a UUID the browser generated" }, 400, cors);
   }
@@ -154,7 +175,35 @@ async function handleSubmit(request, env, cors) {
       .run();
   }
 
+  // The catalogue, not the client, decides what may be published. Unknown or
+  // missing ids become Volt; typed names and arbitrary appearance data are
+  // never accepted. This is presentation only, so it does not grant ownership.
+  const publicSkinId = skinById(skinId).id;
+  await env.DB.prepare(
+    `INSERT INTO profiles (id, skin_id, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET skin_id = excluded.skin_id, updated_at = excluded.updated_at`,
+  ).bind(id, publicSkinId, now).run();
+
   return json(await standingFor(env, { score: bestScore, level: bestLevel }), 200, cors);
+}
+
+async function handleProfile(request, env, cors) {
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "expected a JSON body" }, 400, cors);
+  }
+  const { id, skinId } = body ?? {};
+  if (typeof id !== "string" || !UUID.test(id)) {
+    return json({ error: "id must be a UUID the browser generated" }, 400, cors);
+  }
+  const publicSkinId = skinById(skinId).id;
+  await env.DB.prepare(
+    `INSERT INTO profiles (id, skin_id, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET skin_id = excluded.skin_id, updated_at = excluded.updated_at`,
+  ).bind(id, publicSkinId, Date.now()).run();
+  return json({ updated: true }, 200, cors);
 }
 
 async function handleForget(request, env, cors) {
@@ -169,6 +218,7 @@ async function handleForget(request, env, cors) {
     return json({ error: "id must be a UUID" }, 400, cors);
   }
   await env.DB.prepare("DELETE FROM scores WHERE id = ?").bind(id).run();
+  await env.DB.prepare("DELETE FROM profiles WHERE id = ?").bind(id).run();
   return json({ forgotten: true }, 200, cors);
 }
 
@@ -182,7 +232,9 @@ export default {
     try {
       if (request.method === "GET" && url.pathname === "/top") return await handleTop(request, env, cors);
       if (request.method === "GET" && url.pathname === "/rank") return await handleRank(request, env, cors);
+      if (request.method === "GET" && url.pathname === "/rivals") return await handleRivals(request, env, cors);
       if (request.method === "POST" && url.pathname === "/scores") return await handleSubmit(request, env, cors);
+      if (request.method === "POST" && url.pathname === "/profile") return await handleProfile(request, env, cors);
       if (request.method === "POST" && url.pathname === "/forget") return await handleForget(request, env, cors);
     } catch (err) {
       return json({ error: "leaderboard unavailable" }, 500, cors);

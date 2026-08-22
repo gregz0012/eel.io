@@ -231,8 +231,17 @@ no requests, no id generated, no storage beyond the local best score. Offline or
 server down, the overlay says so and the game plays exactly as before. The game
 must never need the network.
 
-**Stored data is the minimum:** id, score, level, duration, timestamps. No IP
-addresses, no user agents, nothing a person typed.
+**Stored data is the minimum:** id, score, level, duration, the latest catalogue
+skin id and timestamps. No IP addresses, no user agents, nothing a person
+typed. The skin is presentation only: the Worker validates it against the
+catalogue and it neither proves nor grants ownership.
+
+**Leaderboard rivals reveal no more identity than the board.** `/rivals`
+returns a server-derived anonymous tag and validated skin id, never the stored
+UUID. The shell keeps that small roster in memory only and uses the existing
+generated names/colours whenever it is empty or offline. A player is represented
+there only after opting in and completing an accepted run; `/forget` deletes
+both their score and appearance profile.
 
 **Score and level are two boards, kept independently.** A player's top score
 and their deepest level are often different runs — points alone only ever buy

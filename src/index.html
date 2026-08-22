@@ -777,6 +777,7 @@
 
   // ---------- world entities ----------
   let fish = [], eels = [], predators = [], stars = [], babies = [], feasts = [], presents = [], energy = [], particles = [], bubbles = [];
+  let rivalRoster = [], rivalProfileCursor = 0;   // public anonymous profiles; memory-only, optional
   let player, camera, running = false, score = 0, level = 1, best = 0, lastRunMs = 0;
   let phase = "home";                  // home | playing | paused | over — see engine/session.js
   let banked = 0, owned = [], skinId = "volt";   // the bank: earned, spent on skins
@@ -847,18 +848,28 @@
     return id ? Engine.shortTagFor(id) : "";
   }
 
+  function nextRivalProfile(){
+    if (!rivalRoster.length) return null;
+    const profile = rivalRoster[rivalProfileCursor % rivalRoster.length];
+    rivalProfileCursor++;
+    return profile;
+  }
+
   function makeEel(x, y, len, isPlayer){
+    const profile = isPlayer ? null : nextRivalProfile();
+    const rivalSkin = profile ? Engine.skinById(profile.skinId) : null;
     return {
       x, y, angle: rand(0, TAU),
       speed: isPlayer ? 2.0 : 1.45, len,   // NPC eels cruise well below player speed
       radius: 7 + len * 0.05,
       body: [],                        // trail points
       isPlayer: !!isPlayer,
-      hue: isPlayer ? Engine.wearableSkin(skinId, owned).hue : rand(150, 260),
+      hue: isPlayer ? Engine.wearableSkin(skinId, owned).hue : rivalSkin?.hue ?? rand(150, 260),
+      skinId: rivalSkin?.id ?? null,
       // Rivals wear a name from the same generator the leaderboard uses, so the
       // sea reads as full of other players rather than of scenery — but never
       // the player's own name, which reads as seeing yourself swim past.
-      name: isPlayer ? null : Engine.rivalTag(Math.random, myShortTag()),
+      name: isPlayer ? null : profile?.name ?? Engine.rivalTag(Math.random, myShortTag()),
       thinkT: 0, wanderA: rand(0, TAU),
       dead: false
     };
@@ -920,6 +931,7 @@
     levelBanner = 0;                    // every dive starts at level 1, unguarded
     diveMaxLen = 0;
     achCheckT = 0;   // re-sync achievements right away, not just once a second in
+    rivalProfileCursor = rivalRoster.length ? Math.floor(Math.random() * rivalRoster.length) : 0;
     player = makeEel(WORLD.w/2, WORLD.h/2, 14, true);
     player.body = [];
     player.biteCd = 0;
@@ -1331,6 +1343,7 @@
   let joined = readStore(STORE.joined) === "yes";
   let runStartedAt = 0, pausedAt = 0, pausedMs = 0;
   let homeBoardTabs, fullBoardTabs;   // wired at boot — see wireBoardTabs()
+  let profilePublish = Promise.resolve();
 
   async function api(path, options){
     const res = await fetch(LEADERBOARD_URL + path, options);
@@ -1345,8 +1358,17 @@
     return api("/scores", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: playerId(), score, durationMs, level }),
+      body: JSON.stringify({ id: playerId(), score, durationMs, level, skinId }),
     });
+  }
+
+  function publishWornSkin(){
+    if (!joined || !LEADERBOARD_URL) return;
+    profilePublish = api("/profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: playerId(), skinId }),
+    }).then(refreshRivalRoster).catch(() => {});   // offline never affects the shop
   }
 
   // One renderer for every place the board shows up: the game-over screen,
@@ -1477,7 +1499,10 @@
     const myTag = Engine.tagFor(playerId());
     try {
       let mine = null;
-      if (joined && score > 0) mine = await submitRun(Math.round(score), durationMs, level);
+      if (joined && score > 0){
+        mine = await submitRun(Math.round(score), durationMs, level);
+        refreshRivalRoster();
+      }
       const rows = await api("/top");
       renderBoardRows(rows, joined ? myTag : null);
 
@@ -1540,6 +1565,22 @@
       document.getElementById("homeBoardNote").textContent = note;
     } catch {
       wrap.classList.add("hidden");   // offline or down: disappear, never block play
+    }
+  }
+
+  // Public leaderboard players can lend their anonymous tag and latest skin
+  // to rivals. This request sends no player id and the response is kept only
+  // in memory. Offline, an older Worker, or an empty board simply leaves the
+  // existing generated rivals in place.
+  async function refreshRivalRoster(){
+    if (!LEADERBOARD_URL){ rivalRoster = []; return; }
+    try {
+      const rows = await api(`/rivals?limit=${Engine.CONFIG.leaderboard.maxTopLimit}`);
+      rivalRoster = Engine.rivalProfiles(rows, myShortTag(), EEL_TARGET * 2);
+      rivalProfileCursor = 0;
+    } catch {
+      rivalRoster = [];
+      rivalProfileCursor = 0;
     }
   }
 
@@ -1791,6 +1832,7 @@
 
   document.getElementById("joinBtn").addEventListener("click", () => {
     joined = true; writeStore(STORE.joined, "yes");
+    publishWornSkin();
     updateBoard(best, Math.max(Engine.CONFIG.leaderboard.minRunMs, lastRunMs), bestLevel);
     renderHomeSummary(Engine.wearableSkin(skinId, owned));   // home screen picks up "on the board" too
     refreshHomeBoard();
@@ -1799,6 +1841,9 @@
   document.getElementById("leaveBtn").addEventListener("click", async () => {
     joined = false; writeStore(STORE.joined, "no");
     const id = readStore(STORE.id);
+    // Do not let a skin update already in flight recreate a profile after the
+    // forget request has deleted it.
+    await profilePublish;
     try { if (id) await api("/forget", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }),
     }); } catch {}
@@ -6479,7 +6524,8 @@
         }
         return;
       }
-      drawEelBody(e.body, radiusFor(e.len), Engine.skinFromHue(e.hue), 0.18, false, idx);
+      const rivalSkin = e.skinId ? Engine.skinById(e.skinId) : Engine.skinFromHue(e.hue);
+      drawEelBody(e.body, radiusFor(e.len), rivalSkin, 0.18, false, idx);
       if (e.stun > 0 && !reduceMotion){
         ctx.save(); ctx.globalCompositeOperation="lighter";
         ctx.strokeStyle="rgba(142,243,255,0.7)"; ctx.lineWidth=1.5;
@@ -7108,6 +7154,7 @@
           writeStore(STORE.owned, JSON.stringify(owned));
           skinId = pendingBuy;                // wear it straight away
           writeStore(STORE.skin, skinId);
+          publishWornSkin();
           fx("buy");
         }
         pendingBuy = null;
@@ -7121,6 +7168,7 @@
     if (status === "owned"){
       add("wearBtn", "Wear this", () => {
         skinId = skin.id; writeStore(STORE.skin, skinId);
+        publishWornSkin();
         renderSkins();
       });
     } else if (status === "affordable"){
@@ -7203,7 +7251,7 @@
           // Tapping is browsing. Wearing something you already own is the one
           // thing safe to do on a single tap; spending is not, so a purchase
           // goes through the button above, where the eel you are buying is.
-          if (mine){ skinId = skin.id; writeStore(STORE.skin, skinId); }
+          if (mine){ skinId = skin.id; writeStore(STORE.skin, skinId); publishWornSkin(); }
           browse(skin.id);
           renderSkins();
         });
@@ -7305,6 +7353,7 @@
   homeBoardTabs = wireBoardTabs("home", () => refreshHomeBoard());
   fullBoardTabs = wireBoardTabs("full", () => refreshFullBoard());
   refreshHomeBoard();
+  refreshRivalRoster();
   startChallengeTicker();   // the page boots straight onto the home screen
 
   document.getElementById("startBtn").addEventListener("click", () => goTo("dive"));

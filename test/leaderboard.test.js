@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { validateSubmission, bestOf, rankOf, topRows, clampTopLimit } from "../src/engine/leaderboard.js";
+import { validateSubmission, bestOf, rankOf, topRows, clampTopLimit, rivalProfiles } from "../src/engine/leaderboard.js";
 import { CONFIG } from "../src/engine/config.js";
+import { tagFor, shortTagFor } from "../src/engine/identity.js";
 
 const L = CONFIG.leaderboard;
 const run = (over) => ({ score: 500, level: 3, durationMs: 120000, ...over });
@@ -153,5 +154,28 @@ describe("clampTopLimit", () => {
 
   it("floors a fractional request rather than rejecting it", () => {
     expect(clampTopLimit(5.9)).toBe(5);
+  });
+});
+
+describe("rivalProfiles", () => {
+  const id = "3f2a9c14-0000-4000-8000-000000000001";
+
+  it("uses a real player's anonymous name and latest skin", () => {
+    expect(rivalProfiles([{ tag: tagFor(id), skinId: "copper" }]))
+      .toEqual([{ name: shortTagFor(id), skinId: "copper" }]);
+  });
+
+  it("drops malformed public rows and duplicate short names", () => {
+    const row = { tag: tagFor(id), skinId: "gold" };
+    expect(rivalProfiles([row, row, { tag: "<script>", skinId: "volt" }, null]))
+      .toEqual([{ name: shortTagFor(id), skinId: "gold" }]);
+  });
+
+  it("does not spawn the local player as their own rival", () => {
+    expect(rivalProfiles([{ tag: tagFor(id), skinId: "volt" }], shortTagFor(id))).toEqual([]);
+  });
+
+  it("is empty for offline or malformed responses", () => {
+    expect(rivalProfiles(null)).toEqual([]);
   });
 });
