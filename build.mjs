@@ -28,6 +28,7 @@ const root = dirname(fileURLToPath(import.meta.url));
 const ENGINE_MODULES = [
   "config.js",
   "vector.js",
+  "movement.js",
   "rng.js",
   "scoring.js",
   "identity.js",

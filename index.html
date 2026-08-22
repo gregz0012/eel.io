@@ -604,7 +604,7 @@
       <span class="dot" style="color:#ff7de0;background:#ff7de0"></span><span>Present — could be points, a shield, a charge… or a nasty surprise</span>
     </div>
   </div>
-  <div class="tip">Hold mouse / tap-hold to sprint · Space or tap the meter to unleash a shock that stuns everything nearby — then feast · <b>P</b> or <b>Esc</b> to pause</div>
+  <div class="tip">Hold mouse / tap-hold to sprint (uses a little length) · Space or tap the meter to unleash a shock that stuns everything nearby — then feast · <b>P</b> or <b>Esc</b> to pause</div>
   <button id="closeHowBtn">Got it</button>
 </div>
 
@@ -3086,6 +3086,15 @@
       levelSpeedPerLevel: 0.015,
       levelSpeedMax: 1.4,
     
+      // Sprint is requested by holding mouse/touch. Its cost is measured per
+      // second, never per rendered frame: a 120 Hz phone must not pay twice what
+      // a 60 Hz phone does. One fish restores more than a full second of sprint,
+      // keeping the cost meaningful but gentle rather than looking like a tail
+      // bite. Sprint stops at minLength so it can never drain an eel to death.
+      sprint: {
+        minLength: 16,
+        lengthPerSecond: 0.6,
+      },
       // Shields: a starfish or a present grants one. Below stackLevel a second
       // pickup while already carrying one is wasted — from stackLevel on, the cap
       // rises so a rough patch right after a save doesn't cost a life for want of
@@ -3260,6 +3269,28 @@
     /** Straight-line distance between two points. */
     function distanceTo(fromX, fromY, toX, toY) {
       return Math.hypot(toX - fromX, toY - fromY);
+    }
+
+    // ---- src/engine/movement.js ----
+    /**
+     * Apply one deterministic slice of sprint cost.
+     *
+     * Touch and mouse both become the same boolean request before they reach this
+     * rule. Returning whether sprint actually engaged keeps the speed
+     * multiplier and the cost on one decision, while `dt` makes the result
+     * independent of display refresh rate.
+     */
+    function applySprint(length, dt, requested) {
+      const boosting = Boolean(requested) && length > CONFIG.sprint.minLength;
+      if (!boosting) return { length, boosting: false };
+      const elapsed = Number.isFinite(dt) ? Math.max(0, dt) : 0;
+      return {
+        length: Math.max(
+          CONFIG.sprint.minLength,
+          length - CONFIG.sprint.lengthPerSecond * elapsed,
+        ),
+        boosting: true,
+      };
     }
 
     // ---- src/engine/rng.js ----
@@ -4470,7 +4501,7 @@
       return challengeProgress(challenge, stats, baselineStats) >= challenge.target;
     }
 
-    return { CONFIG, angleTo, distanceTo, seededRng, randInt, weightedPick, hash32, seedFromDate, addScore, completeLevel, bossHits, predatorTarget, isBossLevel, levelSpeed, shieldCap, tagFor, shortTagFor, rivalTag, isWellFormedTag, tagSpaceSize, validateSubmission, bestOf, rankOf, topRows, clampTopLimit, PHASES, nextPhase, canDo, isRunning, deposit, diveCost, payForDive, canAffordDive, SKINS, DEFAULT_SKIN_ID, TIERS, skinsByTier, levelFor, meetsLevel, skinById, isOwned, ownedSkins, canAfford, buySkin, wearableSkin, nextSkinToBuy, skinFromHue, MATERIALS, resolveMaterial, skinStatus, chargeGlow, PRESENT_KINDS, rollPresent, isKindGift, MINI_GAMES, miniGameIds, miniGameById, pickMiniGame, breathPhaseAt, canTapAt, wordsNeeded, isWordGameComplete, wordList, pickStretch, stretchPhaseAt, pickBubblePrompts, bubblesNeeded, isBubbleGameComplete, pickDeed, pickScenario, isKindChoice, choiceOutcome, addPlayTime, miniGameDue, recordMiniGameReward, recordEvent, recordMax, statValue, ACHIEVEMENTS, isEarned, achievementById, checkAchievements, CHALLENGE_POOL, challengeForDate, challengeProgress, isChallengeComplete };
+    return { CONFIG, angleTo, distanceTo, applySprint, seededRng, randInt, weightedPick, hash32, seedFromDate, addScore, completeLevel, bossHits, predatorTarget, isBossLevel, levelSpeed, shieldCap, tagFor, shortTagFor, rivalTag, isWellFormedTag, tagSpaceSize, validateSubmission, bestOf, rankOf, topRows, clampTopLimit, PHASES, nextPhase, canDo, isRunning, deposit, diveCost, payForDive, canAffordDive, SKINS, DEFAULT_SKIN_ID, TIERS, skinsByTier, levelFor, meetsLevel, skinById, isOwned, ownedSkins, canAfford, buySkin, wearableSkin, nextSkinToBuy, skinFromHue, MATERIALS, resolveMaterial, skinStatus, chargeGlow, PRESENT_KINDS, rollPresent, isKindGift, MINI_GAMES, miniGameIds, miniGameById, pickMiniGame, breathPhaseAt, canTapAt, wordsNeeded, isWordGameComplete, wordList, pickStretch, stretchPhaseAt, pickBubblePrompts, bubblesNeeded, isBubbleGameComplete, pickDeed, pickScenario, isKindChoice, choiceOutcome, addPlayTime, miniGameDue, recordMiniGameReward, recordEvent, recordMax, statValue, ACHIEVEMENTS, isEarned, achievementById, checkAchievements, CHALLENGE_POOL, challengeForDate, challengeProgress, isChallengeComplete };
   })();
 
   const canvas = document.getElementById("game");
@@ -5626,10 +5657,11 @@
     const desired = pointer.has ? Math.atan2(wy - player.y, wx - player.x) : player.angle;
     player.angle = angLerp(player.angle, desired, 0.34);
 
-    let boost = pointer.boosting && player.len > 16;
+    const sprint = Engine.applySprint(player.len, dt, pointer.boosting);
+    const boost = sprint.boosting;
+    player.len = sprint.length;
     const cruise = swimSpeed(player.len) * 1.06 * levelSpeed();   // size edge + per-level reward
     const spd = boost ? cruise * 1.75 : cruise;
-    if (boost && Math.random() < 0.5){ player.len -= 0.06; addScore(0); } // sprint costs length
     player.x += Math.cos(player.angle) * spd * dt * 60;
     player.y += Math.sin(player.angle) * spd * dt * 60;
 
