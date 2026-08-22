@@ -51,6 +51,23 @@ describe("the catalogue", () => {
     expect(diamond.strength).toBeGreaterThan(ruby.strength);
     expect(diamond.scale).toBeGreaterThan(emerald.scale);
     expect(diamond.scale).toBeGreaterThan(ruby.scale);
+    expect(diamond.clarity).toBeGreaterThan(emerald.clarity);
+    expect(diamond.clarity).toBeGreaterThan(ruby.clarity);
+    expect(diamond.dispersionStrength).toBeGreaterThan(emerald.dispersionStrength);
+    expect(diamond.dispersionStrength).toBeGreaterThan(ruby.dispersionStrength);
+    expect(diamond.roughness).toBeLessThan(emerald.roughness);
+    expect(diamond.roughness).toBeLessThan(ruby.roughness);
+  });
+
+  it("gives each gemstone a distinct crystal character", () => {
+    const emerald = resolveMaterial(skinById("emerald"));
+    const ruby = resolveMaterial(skinById("ruby"));
+    const diamond = resolveMaterial(skinById("diamond"));
+    expect(emerald.inclusionStrength).toBeGreaterThan(ruby.inclusionStrength);
+    expect(ruby.internalGlow).toBeGreaterThan(emerald.internalGlow);
+    expect(ruby.internalGlow).toBeGreaterThan(diamond.internalGlow);
+    expect(diamond.refractionStrength).toBeGreaterThan(emerald.refractionStrength);
+    expect(diamond.refractionStrength).toBeGreaterThan(ruby.refractionStrength);
   });
 
   it("charges one price per tier — for the tiers that still share one", () => {
