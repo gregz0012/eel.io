@@ -48,6 +48,15 @@ export const CONFIG = {
   levelSpeedPerLevel: 0.015,
   levelSpeedMax: 1.4,
 
+  // Sprint is requested by holding mouse/touch. Its cost is measured per
+  // second, never per rendered frame: a 120 Hz phone must not pay twice what
+  // a 60 Hz phone does. One fish restores more than a full second of sprint,
+  // keeping the cost meaningful but gentle rather than looking like a tail
+  // bite. Sprint stops at minLength so it can never drain an eel to death.
+  sprint: {
+    minLength: 16,
+    lengthPerSecond: 0.6,
+  },
   // Shields: a starfish or a present grants one. Below stackLevel a second
   // pickup while already carrying one is wasted — from stackLevel on, the cap
   // rises so a rough patch right after a save doesn't cost a life for want of

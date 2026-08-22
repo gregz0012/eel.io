@@ -61,6 +61,7 @@ eel.io/
 │   │   │                 #   the shell — see §9, this is new behaviour riding
 │   │   │                 #   the module's name, not the extraction slice yet
 │   │   ├── config.js     # tunables: speeds, spawn targets, thresholds, level rules
+│   │   ├── movement.js   # deterministic sprint engagement and dt-based length cost
 │   │   ├── scoring.js    # addScore, level rules, difficulty ramp (pure)
 │   │   ├── identity.js   # anonymous player tag: id -> "AmberLantern-4721" (pure)
 │   │   ├── leaderboard.js# submission validation, ranking, board sorting (pure)
@@ -89,6 +90,7 @@ eel.io/
 │   ├── leveling.feature
 │   ├── leaderboard.feature
 │   ├── screens.feature
+│   ├── sprint.feature
 │   └── steps/
 ├── test/                 # TDD (unit): Vitest specs
 │   ├── scoring.test.js   # one spec per engine module
@@ -100,6 +102,7 @@ eel.io/
 │   ├── bank.test.js
 │   ├── skins.test.js
 │   ├── vector.test.js
+│   ├── movement.test.js
 │   ├── stats.test.js
 │   ├── achievements.test.js
 │   ├── challenges.test.js
@@ -111,7 +114,7 @@ eel.io/
                            #   no network-fetched runtime deps
 ```
 
-`config.js`, `rng.js`, `scoring.js`, `identity.js`, `leaderboard.js`, `session.js`,
+`config.js`, `movement.js`, `rng.js`, `scoring.js`, `identity.js`, `leaderboard.js`, `session.js`,
 `bank.js`, `skins.js`, `presents.js`, `minigames.js`, `progress.js`, `vector.js`,
 `stats.js`, `achievements.js` and `challenges.js` exist so far. The rest is the destination, not
 a description of today — see §9.
@@ -552,7 +555,7 @@ Extraction order — each step only depends on earlier ones:
 `angleTo`/`distanceTo`) — the shell's own `dist2`/`angLerp`/`clamp` are still
 inline and waiting for their slice, same as before. Existing, not extracted.
 
-`identity`, `leaderboard`, `session`, `bank`, `skins`, `minigames` and `progress` sit
+`movement`, `identity`, `leaderboard`, `session`, `bank`, `skins`, `minigames` and `progress` sit
 outside that chain: they were new behaviour rather than extracted monolith, so they
 went straight in as pure modules.
 
