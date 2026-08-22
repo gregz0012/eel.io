@@ -6578,6 +6578,7 @@
   const PIXI_SKIN_MATERIAL = {
     organic: pixiMatOrganic, brushedMetal: pixiMatBrushedMetal,
     stone: pixiMatStone, charred: pixiMatCharred, crystal: pixiMatCrystal,
+    water: pixiMatWater, air: pixiMatAir,
   };
 
   // World-space port of fxSheen — a bright specular streak down one flank
@@ -6688,6 +6689,41 @@
     }
   }
 
+  // World-space port of matFlow — shared by water and air: long, low-alpha
+  // ribbons at phase-shifted offsets that drift with `nowMs`. A direct,
+  // mechanical port (unlike crystal or charred): matFlow always runs the
+  // ribbon the whole body length, never slices `lo`/`hi`, and its bands fill
+  // with a plain `rgba(...)`-equivalent packed color/alpha rather than an
+  // additive "lighter" blend, so this needed no arc-length computation and
+  // no normal-blend-instead-of-additive trade-off the way crystal/charred did.
+  function pixiMatFlow(bodyG, body, step, bodyLength, radius, nowMs, bandCount, colorFor){
+    for (let b = 0; b < bandCount; b++){
+      const phase = (b / bandCount) * TAU;
+      const offset = Math.sin(nowMs * 0.00025 + phase) * 0.5;
+      const { color, alpha } = colorFor(b);
+      pixiBodyRibbon(bodyG, body, step, bodyLength, radius, offset - 0.08, offset + 0.08, color, alpha);
+    }
+  }
+
+  // water: a deeper blue/cyan base than the flat colour alone gives, with
+  // slow caustic-like bands — fxWater's own travelling highlight/bubble
+  // trail stays Canvas 2D until its own later PR.
+  function pixiMatWater(bodyG, body, step, bodyLength, radius, skin, detail, nowMs){
+    const m = Engine.resolveMaterial(skin);
+    const bands = Math.max(2, Math.round(4 * m.strength * detail));
+    pixiMatFlow(bodyG, body, step, bodyLength, radius, nowMs, bands, () =>
+      ({ color: 0x288cbe, alpha: 0.05 + 0.05 * m.strength }));
+  }
+
+  // air: pearl/silver, fewer and softer bands than water's — fxVortex's own
+  // spiral halo stays Canvas 2D until its own later PR.
+  function pixiMatAir(bodyG, body, step, bodyLength, radius, skin, detail, nowMs){
+    const m = Engine.resolveMaterial(skin);
+    const bands = Math.max(1, Math.round(2 * m.strength * detail));
+    pixiMatFlow(bodyG, body, step, bodyLength, radius, nowMs, bands, () =>
+      ({ color: 0xffffff, alpha: 0.03 + 0.04 * m.strength }));
+  }
+
   // Shared by the player and every rival — draws exactly the two layers
   // described above into the given pair of (already-cleared) Graphics.
   function drawEelRibbon(glowG, bodyG, body, step, radius, skin, glow, detail, nowMs){
@@ -6716,15 +6752,15 @@
     // Universal baseline shading, then whatever material this skin resolves
     // to, then sheen and a gem's twinkle on top — same order as the Canvas
     // 2D pass (drawBodyShading, drawSkinMaterial, fxSheen, fxGemTwinkle).
-    // Only organic, brushedMetal, stone, charred and crystal are ported so
-    // far (see PRs AS-AV in the plan file); every other SKIN_MATERIAL id
-    // falls back to organic here too for now, matching resolveMaterial's
-    // own never-throw fallback — their bespoke textures are still Canvas 2D
-    // until their own PRs.
+    // Only organic, brushedMetal, stone, charred, crystal, water and air are
+    // ported so far (see PRs AS-AW in the plan file); every other
+    // SKIN_MATERIAL id falls back to organic here too for now, matching
+    // resolveMaterial's own never-throw fallback — their bespoke textures
+    // are still Canvas 2D until their own PRs.
     pixiDrawBodyShading(bodyG, body, step, body.length, radius);
     const matType = Engine.resolveMaterial(skin).type;
     const drawMat = PIXI_SKIN_MATERIAL[matType] ?? PIXI_SKIN_MATERIAL.organic;
-    drawMat(bodyG, body, step, body.length, radius, skin, detail);
+    drawMat(bodyG, body, step, body.length, radius, skin, detail, nowMs);
     if (sheen > 0) pixiFxSheen(bodyG, body, step, body.length, radius, skin);
     if (gem) pixiFxGemTwinkle(bodyG, body, step, body.length, radius, skin, nowMs);
   }
