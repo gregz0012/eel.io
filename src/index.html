@@ -3267,17 +3267,72 @@
     }
   }
 
+  // World-space port of fxSpots — pulsing filled dots at a fixed lateral
+  // offset (one of two flanks, chosen by a hash), genuinely additive via
+  // glowG. The fixed-flank offset is what distinguishes this from
+  // pixiFxStars' continuous across-the-width scatter — Bioluminescent's
+  // spots sit at a consistent depth on the body, Void's stars don't.
+  function pixiFxSpots(glowG, bodyG, body, step, bodyLength, radius, skin, nowMs){
+    const { hue, sat, headLight } = skin;
+    const color = hslToHex(hue, Math.min(100, sat + 10), Math.min(92, headLight + 20));
+    for (let i = step; i < body.length; i += step){
+      const p = body[i], q = body[i - step];
+      const jitter = (((Math.sin(i * 37.719) * 91731.234) % 1) + 1) % 1;
+      if (jitter < 0.6) continue;
+      const t = 1 - i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const pulse = 0.5 + 0.5 * Math.sin(nowMs * 0.0025 + i * 0.7);
+      const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      const side = jitter > 0.8 ? 1 : -1;
+      glowG.circle(p.x + nx * r * 0.55 * side, p.y + ny * r * 0.55 * side, Math.max(1, r * 0.13))
+        .fill({ color, alpha: 0.25 + 0.55 * pulse });
+    }
+  }
+
+  // World-space port of fxSlime — a low, viscous sheen stroke (normal
+  // blend in Canvas 2D too, matching pixiFxWater's own wave pass) plus
+  // slow, sparse rising bubbles (additive, via glowG) — Water's bubble
+  // trail again, thicker and murkier.
+  function pixiFxSlime(glowG, bodyG, body, step, bodyLength, radius, skin, nowMs){
+    const { hue, sat, headLight } = skin;
+    const sheenColor = hslToHex(hue, Math.min(100, sat + 5), Math.min(80, headLight + 10));
+    for (let i = step; i < body.length; i += step){
+      const p = body[i], q = body[i - step];
+      const t = 1 - i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      bodyG.moveTo(p.x - nx * r * 0.4, p.y - ny * r * 0.4)
+        .lineTo(q.x - nx * r * 0.4, q.y - ny * r * 0.4)
+        .stroke({ width: r * 0.6, color: sheenColor, alpha: 0.16 });
+    }
+    const bubbleColor = hslToHex(hue, Math.min(100, sat + 15), Math.min(88, headLight + 16));
+    for (let i = 0; i < body.length; i += step * 6){
+      const p = body[i];
+      const t = 1 - i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const loopMs = 2200;
+      const bubbleT = ((nowMs * 0.35 + i * 173) % loopMs) / loopMs;
+      const alpha = Math.sin(bubbleT * Math.PI);
+      if (alpha < 0.15) continue;
+      glowG.circle(p.x, p.y - r * 0.6 - bubbleT * r * 1.1, Math.max(1.2, r * 0.18))
+        .fill({ color: bubbleColor, alpha: alpha * 0.5 });
+    }
+  }
+
   // Dispatch table for skin.fx — unlike PIXI_SKIN_MATERIAL, no fallback: not
   // having an fx is a valid state (mirrors Canvas 2D's drawSkinFx, which
   // just no-ops when SKIN_FX[skin.fx] is undefined). Only ripple, vortex,
-  // cracks, ember, arc, sparkle, molten, afterimage and stars are ported so
-  // far (see PRs AY-BC in the plan file); every other fx stays
-  // Canvas-2D-only, drawn on top of the WebGL body exactly as before.
+  // cracks, ember, arc, sparkle, molten, afterimage, stars, spots and slime
+  // are ported so far (see PRs AY-BD in the plan file); every other fx
+  // stays Canvas-2D-only, drawn on top of the WebGL body exactly as before.
   const PIXI_SKIN_FX = {
     ripple: pixiFxWater, vortex: pixiFxVortex,
     cracks: pixiFxCracks, ember: pixiFxEmber, arc: pixiFxArc,
     sparkle: pixiFxSparkle, molten: pixiFxMolten,
     afterimage: pixiFxAfterimage, stars: pixiFxStars,
+    spots: pixiFxSpots, slime: pixiFxSlime,
   };
 
   // Shared by the player and every rival — draws exactly the two layers
