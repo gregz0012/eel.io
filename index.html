@@ -6130,18 +6130,184 @@
   // slithers, so there is no equivalent redraw-avoidance available here;
   // each ribbon really is cleared and rebuilt every frame, same as the
   // Canvas 2D pass it replaces.
-  let pixiPlayerGlow, pixiPlayerBody, pixiRivalGlow, pixiRivalBody;
+  let pixiPlayerGlow, pixiPlayerBody, pixiPlayerMetal, pixiRivalGlow, pixiRivalBody, pixiRivalMetal;
+
+  // One GPU material for all four metallic skins. The eel is a genuine
+  // two-sided mesh: u runs head-to-tail, v runs across the local radius and
+  // aCurve carries the bend measured while updating the deforming mesh.
+  // Grain, surface lighting and both reflection lobes are evaluated per
+  // fragment, so adding polish no longer means adding JavaScript ribbons or
+  // per-point highlight strokes. Each eel owns only its small uniform group;
+  // every instance shares this compiled program.
+  let pixiMetalProgram;
+  const METAL_VERTEX = `
+    in vec2 aPosition;
+    in vec2 aUV;
+    in float aCurve;
+    out vec2 vUV;
+    out float vCurve;
+    uniform mat3 uProjectionMatrix;
+    uniform mat3 uWorldTransformMatrix;
+    uniform mat3 uTransformMatrix;
+    void main(void){
+      vUV = aUV;
+      vCurve = aCurve;
+      mat3 mvp = uProjectionMatrix * uWorldTransformMatrix * uTransformMatrix;
+      gl_Position = vec4((mvp * vec3(aPosition, 1.0)).xy, 0.0, 1.0);
+    }
+  `;
+  const METAL_FRAGMENT = `
+    precision mediump float;
+    in vec2 vUV;
+    in float vCurve;
+    out vec4 finalColor;
+    uniform vec3 uBaseColor;
+    uniform vec3 uHighlightColor;
+    uniform float uRoughness;
+    uniform float uReflectivity;
+    uniform float uGrainStrength;
+    uniform float uHighlightWidth;
+    uniform float uScale;
+    uniform float uTime;
+    uniform float uSprint;
+
+    float hash21(vec2 p){
+      p = fract(p * vec2(123.34, 345.45));
+      p += dot(p, p + 34.345);
+      return fract(p.x * p.y);
+    }
+
+    void main(void){
+      float side = vUV.y * 2.0 - 1.0;
+      float roundZ = sqrt(max(0.0, 1.0 - side * side));
+      vec3 normal = normalize(vec3(side, 0.34 * vCurve, roundZ));
+      vec3 lightDir = normalize(vec3(0.62, -0.22, 0.76));
+      float diffuse = 0.56 + 0.44 * max(0.0, dot(normal, lightDir));
+      float underside = smoothstep(-0.08, -0.94, side) * (0.14 + 0.12 * uRoughness);
+
+      // Directional machining lines run in UV space and therefore bend with
+      // the mesh instead of remaining fixed to the screen.
+      float grainFreq = mix(115.0, 255.0, uScale);
+      float fine = sin((vUV.x * grainFreq + side * 7.0) * 6.2831853);
+      float coarse = hash21(vec2(floor(vUV.x * grainFreq), floor((side + 1.0) * 9.0))) - 0.5;
+      float grain = (fine * 0.5 + coarse) * uGrainStrength * mix(0.035, 0.085, uRoughness);
+
+      float speed = mix(0.72, 1.15, uSprint);
+      float sweep = sin(uTime * speed + vUV.x * 8.0 + vCurve * 1.8) * 0.18;
+      float primaryWidth = mix(0.055, 0.34, uHighlightWidth);
+      float primary = exp(-pow((side - (0.30 + sweep)) / primaryWidth, 2.0));
+      float secondary = exp(-pow((side + 0.58 - sweep * 0.35) / (primaryWidth * 1.8 + 0.04), 2.0));
+      float curveCatch = 1.0 + vCurve * 0.55;
+      float specular = (primary + secondary * 0.28) * uReflectivity * curveCatch;
+      specular *= mix(0.52, 1.28, 1.0 - uRoughness);
+
+      // The tail is naturally a little lighter, matching the existing eel
+      // palette while keeping the material itself wholly parameter driven.
+      vec3 base = uBaseColor * (diffuse - underside + grain + vUV.x * 0.10);
+      vec3 color = base + uHighlightColor * specular;
+      finalColor = vec4(clamp(color, 0.0, 1.0), 1.0);
+    }
+  `;
+
+  function makeMetalMesh(){
+    if (!pixiMetalProgram){
+      pixiMetalProgram = PIXI.GlProgram.from({
+        name: "eel-metal-material", vertex: METAL_VERTEX, fragment: METAL_FRAGMENT,
+      });
+    }
+    const geometry = new PIXI.MeshGeometry({
+      positions: new Float32Array(0), uvs: new Float32Array(0), indices: new Uint32Array(0),
+    });
+    geometry.addAttribute("aCurve", { buffer: new Float32Array(0), format: "float32" });
+    const metalUniforms = new PIXI.UniformGroup({
+      uBaseColor: { value: new Float32Array([1, 1, 1]), type: "vec3<f32>" },
+      uHighlightColor: { value: new Float32Array([1, 1, 1]), type: "vec3<f32>" },
+      uRoughness: { value: 0.5, type: "f32" },
+      uReflectivity: { value: 0.5, type: "f32" },
+      uGrainStrength: { value: 0.5, type: "f32" },
+      uHighlightWidth: { value: 0.35, type: "f32" },
+      uScale: { value: 1, type: "f32" },
+      uTime: { value: 0, type: "f32" },
+      uSprint: { value: 0, type: "f32" },
+    });
+    const shader = new PIXI.Shader({ glProgram: pixiMetalProgram, resources: { metalUniforms } });
+    const mesh = new PIXI.Mesh({ geometry, shader });
+    mesh._metalUniforms = metalUniforms;
+    mesh.visible = false;
+    return mesh;
+  }
+
+  function colorVec(hex, out){
+    out[0] = ((hex >> 16) & 255) / 255;
+    out[1] = ((hex >> 8) & 255) / 255;
+    out[2] = (hex & 255) / 255;
+  }
+
+  function updateMetalMesh(mesh, body, step, radius, skin, nowMs, detail){
+    const m = Engine.resolveMaterial(skin);
+    if (m.type !== "brushedMetal") { mesh.visible = false; return false; }
+    const samples = [];
+    for (let i = 0; i < body.length; i += step) samples.push(i);
+    if (samples[samples.length - 1] !== body.length - 1) samples.push(body.length - 1);
+    if (samples.length < 2) { mesh.visible = false; return false; }
+    const positions = new Float32Array(samples.length * 4);
+    const uvs = new Float32Array(samples.length * 4);
+    const curves = new Float32Array(samples.length * 2);
+    const indices = new Uint32Array((samples.length - 1) * 6);
+    for (let s = 0; s < samples.length; s++){
+      const i = samples[s], p = body[i];
+      const ai = samples[Math.max(0, s - 1)], bi = samples[Math.min(samples.length - 1, s + 1)];
+      const a = body[ai], b = body[bi];
+      const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      const t = 1 - i / body.length, r = radius * (0.35 + 0.65 * t);
+      let curve = 0;
+      if (s > 0 && s < samples.length - 1){
+        const inAng = Math.atan2(p.y - a.y, p.x - a.x);
+        const outAng = Math.atan2(b.y - p.y, b.x - p.x);
+        curve = Math.min(1, Math.abs(Math.atan2(Math.sin(outAng - inAng), Math.cos(outAng - inAng))) / 0.45);
+      }
+      const v = s * 4;
+      positions[v] = p.x - nx * r; positions[v + 1] = p.y - ny * r;
+      positions[v + 2] = p.x + nx * r; positions[v + 3] = p.y + ny * r;
+      const u = s / (samples.length - 1);
+      uvs[v] = u; uvs[v + 1] = 0; uvs[v + 2] = u; uvs[v + 3] = 1;
+      curves[s * 2] = curve; curves[s * 2 + 1] = curve;
+      if (s < samples.length - 1){
+        const k = s * 6, n = s * 2;
+        indices[k] = n; indices[k + 1] = n + 1; indices[k + 2] = n + 2;
+        indices[k + 3] = n + 1; indices[k + 4] = n + 3; indices[k + 5] = n + 2;
+      }
+    }
+    const geometry = mesh.geometry;
+    geometry.positions = positions; geometry.uvs = uvs; geometry.indices = indices;
+    geometry.getBuffer("aCurve").data = curves;
+    geometry.getBuffer("aPosition").update(); geometry.getBuffer("aUV").update();
+    geometry.getBuffer("aCurve").update(); geometry.getIndex().update();
+    const u = mesh._metalUniforms.uniforms;
+    colorVec(hslToHex(skin.hue, skin.sat, skin.bodyLight), u.uBaseColor);
+    colorVec(hslToHex(skin.hue, Math.max(0, skin.sat - 45), Math.min(98, skin.headLight + 26)), u.uHighlightColor);
+    u.uRoughness = m.roughness; u.uReflectivity = m.reflectivity * detail;
+    u.uGrainStrength = m.grainStrength; u.uHighlightWidth = m.highlightWidth;
+    u.uScale = m.scale; u.uTime = nowMs * 0.001;
+    u.uSprint = detail >= 1 && pointer.boosting ? 1 : 0;
+    mesh.visible = true;
+    return true;
+  }
 
   function ensurePixiEelLayers(){
     if (pixiPlayerGlow) return;
     pixiPlayerGlow = new PIXI.Graphics(); pixiPlayerGlow.blendMode = "add";
+    pixiPlayerMetal = makeMetalMesh();
     pixiPlayerBody = new PIXI.Graphics();
     pixiRivalGlow = new PIXI.Container(); pixiRivalGlow.blendMode = "add";
+    pixiRivalMetal = new PIXI.Container();
     pixiRivalBody = new PIXI.Container();
     // draw order: rival glow, rival body, player glow, player body — the
     // player's own eel reads on top of any rival it's overlapping, same as
     // the existing draw() dispatch order (drawRivalEels before drawPlayer).
-    pixiWorld.addChild(pixiRivalGlow, pixiRivalBody, pixiPlayerGlow, pixiPlayerBody);
+    pixiWorld.addChild(pixiRivalGlow, pixiRivalMetal, pixiRivalBody,
+      pixiPlayerGlow, pixiPlayerMetal, pixiPlayerBody);
   }
 
   // ---- eel heads (PR BL/BL2/BL3 of #85) ----
@@ -6535,10 +6701,12 @@
   // takes, so it's already proven correct.
   function pixiHardReset(){
     for (const c of [
-      pixiPlayerGlow, pixiPlayerBody, pixiRivalGlow, pixiRivalBody,
+      pixiPlayerGlow, pixiPlayerMetal, pixiPlayerBody,
+      pixiRivalGlow, pixiRivalMetal, pixiRivalBody,
       pixiPlayerHeadWrap, pixiRivalHeadPool,
     ]) if (c) c.destroy({ children: true });
-    pixiPlayerGlow = pixiPlayerBody = pixiRivalGlow = pixiRivalBody = undefined;
+    pixiPlayerGlow = pixiPlayerMetal = pixiPlayerBody = undefined;
+    pixiRivalGlow = pixiRivalMetal = pixiRivalBody = undefined;
     pixiPlayerHeadWrap = pixiRivalHeadPool = undefined;
   }
 
@@ -7849,7 +8017,7 @@
     }
   }
 
-  function drawEelRibbon(glowG, bodyG, body, step, radius, skin, glow, detail, nowMs){
+  function drawEelRibbon(glowG, bodyG, body, step, radius, skin, glow, detail, nowMs, metalMeshActive = false){
     const { hue, sat, bodyLight, headLight, accent, accentRatio = 0.5, sheen = 0, gem } = skin;
     const marks = [].concat(skin.mark ?? []);
     const BAND = 52;
@@ -7862,18 +8030,20 @@
       color: hslToHex(hue, Math.min(100, sat + 20), Math.min(80, headLight + 8)),
     });
 
-    const hasBodyFx = skin.fx === "fade" || skin.fx === "iridescent";
-    for (let i = body.length - 1; i >= step; i -= step){
-      const p = body[i], q = body[i - step];
-      const t = 1 - i / body.length;
-      const r = radius * (0.35 + 0.65 * t);
-      const band = accent && !marks.includes("patch") && (i % BAND) < BAND * accentRatio;
-      const bh = band ? accent.hue : hue, bs = band ? accent.sat : sat, bl = band ? accent.light : bodyLight;
-      const { color, alpha } = hasBodyFx
-        ? pixiBodyFxStyle(bh, bs, bl + t * 18, t, i, skin, nowMs)
-        : { color: hslToHex(bh, bs, bl + t * 18), alpha: 1 };
-      bodyG.moveTo(p.x, p.y).lineTo(q.x, q.y)
-        .stroke({ width: r * 2, cap: "round", join: "round", color, alpha });
+    if (!metalMeshActive){
+      const hasBodyFx = skin.fx === "fade" || skin.fx === "iridescent";
+      for (let i = body.length - 1; i >= step; i -= step){
+        const p = body[i], q = body[i - step];
+        const t = 1 - i / body.length;
+        const r = radius * (0.35 + 0.65 * t);
+        const band = accent && !marks.includes("patch") && (i % BAND) < BAND * accentRatio;
+        const bh = band ? accent.hue : hue, bs = band ? accent.sat : sat, bl = band ? accent.light : bodyLight;
+        const { color, alpha } = hasBodyFx
+          ? pixiBodyFxStyle(bh, bs, bl + t * 18, t, i, skin, nowMs)
+          : { color: hslToHex(bh, bs, bl + t * 18), alpha: 1 };
+        bodyG.moveTo(p.x, p.y).lineTo(q.x, q.y)
+          .stroke({ width: r * 2, cap: "round", join: "round", color, alpha });
+      }
     }
 
     // Universal baseline shading, then whatever material this skin resolves
@@ -7884,13 +8054,15 @@
     // here too, matching resolveMaterial's own never-throw fallback, and
     // every fx not yet ported stays Canvas-2D-only — their bespoke
     // textures/effects are still Canvas 2D until their own PRs.
-    pixiDrawBodyShading(bodyG, body, step, body.length, radius);
-    const matType = Engine.resolveMaterial(skin).type;
-    const drawMat = PIXI_SKIN_MATERIAL[matType] ?? PIXI_SKIN_MATERIAL.organic;
-    drawMat(bodyG, body, step, body.length, radius, skin, detail, nowMs, glowG);
+    if (!metalMeshActive){
+      pixiDrawBodyShading(bodyG, body, step, body.length, radius);
+      const matType = Engine.resolveMaterial(skin).type;
+      const drawMat = PIXI_SKIN_MATERIAL[matType] ?? PIXI_SKIN_MATERIAL.organic;
+      drawMat(bodyG, body, step, body.length, radius, skin, detail, nowMs, glowG);
+    }
     if (marks.includes("patch")) pixiDrawAccentPatches(bodyG, body, step, body.length, radius, skin);
     if (marks.includes("web")) pixiDrawWebMark(bodyG, body, step, body.length, radius, skin);
-    if (sheen > 0) pixiFxSheen(bodyG, body, step, body.length, radius, skin);
+    if (sheen > 0 && !metalMeshActive) pixiFxSheen(bodyG, body, step, body.length, radius, skin);
     if (gem) pixiFxGemTwinkle(bodyG, body, step, body.length, radius, skin, nowMs);
     // Computed once, matching Canvas 2D's own inline `skinGlow` local at its
     // drawSkinFx call site — only feral is ported to WebGL so far (X-Ray's
@@ -7965,21 +8137,24 @@
   function drawPlayerRibbonPixi(body, step, radius, skin, glow, nowMs){
     ensurePixiEelLayers();
     pixiPlayerGlow.clear(); pixiPlayerBody.clear();
-    drawEelRibbon(pixiPlayerGlow, pixiPlayerBody, body, step, radius, skin, glow, 1, nowMs);
+    const metalActive = updateMetalMesh(pixiPlayerMetal, body, step, radius, skin, nowMs, 1);
+    drawEelRibbon(pixiPlayerGlow, pixiPlayerBody, body, step, radius, skin, glow, 1, nowMs, metalActive);
   }
 
   function drawRivalRibbonsBegin(){
     ensurePixiEelLayers();
     ensurePoolSize(pixiRivalGlow, eels.length, () => new PIXI.Graphics());
+    ensurePoolSize(pixiRivalMetal, eels.length, makeMetalMesh);
     ensurePoolSize(pixiRivalBody, eels.length, () => new PIXI.Graphics());
     ensurePixiEelHeadLayers();
     ensurePoolSize(pixiRivalHeadPool, eels.length, makeHeadWrap);
   }
 
   function drawRivalRibbonPixi(idx, body, step, radius, skin, glow, nowMs){
-    const glowG = pixiRivalGlow.children[idx], bodyG = pixiRivalBody.children[idx];
+    const glowG = pixiRivalGlow.children[idx], metalMesh = pixiRivalMetal.children[idx], bodyG = pixiRivalBody.children[idx];
     glowG.clear(); bodyG.clear();
-    drawEelRibbon(glowG, bodyG, body, step, radius, skin, glow, 0.5, nowMs);
+    const metalActive = updateMetalMesh(metalMesh, body, step, radius, skin, nowMs, 0.5);
+    drawEelRibbon(glowG, bodyG, body, step, radius, skin, glow, 0.5, nowMs, metalActive);
   }
 
   // Split from the actual render() call on purpose: this syncs the world
@@ -10036,6 +10211,7 @@
         // nearby.
         if (pixiReady){
           pixiRivalGlow.children[idx].clear();
+          pixiRivalMetal.children[idx].visible = false;
           pixiRivalBody.children[idx].clear();
           pixiClearHeadWrap(pixiRivalHeadPool.children[idx]);
         }
