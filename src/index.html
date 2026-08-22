@@ -2515,7 +2515,7 @@
     }
   }
 
-  function pixiDrawEelHead(wrap, cx, cy, ang, radius, skin, marks, glow = 0){
+  function pixiDrawEelHead(wrap, cx, cy, ang, radius, skin, marks, glow = 0, nowMs = 0){
     const { hue, sat, headLight, gem, accent } = skin;
     pixiClearHeadWrap(wrap);
     const segments = 28;
@@ -2557,6 +2557,39 @@
     wrap._shade.poly(hi1).fill({ color: 0xffffff, alpha: 0.14 });
     const hi2 = pixiEllipsePoly(cx, cy, ang, -radius * 0.35, -radius * 0.62, radius * 0.55, radius * 0.22, 0, segments);
     wrap._shade.poly(hi2).fill({ color: 0xffffff, alpha: 0.22 });
+
+    // Metallic heads use the same material parameters as their bodies. The
+    // broad reflection and narrow specular core move across the local head
+    // surface, while deterministic lengthwise strokes carry the brushed
+    // grain through to the face. Everything is masked by the head ellipse.
+    const material = Engine.resolveMaterial(skin);
+    if (material.type === "brushedMetal"){
+      const sweep = Math.sin(nowMs * 0.0011) * radius * 0.42;
+      const reflectionColor = hslToHex(hue, Math.max(0, sat - 35), Math.min(98, headLight + 24));
+      const broad = pixiEllipsePoly(cx, cy, ang, -radius * 0.18, sweep,
+        radius * 1.2, radius * (0.18 + material.highlightWidth * 0.38), 0, segments);
+      wrap._shade.poly(broad).fill({
+        color: reflectionColor,
+        alpha: Math.min(0.72, 0.16 + material.reflectivity * 0.48),
+      });
+      const core = pixiEllipsePoly(cx, cy, ang, -radius * 0.26, sweep - radius * 0.08,
+        radius * 0.72, radius * (0.05 + material.highlightWidth * 0.12), 0, segments);
+      wrap._glow.poly(core).fill({ color: reflectionColor, alpha: material.reflectivity * 0.34 });
+
+      const grainCount = Math.max(2, Math.round(6 * material.grainStrength));
+      for (let g = 0; g < grainCount; g++){
+        const hash = (((Math.sin(g * 12.9898 + skin.hue) * 43758.5453) % 1) + 1) % 1;
+        const y = (hash - 0.5) * radius * 1.65;
+        const a = pixiLocalToWorld(cx, cy, ang, -radius * 1.15, y);
+        const b = pixiLocalToWorld(cx, cy, ang, radius * 0.9, y * 0.88);
+        wrap._shade.moveTo(a[0], a[1]).lineTo(b[0], b[1]).stroke({
+          width: Math.max(0.45, radius * (0.018 + material.roughness * 0.018)),
+          color: g % 3 === 0 ? 0x000000 : 0xffffff,
+          alpha: (g % 3 === 0 ? 0.06 : 0.1) * material.grainStrength,
+          cap: "round",
+        });
+      }
+    }
 
     if (gem){
       const g0 = pixiLocalToWorld(cx, cy, ang, -radius * 0.15, -radius * 0.85);
@@ -5227,7 +5260,7 @@
   // translated to the head position and rotated to face it; shared verbatim
   // between drawEelBody and drawPreviewEel, which used to carry this ~90
   // lines each.
-  function drawEelHead(ctx2d, radius, skin, marks, glow = 0){
+  function drawEelHead(ctx2d, radius, skin, marks, glow = 0, nowMs = 0){
     const { hue, sat, headLight, gem, accent } = skin;
     // "ears": a pointed cowl swept back off the head, drawn under it so the
     // head reads as sitting inside the mask
@@ -5265,6 +5298,35 @@
     ctx2d.fillStyle = `hsl(${hue},${sat}%,${headLight}%)`;
     ctx2d.beginPath(); ctx2d.ellipse(0,0,radius*1.5,radius*1.15,0,0,TAU); ctx2d.fill();
     drawHeadShading(ctx2d, radius, skin);
+    const material = Engine.resolveMaterial(skin);
+    if (material.type === "brushedMetal"){
+      const sweep = Math.sin(nowMs * 0.0011) * radius * 0.42;
+      ctx2d.save();
+      ctx2d.beginPath(); ctx2d.ellipse(0,0,radius*1.5,radius*1.15,0,0,TAU); ctx2d.clip();
+      ctx2d.fillStyle = `hsla(${hue},${Math.max(0,sat-35)}%,${Math.min(98,headLight+24)}%,${Math.min(0.72,0.16+material.reflectivity*0.48)})`;
+      ctx2d.beginPath();
+      ctx2d.ellipse(-radius*0.18, sweep, radius*1.2,
+        radius*(0.18+material.highlightWidth*0.38), 0, 0, TAU);
+      ctx2d.fill();
+
+      const grainCount = Math.max(2, Math.round(6*material.grainStrength));
+      for (let g = 0; g < grainCount; g++){
+        const hash = (((Math.sin(g*12.9898+skin.hue)*43758.5453)%1)+1)%1;
+        const y = (hash-0.5)*radius*1.65;
+        ctx2d.strokeStyle = g%3 === 0
+          ? `rgba(0,0,0,${0.06*material.grainStrength})`
+          : `rgba(255,255,255,${0.1*material.grainStrength})`;
+        ctx2d.lineWidth = Math.max(0.45,radius*(0.018+material.roughness*0.018));
+        ctx2d.beginPath(); ctx2d.moveTo(-radius*1.15,y); ctx2d.lineTo(radius*0.9,y*0.88); ctx2d.stroke();
+      }
+      ctx2d.globalCompositeOperation = "lighter";
+      ctx2d.fillStyle = `hsla(${hue},${Math.max(0,sat-35)}%,${Math.min(98,headLight+24)}%,${material.reflectivity*0.34})`;
+      ctx2d.beginPath();
+      ctx2d.ellipse(-radius*0.26, sweep-radius*0.08, radius*0.72,
+        radius*(0.05+material.highlightWidth*0.12), 0, 0, TAU);
+      ctx2d.fill();
+      ctx2d.restore();
+    }
     if (gem){
       // a faceted glint on the crown, standing in for a cut gem's flat faces
       ctx2d.save();
@@ -6014,12 +6076,12 @@
     if (pixiReady){
       ensurePixiEelHeadLayers();
       const wrap = isPlayer ? pixiPlayerHeadWrap : pixiRivalHeadPool.children[rivalIdx];
-      pixiDrawEelHead(wrap, body[0].x, body[0].y, ang, radius, skin, marks, skinGlow || 0);
+      pixiDrawEelHead(wrap, body[0].x, body[0].y, ang, radius, skin, marks, skinGlow || 0, nowMs);
     } else {
       const [hx,hy] = worldToScreen(body[0].x, body[0].y);
       ctx.save();
       ctx.translate(hx,hy); ctx.rotate(ang);
-      drawEelHead(ctx, radius, skin, marks, skinGlow || 0);
+      drawEelHead(ctx, radius, skin, marks, skinGlow || 0, nowMs);
       ctx.restore();
     }
   }
@@ -6649,7 +6711,7 @@
     const ang = Math.atan2(head.y - neck.y, head.x - neck.x);
     pctx.save();
     pctx.translate(head.x, head.y); pctx.rotate(ang);
-    drawEelHead(pctx, radius, skin, marks, previewGlow || 0);
+    drawEelHead(pctx, radius, skin, marks, previewGlow || 0, previewNowMs);
     pctx.restore();
   }
 
