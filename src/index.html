@@ -4113,6 +4113,58 @@
     bodyG.circle(buckle[0], buckle[1], Math.max(0.8, size * 0.08)).fill({ color: 0x2a2018 });
   }
 
+  // World-space port of drawSymbioteSpider (Eel-symbiote's "emblem" body
+  // mark) — abdomen and cephalothorax as two angular filled polygons, plus
+  // eight tapered two-perpendicular-point legs, one `.poly(...).fill(...)`
+  // each rather than Canvas 2D's path-per-shape, since a leg's taper (base
+  // width to a point) has no direct stroke equivalent. Every vertex is
+  // computed in local space exactly as the Canvas 2D version does (after
+  // its own translate/rotate) and passed through pixiLocalToWorld
+  // individually, the same discipline as every other body-mark icon ported
+  // so far — this was the one mark PRs BG-BK missed porting to WebGL, since
+  // (unlike swords/orbweave/gear) nothing wired it into drawEelRibbon's own
+  // marks.includes(...) chain until now.
+  function pixiDrawSymbioteSpider(bodyG, cx, cy, ang, size){
+    const fillColor = 0xf4f8fa;
+    const abdomen = [
+      [-size*0.25, size*0.38], [-size*1.15, size*0.2], [-size*1.35, 0],
+      [-size*1.15, -size*0.2], [-size*0.25, -size*0.38],
+    ];
+    bodyG.poly(abdomen.flatMap(([lx, ly]) => pixiLocalToWorld(cx, cy, ang, lx, ly)))
+      .fill({ color: fillColor });
+    const cephalothorax = [
+      [size*0.95, 0], [size*0.2, size*0.3], [-size*0.35, size*0.22],
+      [-size*0.35, -size*0.22], [size*0.2, -size*0.3],
+    ];
+    bodyG.poly(cephalothorax.flatMap(([lx, ly]) => pixiLocalToWorld(cx, cy, ang, lx, ly)))
+      .fill({ color: fillColor });
+
+    // [base, knee, tip] — knees push out, tips curl fore and aft
+    const legs = [
+      [[0.35, 0.16], [0.95, 0.8],  [1.6, 0.62]],
+      [[0.15, 0.2],  [0.5, 0.98],  [1.05, 1.15]],
+      [[-0.1, 0.2],  [-0.5, 0.98], [-1.05, 1.15]],
+      [[-0.3, 0.16], [-0.95, 0.8], [-1.6, 0.62]],
+    ];
+    for (const s of [-1, 1]){
+      for (const [b, k, t] of legs){
+        const bx = size*b[0], by = s*size*b[1];
+        const kx = size*k[0], ky = s*size*k[1];
+        const tx = size*t[0], ty = s*size*t[1];
+        const n1 = Math.hypot(kx-bx, ky-by) || 1;
+        const p1x = -(ky-by)/n1*size*0.13, p1y = (kx-bx)/n1*size*0.13;
+        const n2 = Math.hypot(tx-kx, ty-ky) || 1;
+        const p2x = -(ty-ky)/n2*size*0.07, p2y = (tx-kx)/n2*size*0.07;
+        const leg = [
+          [bx+p1x, by+p1y], [kx+p2x, ky+p2y], [tx, ty],
+          [kx-p2x, ky-p2y], [bx-p1x, by-p1y],
+        ];
+        bodyG.poly(leg.flatMap(([lx, ly]) => pixiLocalToWorld(cx, cy, ang, lx, ly)))
+          .fill({ color: fillColor });
+      }
+    }
+  }
+
   function drawEelRibbon(glowG, bodyG, body, step, radius, skin, glow, detail, nowMs){
     const { hue, sat, bodyLight, headLight, accent, accentRatio = 0.5, sheen = 0, gem } = skin;
     const marks = [].concat(skin.mark ?? []);
@@ -4181,6 +4233,20 @@
       const tail = body[Math.min(body.length - 1, si + 5)];
       pixiDrawCrossedSwords(bodyG, body[si].x, body[si].y,
         Math.atan2(body[si].y - tail.y, body[si].x - tail.x), radius * 2.1);
+    }
+
+    // "emblem": Eel-symbiote's spider silhouette, positioned like "swords"
+    // but travelling a little further back (radius*3.4 vs. radius*3.1),
+    // matching the Canvas 2D version's own distance exactly.
+    if (marks.includes("emblem")){
+      let travelled = 0, ei = 0;
+      while (ei < body.length - 2 && travelled < radius * 3.4){
+        travelled += Math.hypot(body[ei + 1].x - body[ei].x, body[ei + 1].y - body[ei].y);
+        ei++;
+      }
+      const back = body[Math.min(body.length - 1, ei + 5)];
+      pixiDrawSymbioteSpider(bodyG, body[ei].x, body[ei].y,
+        Math.atan2(body[ei].y - back.y, body[ei].x - back.x), radius * 0.8);
     }
 
     // "orbweave": Orbweaver's dorsal marking, sitting a little further back
