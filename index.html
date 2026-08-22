@@ -3780,12 +3780,12 @@
       // over them. Diamond is tuned to the highest strength/scale of the three
       // (most facets, most visible dispersion glint), reading as the most
       // crystalline — the issue's own ask for it specifically.
-      { id: "emerald", tier: "gemstone",  name: "Emerald",  hue: 150, sat: 85, bodyLight: 34, headLight: 60, price: 7500, gem: true,
-        material: { type: "crystal", strength: 0.5, scale: 1.0 } },
-      { id: "ruby", tier: "gemstone",     name: "Ruby",     hue: 350, sat: 82, bodyLight: 36, headLight: 60, price: 7500, gem: true,
-        material: { type: "crystal", strength: 0.55, scale: 1.0 } },
-      { id: "diamond", tier: "gemstone",  name: "Diamond",  hue: 190, sat: 45, bodyLight: 58, headLight: 82, price: 7500, gem: true,
-        material: { type: "crystal", strength: 0.8, scale: 1.4 } },
+      { id: "emerald", tier: "gemstone",  name: "Emerald",  hue: 150, sat: 85, bodyLight: 28, headLight: 52, price: 7500, gem: true,
+        material: { type: "crystal", strength: 0.72, scale: 1.0, clarity: 0.46, roughness: 0.28, facetStrength: 0.78, refractionStrength: 0.12, dispersionStrength: 0.015, inclusionStrength: 0.34, internalGlow: 0.08 } },
+      { id: "ruby", tier: "gemstone",     name: "Ruby",     hue: 350, sat: 88, bodyLight: 30, headLight: 54, price: 7500, gem: true,
+        material: { type: "crystal", strength: 0.78, scale: 1.05, clarity: 0.34, roughness: 0.2, facetStrength: 0.86, refractionStrength: 0.1, dispersionStrength: 0.02, inclusionStrength: 0.12, internalGlow: 0.24 } },
+      { id: "diamond", tier: "gemstone",  name: "Diamond",  hue: 195, sat: 28, bodyLight: 62, headLight: 86, price: 7500, gem: true,
+        material: { type: "crystal", strength: 0.95, scale: 1.45, clarity: 0.92, roughness: 0.04, facetStrength: 1.1, refractionStrength: 0.28, dispersionStrength: 0.22, inclusionStrength: 0.02, internalGlow: 0.04 } },
     
       // the special finishes — the four here are each a variant of an Elements
       // effect (biolume from Water's dots, toxic from its bubble trail, frost
@@ -4028,7 +4028,7 @@
       brushedMetal: { strength: 0.5, scale: 1, roughness: 0.5, reflectivity: 0.5, grainStrength: 0.5, highlightWidth: 0.35 },
       stone: { strength: 0.5, scale: 1 },
       charred: { strength: 0.5, scale: 1 },
-      crystal: { strength: 0.5, scale: 1 },
+      crystal: { strength: 0.5, scale: 1, clarity: 0.5, roughness: 0.2, facetStrength: 0.6, refractionStrength: 0.08, dispersionStrength: 0.03, inclusionStrength: 0, internalGlow: 0 },
       water: { strength: 0.5, scale: 1 },
       air: { strength: 0.5, scale: 1 },
       charged: { strength: 0.5, scale: 1 },
@@ -6361,6 +6361,53 @@
       }
     }
 
+    // The gemstone material continues over the head instead of ending at
+    // the neck. Irregular planes share the body's material parameters;
+    // refraction sweeps across local head space and remains clipped by the
+    // existing head mask. Diamond alone gets clearly visible dispersion.
+    if (material.type === "crystal"){
+      const facetAlpha = (0.1 + 0.14 * material.facetStrength) * (0.65 + 0.35 * material.clarity);
+      const facets = [
+        [[-1.32,-0.18],[-0.5,-1.02],[-0.12,-0.18]],
+        [[-0.5,-1.02],[0.62,-0.8],[-0.12,-0.18]],
+        [[0.62,-0.8],[1.38,-0.12],[0.35,0.08]],
+        [[-1.32,-0.18],[-0.12,-0.18],[-0.52,0.94]],
+        [[-0.12,-0.18],[0.35,0.08],[-0.52,0.94]],
+        [[0.35,0.08],[1.38,-0.12],[0.62,0.9],[-0.52,0.94]],
+      ];
+      for (let f = 0; f < facets.length; f++){
+        const poly = facets[f].flatMap(([x,y]) => pixiLocalToWorld(cx,cy,ang,x*radius,y*radius));
+        wrap._shade.poly(poly).fill({
+          color: f % 3 === 1 ? 0xffffff : 0x000000,
+          alpha: facetAlpha * (f % 3 === 1 ? 0.72 : 0.38),
+        });
+      }
+      const sweep = Math.sin(nowMs * 0.0009 + skin.hue) * radius * 0.48;
+      const refract = pixiEllipsePoly(cx,cy,ang,-radius*0.05,sweep,radius*1.28,
+        radius*(0.08+material.refractionStrength*0.22),0,segments);
+      wrap._glow.poly(refract).fill({
+        color: hslToHex(hue,Math.max(0,sat-42),Math.min(98,headLight+28)),
+        alpha: (0.12+0.3*material.clarity)*material.refractionStrength,
+      });
+      if (material.internalGlow > 0){
+        const core = pixiEllipsePoly(cx,cy,ang,-radius*0.18,0,radius*0.82,radius*0.48,0,segments);
+        wrap._glow.poly(core).fill({ color:hslToHex(hue,Math.min(100,sat+8),72), alpha:material.internalGlow*0.42 });
+      }
+      for (let i = 0; i < Math.round(5*material.inclusionStrength); i++){
+        const h = (((Math.sin(i*19.1+hue)*12345.6)%1)+1)%1;
+        const p = pixiLocalToWorld(cx,cy,ang,(h-0.5)*radius*1.7,(i/5-0.4)*radius*1.2);
+        wrap._shade.circle(p[0],p[1],Math.max(0.7,radius*(0.05+h*0.07)))
+          .fill({ color:0x00140c, alpha:material.inclusionStrength*0.2 });
+      }
+      if (material.dispersionStrength > 0.08){
+        for (let i = 0; i < 3; i++){
+          const p = pixiLocalToWorld(cx,cy,ang,radius*(0.15+i*0.18),radius*(-0.62+i*0.16));
+          wrap._glow.circle(p[0],p[1],Math.max(0.7,radius*0.055))
+            .fill({ color:hslToHex((nowMs*0.03+i*110)%360,88,90), alpha:material.dispersionStrength*0.65 });
+        }
+      }
+    }
+
     if (gem){
       const g0 = pixiLocalToWorld(cx, cy, ang, -radius * 0.15, -radius * 0.85);
       const g1 = pixiLocalToWorld(cx, cy, ang, radius * 0.35, -radius * 0.55);
@@ -6859,11 +6906,25 @@
   // worth the extra pass. `s` is still recomputed fresh per call rather than
   // pooled/persisted, since it's only ever consumed within this one
   // function, immediately after being built.
-  function pixiMatCrystal(bodyG, body, step, bodyLength, radius, skin, detail){
+  function pixiMatCrystal(bodyG, body, step, bodyLength, radius, skin, detail, nowMs = 0){
     const m = Engine.resolveMaterial(skin);
     const n = body.length;
     if (n < 3) return;
     const facetSize = Math.max(1, (radius * 1.6) / Math.max(0.3, m.scale));
+    // A slow light/refraction field runs along the local surface rather than
+    // screen space, so it follows the eel through bends. Strong body colour
+    // keeps Emerald/Ruby dense; Diamond's clarity makes this much brighter.
+    const lightPhase = Math.sin(nowMs * 0.00075 + bodyLength * 0.013);
+    const refractOffset = lightPhase * 0.42;
+    pixiBodyRibbon(bodyG, body, step, bodyLength, radius,
+      Math.max(-0.9, refractOffset - 0.16), Math.min(0.9, refractOffset + 0.16),
+      hslToHex(skin.hue, Math.max(0, skin.sat - 35), Math.min(98, skin.headLight + 20)),
+      (0.07 + 0.2 * m.clarity) * m.refractionStrength * detail);
+    if (m.internalGlow > 0){
+      pixiBodyRibbon(bodyG, body, step, bodyLength, radius, -0.34, 0.34,
+        hslToHex(skin.hue, Math.min(100, skin.sat + 8), Math.min(76, skin.bodyLight + 30)),
+        m.internalGlow * (0.32 + 0.12 * Math.sin(nowMs * 0.0011)) * detail);
+    }
     const sVals = [];
     let s = 0;
     for (let i = 0, k = 0; i < n; i += step, k++){
@@ -6879,7 +6940,7 @@
         const k1 = k - 1;
         if (k1 > runStartK){
           const hash = (((Math.sin(runFacet * 27.13 + bodyLength * 0.005) * 91731.234) % 1) + 1) % 1;
-          const strength = Math.max(0.3, m.strength) * detail;
+          const strength = Math.max(0.3, m.facetStrength) * detail;
           const bright = hash > 0.55;
           const color = bright ? 0xffffff : 0x000000;
           const alpha = bright ? (0.08 + hash * 0.18) * strength : (0.06 + (1 - hash) * 0.12) * strength;
@@ -6894,6 +6955,17 @@
       }
     }
 
+    // Emerald's natural inclusions/clouding distinguish it from clean glass;
+    // Ruby carries only a trace and Diamond is effectively inclusion-free.
+    if (m.inclusionStrength > 0){
+      for (let i = step * 2; i < n; i += step * 7){
+        const hash = (((Math.sin(i * 17.17 + skin.hue) * 16381.7) % 1) + 1) % 1;
+        const p = body[i];
+        bodyG.circle(p.x, p.y, Math.max(0.8, radius * (0.1 + hash * 0.18)))
+          .fill({ color: 0x00140c, alpha: m.inclusionStrength * (0.08 + hash * 0.12) * detail });
+      }
+    }
+
     // dispersion glint — disclosed simplification: Canvas 2D draws this with
     // globalCompositeOperation "lighter" for a true additive sparkle; bodyG
     // has one blend mode for its whole content (already normal-blend for
@@ -6905,12 +6977,12 @@
       if (hash < 0.72) continue;
       const t = 1 - i / bodyLength;
       const r = radius * (0.35 + 0.65 * t);
-      const glint = ((hash - 0.72) / 0.28) * m.strength * detail;
+      const glint = ((hash - 0.72) / 0.28) * m.dispersionStrength * detail;
       if (glint < 0.02) continue;
       const dispersionHue = (hash * 360) % 360;
       const p = body[i];
       bodyG.circle(p.x, p.y, Math.max(0.7, r * 0.09))
-        .fill({ color: hslToHex(dispersionHue, 85, 88), alpha: Math.min(0.7, glint * 0.6) });
+        .fill({ color: hslToHex(dispersionHue, 85, 88), alpha: Math.min(0.72, glint * 2.4) });
     }
   }
 
@@ -9097,6 +9169,49 @@
       ctx2d.fill();
       ctx2d.restore();
     }
+    if (material.type === "crystal"){
+      const facetAlpha = (0.1+0.14*material.facetStrength)*(0.65+0.35*material.clarity);
+      const facets = [
+        [[-1.32,-0.18],[-0.5,-1.02],[-0.12,-0.18]],
+        [[-0.5,-1.02],[0.62,-0.8],[-0.12,-0.18]],
+        [[0.62,-0.8],[1.38,-0.12],[0.35,0.08]],
+        [[-1.32,-0.18],[-0.12,-0.18],[-0.52,0.94]],
+        [[-0.12,-0.18],[0.35,0.08],[-0.52,0.94]],
+        [[0.35,0.08],[1.38,-0.12],[0.62,0.9],[-0.52,0.94]],
+      ];
+      ctx2d.save();
+      ctx2d.beginPath(); ctx2d.ellipse(0,0,radius*1.5,radius*1.15,0,0,TAU); ctx2d.clip();
+      for (let f=0;f<facets.length;f++){
+        ctx2d.fillStyle = f%3===1
+          ? `rgba(255,255,255,${facetAlpha*0.72})`
+          : `rgba(0,0,0,${facetAlpha*0.38})`;
+        ctx2d.beginPath();
+        facets[f].forEach(([x,y],i)=>i?ctx2d.lineTo(x*radius,y*radius):ctx2d.moveTo(x*radius,y*radius));
+        ctx2d.closePath(); ctx2d.fill();
+      }
+      const sweep = Math.sin(nowMs*0.0009+skin.hue)*radius*0.48;
+      ctx2d.globalCompositeOperation = "lighter";
+      ctx2d.fillStyle = `hsla(${hue},${Math.max(0,sat-42)}%,${Math.min(98,headLight+28)}%,${(0.12+0.3*material.clarity)*material.refractionStrength})`;
+      ctx2d.beginPath(); ctx2d.ellipse(-radius*0.05,sweep,radius*1.28,radius*(0.08+material.refractionStrength*0.22),0,0,TAU); ctx2d.fill();
+      if (material.internalGlow>0){
+        ctx2d.fillStyle=`hsla(${hue},${Math.min(100,sat+8)}%,72%,${material.internalGlow*0.42})`;
+        ctx2d.beginPath(); ctx2d.ellipse(-radius*0.18,0,radius*0.82,radius*0.48,0,0,TAU); ctx2d.fill();
+      }
+      ctx2d.globalCompositeOperation = "source-over";
+      for(let i=0;i<Math.round(5*material.inclusionStrength);i++){
+        const h=(((Math.sin(i*19.1+hue)*12345.6)%1)+1)%1;
+        ctx2d.fillStyle=`rgba(0,20,12,${material.inclusionStrength*0.2})`;
+        ctx2d.beginPath();ctx2d.arc((h-0.5)*radius*1.7,(i/5-0.4)*radius*1.2,Math.max(0.7,radius*(0.05+h*0.07)),0,TAU);ctx2d.fill();
+      }
+      if(material.dispersionStrength>0.08){
+        ctx2d.globalCompositeOperation="lighter";
+        for(let i=0;i<3;i++){
+          ctx2d.fillStyle=`hsla(${(nowMs*0.03+i*110)%360},88%,90%,${material.dispersionStrength*0.65})`;
+          ctx2d.beginPath();ctx2d.arc(radius*(0.15+i*0.18),radius*(-0.62+i*0.16),Math.max(0.7,radius*0.055),0,TAU);ctx2d.fill();
+        }
+      }
+      ctx2d.restore();
+    }
     if (gem){
       // a faceted glint on the crown, standing in for a cut gem's flat faces
       ctx2d.save();
@@ -9407,6 +9522,17 @@
     const n = pts.length;
     if (n < 3) return;
     const facetSize = Math.max(1, (radius * 1.6) / Math.max(0.3, m.scale));
+    const lightPhase = Math.sin(nowMs * 0.00075 + bodyLength * 0.013);
+    const refractOffset = lightPhase * 0.42;
+    bodyRibbon(ctx2d, pts, bodyLength, radius,
+      Math.max(-0.9, refractOffset - 0.16), Math.min(0.9, refractOffset + 0.16),
+      `hsla(${skin.hue},${Math.max(0,skin.sat-35)}%,${Math.min(98,skin.headLight+20)}%,${(0.07+0.2*m.clarity)*m.refractionStrength*detail})`);
+    if (m.internalGlow > 0){
+      ctx2d.save(); ctx2d.globalCompositeOperation = "lighter";
+      bodyRibbon(ctx2d, pts, bodyLength, radius, -0.34, 0.34,
+        `hsla(${skin.hue},${Math.min(100,skin.sat+8)}%,${Math.min(76,skin.bodyLight+30)}%,${m.internalGlow*(0.32+0.12*Math.sin(nowMs*0.0011))*detail})`);
+      ctx2d.restore();
+    }
     let flank = 1, runStart = 0, runFacet = Math.floor(pts[0].s / facetSize);
     for (let k = 1; k <= n; k++){
       const facet = k < n ? Math.floor(pts[k].s / facetSize) : -1;
@@ -9415,8 +9541,8 @@
         if (k1 > runStart){
           const hash = (((Math.sin(runFacet * 27.13 + bodyLength * 0.005) * 91731.234) % 1) + 1) % 1;
           const style = hash > 0.55
-            ? `rgba(255,255,255,${(0.08 + hash * 0.18) * Math.max(0.3, m.strength) * detail})`
-            : `rgba(0,0,0,${(0.06 + (1 - hash) * 0.12) * Math.max(0.3, m.strength) * detail})`;
+            ? `rgba(255,255,255,${(0.08 + hash * 0.18) * Math.max(0.3, m.facetStrength) * detail})`
+            : `rgba(0,0,0,${(0.06 + (1 - hash) * 0.12) * Math.max(0.3, m.facetStrength) * detail})`;
           const near = flank * (0.12 + hash * 0.35);
           const far = flank * (0.45 + hash * 0.3);
           bodyRibbon(ctx2d, pts, bodyLength, radius, Math.min(near, far), Math.max(near, far), style, runStart, k1);
@@ -9424,6 +9550,15 @@
         flank *= -1;
         runStart = k1;
         runFacet = facet;
+      }
+    }
+
+    if (m.inclusionStrength > 0){
+      for (let k = 2; k < n; k += 7){
+        const p = pts[k];
+        const hash = (((Math.sin(p.i*17.17+skin.hue)*16381.7)%1)+1)%1;
+        ctx2d.fillStyle = `rgba(0,20,12,${m.inclusionStrength*(0.08+hash*0.12)*detail})`;
+        ctx2d.beginPath(); ctx2d.arc(p.x,p.y,Math.max(0.8,radius*(0.1+hash*0.18)),0,TAU); ctx2d.fill();
       }
     }
 
@@ -9435,10 +9570,10 @@
       if (hash < 0.72) continue;
       const t = 1 - p.i / bodyLength;
       const r = radius * (0.35 + 0.65 * t);
-      const glint = ((hash - 0.72) / 0.28) * m.strength * detail;
+      const glint = ((hash - 0.72) / 0.28) * m.dispersionStrength * detail;
       if (glint < 0.02) continue;
       const dispersionHue = (hash * 360) % 360;
-      ctx2d.fillStyle = `hsla(${dispersionHue},85%,88%,${Math.min(0.5, glint * 0.4)})`;
+      ctx2d.fillStyle = `hsla(${dispersionHue},85%,88%,${Math.min(0.65, glint * 2.0)})`;
       ctx2d.beginPath(); ctx2d.arc(p.x, p.y, Math.max(0.7, r * 0.09), 0, TAU); ctx2d.fill();
     }
     ctx2d.restore();
