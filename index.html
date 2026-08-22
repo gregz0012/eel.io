@@ -6655,6 +6655,43 @@
     pixiDrawRazorbackSlashes(bodyG, body, step, bodyLength, radius, m.strength * detail, false);
   }
 
+  // World-space port of matWorn (Red Rogue) — battered, asymmetric surface:
+  // dark patches biased toward one flank (achieved the same way Canvas 2D
+  // does it — squaring the side-choosing hash before it decides a patch's
+  // flank, rather than a new parameter on the shared pixiMottlePatches,
+  // since this asymmetry is specific to this one material) plus a few
+  // low-alpha off-white scratch streaks. Operates in "sample slot" units
+  // scaled by `step`, the same conversion this phase's other span-based
+  // passes already established.
+  function pixiMatWorn(bodyG, body, step, bodyLength, radius, skin, detail){
+    const m = Engine.resolveMaterial(skin);
+    const slots = Math.floor(body.length / step);
+    if (slots < 6) return;
+    const count = Math.max(3, Math.round(6 * m.strength * detail));
+    for (let j = 0; j < count; j++){
+      const hash = (((Math.sin(j * 19.6 + bodyLength * 0.0083) * 21873.9) % 1) + 1) % 1;
+      const biased = hash * hash;
+      const loS = Math.max(0, Math.min(slots - 2, Math.floor(hash * (slots - 3))));
+      const hiS = Math.min(slots - 1, loS + 1 + Math.floor(hash * 3));
+      if (hiS <= loS) continue;
+      const lo = loS * step, hi = Math.min(body.length - 1, hiS * step);
+      const side = biased > 0.35 ? 1 : -1;
+      const from = side * (0.1 + hash * 0.3), to = side * (0.3 + hash * 0.3);
+      const color = hash > 0.5 ? 0x000000 : 0x3c281e;
+      const alpha = hash > 0.5 ? (0.10 + 0.10 * m.strength) : (0.08 + 0.08 * m.strength);
+      pixiBodyRibbon(bodyG, body, step, bodyLength, radius, from, to, color, alpha, lo, hi);
+    }
+    const scratches = Math.max(2, Math.round(3 * m.strength * detail));
+    for (let j = 0; j < scratches; j++){
+      const hash = (((Math.sin(j * 11.3 + bodyLength * 0.013) * 7654.3) % 1) + 1) % 1;
+      const loS = Math.max(0, Math.min(slots - 3, Math.floor(hash * (slots - 4))));
+      const hiS = Math.min(slots - 1, loS + 2);
+      if (hiS <= loS) continue;
+      const lo = loS * step, hi = Math.min(body.length - 1, hiS * step);
+      pixiBodyRibbon(bodyG, body, step, bodyLength, radius, -0.06, 0.06, 0xe6e1d7, 0.05 + 0.05 * m.strength, lo, hi);
+    }
+  }
+
   // Dispatch table mirroring Canvas 2D's SKIN_MATERIAL — a material id that
   // has no WebGL entry yet falls back to organic, same never-throw contract
   // as Engine.resolveMaterial and the Canvas 2D drawSkinMaterial fallback.
@@ -6663,6 +6700,7 @@
     stone: pixiMatStone, charred: pixiMatCharred, crystal: pixiMatCrystal,
     water: pixiMatWater, air: pixiMatAir, charged: pixiMatCharged,
     liquid: pixiMatLiquid, chitin: pixiMatChitin, scarred: pixiMatScarred,
+    worn: pixiMatWorn,
   };
 
   // World-space port of fxSheen — a bright specular streak down one flank
@@ -7409,6 +7447,40 @@
     bodyG.circle(cx, cy, Math.max(1, size * 0.1)).fill({ color: 0xc49e6e, alpha: 0.7 });
   }
 
+  // World-space port of drawScavengerGear (Red Rogue's "gear" body mark) —
+  // a strap-and-buckle pair anchoring a single asymmetric blade, offset to
+  // one side only, deliberately not a mirrored X the way
+  // pixiDrawCrossedSwords is. Canvas 2D nests an inner ctx.rotate(0.5)
+  // inside the outer translate/rotate(ang) for the main strap/blade/grip
+  // group — since both rotations share the same origin, that composes to a
+  // single rotate(ang + 0.5), so this passes `ang + 0.5` straight into
+  // pixiLocalToWorld for that group rather than needing a second transform
+  // step; the second, slightly crooked strap and the buckle dot are drawn
+  // back in the plain `ang` frame, matching Canvas 2D's own restore()
+  // before them.
+  function pixiDrawScavengerGear(bodyG, cx, cy, ang, size){
+    const a = ang + 0.5;
+    const strap0 = pixiLocalToWorld(cx, cy, a, size * 0.25, 0);
+    const strap1 = pixiLocalToWorld(cx, cy, a, -size * 0.7, 0);
+    bodyG.moveTo(strap0[0], strap0[1]).lineTo(strap1[0], strap1[1])
+      .stroke({ width: Math.max(1.2, size * 0.18), color: 0x18100a, alpha: 0.55, cap: "round" });
+    const blade0 = pixiLocalToWorld(cx, cy, a, size * 0.15, 0);
+    const blade1 = pixiLocalToWorld(cx, cy, a, -size * 0.75, 0);
+    bodyG.moveTo(blade0[0], blade0[1]).lineTo(blade1[0], blade1[1])
+      .stroke({ width: Math.max(0.8, size * 0.12), color: 0xc9ccce, cap: "butt" });
+    const grip0 = pixiLocalToWorld(cx, cy, a, size * 0.5, 0);
+    const grip1 = pixiLocalToWorld(cx, cy, a, size * 0.15, 0);
+    bodyG.moveTo(grip0[0], grip0[1]).lineTo(grip1[0], grip1[1])
+      .stroke({ width: Math.max(0.8, size * 0.14), color: 0x7a5a3a, cap: "butt" });
+
+    const crook0 = pixiLocalToWorld(cx, cy, ang, -size * 0.1, -size * 0.15);
+    const crook1 = pixiLocalToWorld(cx, cy, ang, size * 0.35, size * 0.1);
+    bodyG.moveTo(crook0[0], crook0[1]).lineTo(crook1[0], crook1[1])
+      .stroke({ width: Math.max(1, size * 0.12), color: 0x18100a, alpha: 0.4, cap: "butt" });
+    const buckle = pixiLocalToWorld(cx, cy, ang, size * 0.1, 0);
+    bodyG.circle(buckle[0], buckle[1], Math.max(0.8, size * 0.08)).fill({ color: 0x2a2018 });
+  }
+
   function drawEelRibbon(glowG, bodyG, body, step, radius, skin, glow, detail, nowMs){
     const { hue, sat, bodyLight, headLight, accent, accentRatio = 0.5, sheen = 0, gem } = skin;
     const marks = [].concat(skin.mark ?? []);
@@ -7492,6 +7564,19 @@
       const back = body[Math.min(body.length - 1, oi + 5)];
       pixiDrawOrbweaverMark(bodyG, body[oi].x, body[oi].y,
         Math.atan2(body[oi].y - back.y, body[oi].x - back.x), radius * 1.1);
+    }
+
+    // "gear": Red Rogue's single asymmetric blade, positioned like "swords"
+    // but with no mirrored second side.
+    if (marks.includes("gear")){
+      let travelled = 0, gi = 0;
+      while (gi < body.length - 2 && travelled < radius * 3.1){
+        travelled += Math.hypot(body[gi + 1].x - body[gi].x, body[gi + 1].y - body[gi].y);
+        gi++;
+      }
+      const tail = body[Math.min(body.length - 1, gi + 5)];
+      pixiDrawScavengerGear(bodyG, body[gi].x, body[gi].y,
+        Math.atan2(body[gi].y - tail.y, body[gi].x - tail.x), radius * 2.1);
     }
   }
 
