@@ -3327,6 +3327,11 @@
   // cracks, ember, arc, sparkle, molten, afterimage, stars, spots and slime
   // are ported so far (see PRs AY-BD in the plan file); every other fx
   // stays Canvas-2D-only, drawn on top of the WebGL body exactly as before.
+  // fade and iridescent (PR BE) are deliberately absent from this table —
+  // they recolour the base-fill stroke itself (pixiBodyFxStyle, called
+  // inline from drawEelRibbon's own base-fill loop below) rather than
+  // drawing an overlay afterward, so they can never be dispatched the same
+  // way as everything else here.
   const PIXI_SKIN_FX = {
     ripple: pixiFxWater, vortex: pixiFxVortex,
     cracks: pixiFxCracks, ember: pixiFxEmber, arc: pixiFxArc,
@@ -3337,6 +3342,21 @@
 
   // Shared by the player and every rival — draws exactly the two layers
   // described above into the given pair of (already-cleared) Graphics.
+  // World-space port of bodyFxStyle — unlike every fx ported so far (an
+  // overlay drawn on top of the finished body), fade and iridescent
+  // recolour the base-fill stroke itself, so a bug here disfigures the eel
+  // rather than just spoiling a stray effect, same as the Canvas 2D
+  // version's own comment warns. Returns `{color, alpha}` (this file's
+  // usual packed-hex-plus-float shape) rather than Canvas 2D's CSS string,
+  // and — since it feeds a `.stroke()` call rather than a `<canvas>`
+  // `strokeStyle` — every branch (including the plain default) returns
+  // alpha explicitly rather than only fade opting into one.
+  function pixiBodyFxStyle(bh, bs, bl, t, i, skin, nowMs){
+    if (skin.fx === "fade") return { color: hslToHex(bh, bs, bl), alpha: 0.08 + 0.92 * t };
+    if (skin.fx === "iridescent") return { color: hslToHex((bh + i * 2.2 + nowMs * 0.05) % 360, bs, bl), alpha: 1 };
+    return { color: hslToHex(bh, bs, bl), alpha: 1 };
+  }
+
   function drawEelRibbon(glowG, bodyG, body, step, radius, skin, glow, detail, nowMs){
     const { hue, sat, bodyLight, headLight, accent, accentRatio = 0.5, sheen = 0, gem } = skin;
     const marks = [].concat(skin.mark ?? []);
@@ -3350,14 +3370,18 @@
       color: hslToHex(hue, Math.min(100, sat + 20), Math.min(80, headLight + 8)),
     });
 
+    const hasBodyFx = skin.fx === "fade" || skin.fx === "iridescent";
     for (let i = body.length - 1; i >= step; i -= step){
       const p = body[i], q = body[i - step];
       const t = 1 - i / body.length;
       const r = radius * (0.35 + 0.65 * t);
       const band = accent && !marks.includes("patch") && (i % BAND) < BAND * accentRatio;
       const bh = band ? accent.hue : hue, bs = band ? accent.sat : sat, bl = band ? accent.light : bodyLight;
+      const { color, alpha } = hasBodyFx
+        ? pixiBodyFxStyle(bh, bs, bl + t * 18, t, i, skin, nowMs)
+        : { color: hslToHex(bh, bs, bl + t * 18), alpha: 1 };
       bodyG.moveTo(p.x, p.y).lineTo(q.x, q.y)
-        .stroke({ width: r * 2, cap: "round", join: "round", color: hslToHex(bh, bs, bl + t * 18) });
+        .stroke({ width: r * 2, cap: "round", join: "round", color, alpha });
     }
 
     // Universal baseline shading, then whatever material this skin resolves
