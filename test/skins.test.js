@@ -89,6 +89,26 @@ describe("the catalogue", () => {
     }
   });
 
+  it("configures visibly different metal surfaces through shared parameters", () => {
+    const copper = resolveMaterial(skinById("copper"));
+    const iron = resolveMaterial(skinById("iron"));
+    const gold = resolveMaterial(skinById("gold"));
+    const platinum = resolveMaterial(skinById("platinum"));
+
+    for (const metal of [copper, iron, gold, platinum]) {
+      for (const key of ["roughness", "reflectivity", "grainStrength", "highlightWidth"]) {
+        expect(metal[key]).toBeGreaterThanOrEqual(0);
+        expect(metal[key]).toBeLessThanOrEqual(1);
+      }
+    }
+    expect(iron.roughness).toBeGreaterThan(copper.roughness);
+    expect(gold.reflectivity).toBeGreaterThan(copper.reflectivity);
+    expect(platinum.reflectivity).toBeGreaterThan(gold.reflectivity);
+    expect(platinum.roughness).toBeLessThan(gold.roughness);
+    expect(iron.grainStrength).toBeGreaterThan(platinum.grainStrength);
+    expect(platinum.highlightWidth).toBeLessThan(copper.highlightWidth);
+  });
+
   it("gives Earth the stone material and Fire the charred material", () => {
     expect(resolveMaterial(skinById("earth")).type).toBe("stone");
     expect(resolveMaterial(skinById("fire")).type).toBe("charred");
