@@ -2415,7 +2415,98 @@
     return (Math.round(f(0)*255) << 16) + (Math.round(f(8)*255) << 8) + Math.round(f(4)*255);
   }
 
-  function drawPixiFrame(nowMs){
+  // ---- eel body ribbons (PR AQ of #85, the issue's actual "main focus") ----
+  // Replaces just the base-body layer of drawEelBody below — the glow
+  // underlay and the tapered, accent-banded fill — with real WebGL
+  // Graphics. Deliberately scoped no further than that for this PR: the
+  // head (base fill, shading, every mark/mask/eye treatment), the
+  // universal 3-band body shading, sheen, gem twinkle, skin fx, and every
+  // body mark (web/patch/swords/emblem/orbweave/gear) all keep drawing on
+  // the existing Canvas 2D pipeline, completely unchanged, layered on top
+  // of this exactly the way #game already layers atop #gameGL since PR AP.
+  // Splitting the *rest* of drawEelBody into WebGL is real, separate work
+  // (a head mesh + mask, materials as shaders, ports of a dozen bespoke
+  // mark-drawing functions) — deferred here on purpose so this PR stays
+  // reviewable as "does the body mesh/camera math work at all," matching
+  // how PR AP proved the same thing on the lowest-risk entities first.
+  //
+  // Unlike fish/bubbles/motes (static shape, moving position — drawn once,
+  // cached), an eel's body geometry itself changes every frame as it
+  // slithers, so there is no equivalent redraw-avoidance available here;
+  // each ribbon really is cleared and rebuilt every frame, same as the
+  // Canvas 2D pass it replaces.
+  let pixiPlayerGlow, pixiPlayerBody, pixiRivalGlow, pixiRivalBody;
+
+  function ensurePixiEelLayers(){
+    if (pixiPlayerGlow) return;
+    pixiPlayerGlow = new PIXI.Graphics(); pixiPlayerGlow.blendMode = "add";
+    pixiPlayerBody = new PIXI.Graphics();
+    pixiRivalGlow = new PIXI.Container(); pixiRivalGlow.blendMode = "add";
+    pixiRivalBody = new PIXI.Container();
+    // draw order: rival glow, rival body, player glow, player body — the
+    // player's own eel reads on top of any rival it's overlapping, same as
+    // the existing draw() dispatch order (drawRivalEels before drawPlayer).
+    pixiWorld.addChild(pixiRivalGlow, pixiRivalBody, pixiPlayerGlow, pixiPlayerBody);
+  }
+
+  function ensurePoolSize(container, n, makeChild){
+    while (container.children.length < n) container.addChild(makeChild());
+    while (container.children.length > n) container.removeChildAt(container.children.length - 1).destroy();
+  }
+
+  // Shared by the player and every rival — draws exactly the two layers
+  // described above into the given pair of (already-cleared) Graphics.
+  function drawEelRibbon(glowG, bodyG, body, step, radius, skin, glow){
+    const { hue, sat, bodyLight, headLight, accent, accentRatio = 0.5 } = skin;
+    const marks = [].concat(skin.mark ?? []);
+    const BAND = 52;
+
+    glowG.moveTo(body[0].x, body[0].y);
+    for (let i = step; i < body.length; i += step) glowG.lineTo(body[i].x, body[i].y);
+    glowG.lineTo(body[body.length - 1].x, body[body.length - 1].y);
+    glowG.stroke({
+      width: radius * 2 + 8, cap: "round", join: "round", alpha: glow,
+      color: hslToHex(hue, Math.min(100, sat + 20), Math.min(80, headLight + 8)),
+    });
+
+    for (let i = body.length - 1; i >= step; i -= step){
+      const p = body[i], q = body[i - step];
+      const t = 1 - i / body.length;
+      const r = radius * (0.35 + 0.65 * t);
+      const band = accent && !marks.includes("patch") && (i % BAND) < BAND * accentRatio;
+      const bh = band ? accent.hue : hue, bs = band ? accent.sat : sat, bl = band ? accent.light : bodyLight;
+      bodyG.moveTo(p.x, p.y).lineTo(q.x, q.y)
+        .stroke({ width: r * 2, cap: "round", join: "round", color: hslToHex(bh, bs, bl + t * 18) });
+    }
+  }
+
+  function drawPlayerRibbonPixi(body, step, radius, skin, glow){
+    ensurePixiEelLayers();
+    pixiPlayerGlow.clear(); pixiPlayerBody.clear();
+    drawEelRibbon(pixiPlayerGlow, pixiPlayerBody, body, step, radius, skin, glow);
+  }
+
+  function drawRivalRibbonsBegin(){
+    ensurePixiEelLayers();
+    ensurePoolSize(pixiRivalGlow, eels.length, () => new PIXI.Graphics());
+    ensurePoolSize(pixiRivalBody, eels.length, () => new PIXI.Graphics());
+  }
+
+  function drawRivalRibbonPixi(idx, body, step, radius, skin, glow){
+    const glowG = pixiRivalGlow.children[idx], bodyG = pixiRivalBody.children[idx];
+    glowG.clear(); bodyG.clear();
+    drawEelRibbon(glowG, bodyG, body, step, radius, skin, glow);
+  }
+
+  // Split from the actual render() call on purpose: this syncs everything
+  // that doesn't depend on drawPlayer()/drawRivalEels() having run yet
+  // (background, bubbles, motes, fish, the world container's camera
+  // transform), but the eel ribbons are only updated *inside* those two
+  // functions, called later in draw(). Rendering here, before they run,
+  // would rasterize last frame's eel geometry — renderPixiFrame() (below,
+  // called at the end of draw()) is the actual GPU submit, once everything
+  // this frame touches has been synced.
+  function syncPixiFrame(nowMs){
     if (!pixiReady) return;
     syncPixiBackground(nowMs);
     if (player){
@@ -2426,7 +2517,10 @@
     } else if (pixiBubbles) {
       pixiBubbles.visible = pixiEnergy.visible = pixiFish.visible = false;
     }
-    pixiApp.render();
+  }
+
+  function renderPixiFrame(){
+    if (pixiReady) pixiApp.render();
   }
 
   // ---------- draw ----------
@@ -4117,7 +4211,7 @@
   }
   const SKIN_FX_SCRATCH = [];
 
-  function drawEelBody(body, radius, skin, glow, isPlayer){
+  function drawEelBody(body, radius, skin, glow, isPlayer, rivalIdx){
     const { hue, sat, bodyLight, headLight, gem, sheen = 0, accent, accentRatio = 0.5 } = skin;
     if (body.length < 2) return;
     const marks = [].concat(skin.mark ?? []);      // one flourish or several
@@ -4149,34 +4243,44 @@
     }
     const pts = SKIN_FX_SCRATCH;
 
-    // glow underlay — gems run a little hotter than plain metal
-    ctx.save();
-    ctx.globalCompositeOperation = "lighter";
-    ctx.strokeStyle = `hsla(${hue},${Math.min(100, sat + 20)}%,${Math.min(80, headLight + 8)}%,${gem ? Math.min(1, glow*1.3 + 0.12) : glow})`;
-    ctx.lineWidth = radius*2 + (gem ? 11 : 8);
-    ctx.beginPath();
-    pts.forEach((p, k) => k === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
-    ctx.stroke();
-    ctx.restore();
+    // glow underlay + tapered accent-banded fill: WebGL once it's ready
+    // (see drawEelRibbon, above drawPixiFrame), Canvas 2D exactly as before
+    // otherwise. Everything from here on (shading, materials, marks, sheen,
+    // gem, fx, the head) stays on Canvas 2D unconditionally — see the "eel
+    // body ribbons" comment for why this PR stops here.
+    if (pixiReady){
+      if (isPlayer) drawPlayerRibbonPixi(body, step, radius, skin, glow);
+      else drawRivalRibbonPixi(rivalIdx, body, step, radius, skin, glow);
+    } else {
+      // glow underlay — gems run a little hotter than plain metal
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.strokeStyle = `hsla(${hue},${Math.min(100, sat + 20)}%,${Math.min(80, headLight + 8)}%,${gem ? Math.min(1, glow*1.3 + 0.12) : glow})`;
+      ctx.lineWidth = radius*2 + (gem ? 11 : 8);
+      ctx.beginPath();
+      pts.forEach((p, k) => k === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+      ctx.stroke();
+      ctx.restore();
 
-    // main body with taper — banded into two colours when the skin has an
-    // accent, except a "patch"-marked skin (Eel-pool), whose panels are
-    // scattered irregular plates (drawAccentPatches, below) rather than a
-    // clean stripe, so this loop stays on the base colour for it throughout
-    for (let k = pts.length - 1; k >= 1; k--){
-      const p = pts[k], q = pts[k - 1];
-      const i = p.i;
-      const t = 1 - i / body.length;               // 1 at head
-      const r = radius * (0.35 + 0.65 * t);
-      const band = accent && !marks.includes("patch") && (i % BAND) < BAND * accentRatio;
-      const bh = band ? accent.hue : hue;
-      const bs = band ? accent.sat : sat;
-      const bl = band ? accent.light : bodyLight;
-      ctx.strokeStyle = (skin.fx === "fade" || skin.fx === "iridescent")
-        ? bodyFxStyle(bh, bs, bl + t*18, t, i, skin, nowMs)
-        : `hsl(${bh},${bs}%,${bl + t*18}%)`;
-      ctx.lineWidth = r*2;
-      ctx.beginPath(); ctx.moveTo(p.x,p.y); ctx.lineTo(q.x,q.y); ctx.stroke();
+      // main body with taper — banded into two colours when the skin has an
+      // accent, except a "patch"-marked skin (Eel-pool), whose panels are
+      // scattered irregular plates (drawAccentPatches, below) rather than a
+      // clean stripe, so this loop stays on the base colour for it throughout
+      for (let k = pts.length - 1; k >= 1; k--){
+        const p = pts[k], q = pts[k - 1];
+        const i = p.i;
+        const t = 1 - i / body.length;               // 1 at head
+        const r = radius * (0.35 + 0.65 * t);
+        const band = accent && !marks.includes("patch") && (i % BAND) < BAND * accentRatio;
+        const bh = band ? accent.hue : hue;
+        const bs = band ? accent.sat : sat;
+        const bl = band ? accent.light : bodyLight;
+        ctx.strokeStyle = (skin.fx === "fade" || skin.fx === "iridescent")
+          ? bodyFxStyle(bh, bs, bl + t*18, t, i, skin, nowMs)
+          : `hsl(${bh},${bs}%,${bl + t*18}%)`;
+        ctx.lineWidth = r*2;
+        ctx.beginPath(); ctx.moveTo(p.x,p.y); ctx.lineTo(q.x,q.y); ctx.stroke();
+      }
     }
 
     // universal baseline shading — every skin gets this, before any themed
@@ -4324,10 +4428,20 @@
   }
 
   function drawRivalEels(){
-    for (const e of eels){
+    if (pixiReady) drawRivalRibbonsBegin();
+    eels.forEach((e, idx) => {
       const [sx,sy] = worldToScreen(e.x,e.y);
-      if (sx<-200||sx>W+200||sy<-200||sy>H+200) continue;
-      drawEelBody(e.body, radiusFor(e.len), Engine.skinFromHue(e.hue), 0.18, false);
+      if (sx<-200||sx>W+200||sy<-200||sy>H+200){
+        // Off-screen: skip the expensive redraw, but still clear this
+        // index's pooled ribbon so a stale frame doesn't linger at its
+        // last on-screen position if the pool slot gets reused nearby.
+        if (pixiReady){
+          pixiRivalGlow.children[idx].clear();
+          pixiRivalBody.children[idx].clear();
+        }
+        return;
+      }
+      drawEelBody(e.body, radiusFor(e.len), Engine.skinFromHue(e.hue), 0.18, false, idx);
       if (e.stun > 0 && !reduceMotion){
         ctx.save(); ctx.globalCompositeOperation="lighter";
         ctx.strokeStyle="rgba(142,243,255,0.7)"; ctx.lineWidth=1.5;
@@ -4337,7 +4451,7 @@
         ctx.stroke(); ctx.restore();
       }
       drawRivalName(e, sx, sy);
-    }
+    });
   }
 
   // A name tag over each rival. Faded by distance so a crowded shoal does not
@@ -4627,12 +4741,12 @@
     // as they always have — the graceful-degradation path, not a
     // special-cased fallback bolted on afterwards.
     if (pixiReady){
-      drawPixiFrame();
+      syncPixiFrame();
       ctx.clearRect(0, 0, W, H);
     } else {
       drawBackground();
     }
-    if (!player) return;
+    if (!player){ renderPixiFrame(); return; }
     drawWorldBounds();
     if (!pixiReady){ drawBubbles(); drawEnergy(); }
     drawPresents();
@@ -4644,6 +4758,10 @@
     drawPredators();
     drawPlayer();
     drawParticles();
+    // drawRivalEels()/drawPlayer() are what actually update each eel's
+    // ribbon Graphics this frame (see drawEelBody) — the GPU submit has to
+    // happen after both, or it rasterizes stale (last-frame) eel geometry.
+    renderPixiFrame();
 
     if (flashT > 0){
       ctx.fillStyle = `rgba(142,243,255,${flashT*0.5})`;
