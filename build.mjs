@@ -4,8 +4,15 @@
 // import it for tests. Browsers refuse to load ES modules over file://, and
 // Voltfin must stay a single file you can double-click or email to a kid. So
 // the modules are concatenated into one scope at build time and exposed to the
-// shell as `Engine`. There is still no runtime dependency: the output is plain
-// HTML/CSS/JS.
+// shell as `Engine`. There is still no *network* runtime dependency: nothing
+// the shipped file needs is ever fetched over HTTP(S) at load or play time.
+//
+// Since the WebGL renderer (#85), one deliberate offline exception exists:
+// PixiJS is vendored at vendor/pixi.min.js — pinned, hash-checked, and
+// spliced verbatim into its own <script> block (see readVendorPixi() below),
+// never through the regex-based engine bundler and never fetched live. See
+// vendor/README.md for the update procedure and CLAUDE.md §1/§8 for why this
+// carve-out exists and what it does and doesn't permit.
 //
 //   node build.mjs           write index.html from src/
 //   node build.mjs --check   fail if index.html is stale (used by npm run check)
@@ -13,6 +20,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { createHash } from "node:crypto";
 
 const root = dirname(fileURLToPath(import.meta.url));
 
@@ -73,14 +81,59 @@ function bundleEngine() {
   return bundle;
 }
 
+// The vendored, pinned PixiJS build (see vendor/README.md and vendor-pixi.mjs)
+// is spliced in verbatim — never through bundleEngine()'s regex transform,
+// which is written only for src/engine/'s hand-authored export style and
+// would mangle a real third-party UMD bundle. A pinned SHA-256 in
+// vendor/PIXI_VERSION guards against the committed file drifting or being
+// hand-edited without going through vendor-pixi.mjs again.
+const VENDOR_MARKER = "/* @inject:vendor-pixi */";
+
+function readVendorPixi() {
+  const js = readFileSync(join(root, "vendor/pixi.min.js"), "utf8");
+  const pinned = readFileSync(join(root, "vendor/PIXI_VERSION"), "utf8").trim();
+  const pinnedHash = pinned.match(/sha256:([0-9a-f]{64})/)?.[1];
+  if (!pinnedHash) {
+    throw new Error("vendor/PIXI_VERSION doesn't contain a sha256:<hex> pin — re-run node vendor-pixi.mjs");
+  }
+  const actualHash = createHash("sha256").update(js, "utf8").digest("hex");
+  if (actualHash !== pinnedHash) {
+    throw new Error(
+      "vendor/pixi.min.js does not match the pinned hash in vendor/PIXI_VERSION — " +
+      "it was hand-edited or drifted. Re-run `node vendor-pixi.mjs` after any legitimate update."
+    );
+  }
+  if (js.includes("<script") || js.includes("</script")) {
+    throw new Error("vendor/pixi.min.js contains a literal <script> substring — refusing to splice, it would break the surrounding HTML");
+  }
+  return js;
+}
+
 function build() {
-  const shell = readFileSync(join(root, "src/index.html"), "utf8");
+  let shell = readFileSync(join(root, "src/index.html"), "utf8");
   if (!shell.includes(MARKER)) {
     throw new Error(`src/index.html is missing the ${MARKER} marker`);
   }
+  if (!shell.includes(VENDOR_MARKER)) {
+    throw new Error(`src/index.html is missing the ${VENDOR_MARKER} marker`);
+  }
+
+  // Both splices below use a replacer *function*, not a replacement string.
+  // String.prototype.replace(searchString, replacementString) still treats
+  // "$&"/"$$"/"$`"/"$'" specially in the replacement even though the search
+  // side is a plain string — and vendor/pixi.min.js's 800KB of third-party
+  // code genuinely contains a literal "$&" (inside its own regex-escaping
+  // helper), which corrupted straight into the marker text the first time
+  // this used a plain-string replace. A function's return value is always
+  // inserted literally, with no pattern substitution, so this is the only
+  // safe form once the injected text isn't hand-written by us.
+  const vendorIndent = shell.match(new RegExp(`^([ \\t]*)${VENDOR_MARKER.replace(/[*/]/g, "\\$&")}`, "m"))[1];
+  const vendorJs = readVendorPixi().replace(/^(?=.)/gm, vendorIndent);
+  shell = shell.replace(vendorIndent + VENDOR_MARKER, () => vendorJs);
+
   const indent = shell.match(new RegExp(`^([ \\t]*)${MARKER.replace(/[*/]/g, "\\$&")}`, "m"))[1];
   const bundle = bundleEngine().replace(/^(?=.)/gm, indent);
-  return shell.replace(indent + MARKER, bundle);
+  return shell.replace(indent + MARKER, () => bundle);
 }
 
 const out = build();

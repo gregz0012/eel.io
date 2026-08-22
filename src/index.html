@@ -27,6 +27,10 @@
     touch-action:none;
   }
   #game{display:block;position:absolute;inset:0;cursor:crosshair;}
+  /* stacked directly beneath #game, background/bubbles/motes/fish once WebGL
+     is available (see the "WebGL renderer" section in the script below);
+     never receives pointer events, so input handling is untouched */
+  #gameGL{display:block;position:absolute;inset:0;pointer-events:none;}
 
   /* ---- HUD ---- */
   #hud{
@@ -472,6 +476,7 @@
 </style>
 </head>
 <body>
+<canvas id="gameGL"></canvas>
 <canvas id="game"></canvas>
 
 <div id="hud" class="hidden">
@@ -679,6 +684,15 @@
   <button id="skipMiniGameBtn" class="quiet">Skip</button>
 </div>
 
+<!-- Vendored, pinned, offline PixiJS build — see vendor/README.md and
+     CLAUDE.md's "why a build step" section. This tag deliberately carries
+     an id attribute so test/build.test.js's game-script extraction (which
+     looks for exactly one bare, attribute-less script tag below) skips
+     past it. Splicing happens in build.mjs, independent of bundleEngine(),
+     which is written only for src/engine/'s hand-authored export style. -->
+<script id="vendor-pixi">
+  /* @inject:vendor-pixi */
+</script>
 <script>
 (() => {
   "use strict";
@@ -698,8 +712,26 @@
     canvas.width = W * DPR; canvas.height = H * DPR;
     canvas.style.width = W + "px"; canvas.style.height = H + "px";
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    resizePixi();
   }
-  window.addEventListener("resize", resize); resize();
+  window.addEventListener("resize", resize);
+
+  // Declared here, ahead of resize()'s first call just below, so that call
+  // never reaches resizePixi() before these exist — the exact shape of bug
+  // this project's very first bundled build shipped with (a `let` read
+  // before its declaration executes; see this file's own history). Pixi's
+  // async init (initPixi(), by the "WebGL renderer" section further down)
+  // hasn't run yet at this point, so resizePixi() harmlessly no-ops on this
+  // first call via its own `if (!pixiReady) return` guard. `PIXI` itself is
+  // feature-detected with `typeof`, same idiom as AudioContext/
+  // navigator.vibrate elsewhere in this file — test/build.test.js's sandbox
+  // never loads the vendor script (only the bare game script it extracts),
+  // so `PIXI` is genuinely absent there, and this must not throw.
+  const glCanvas = document.getElementById("gameGL");
+  const pixiApp = typeof PIXI !== "undefined" ? new PIXI.Application() : null;
+  let pixiReady = false;
+
+  resize();
 
   // ---------- helpers ----------
   const TAU = Math.PI * 2;
@@ -2190,6 +2222,2105 @@
     } else {
       sonarEl.style.display = "none";
     }
+  }
+
+  // ---------- WebGL renderer (Pixi), PR AP of #85 ----------
+  // A second canvas (#gameGL), stacked directly beneath #game and never
+  // receiving pointer events (input stays exactly as it is, on #game),
+  // carries the lowest-risk visual layers — background, bubbles, energy
+  // motes, fish — as the first proof that the coordinate system (camera,
+  // resize, DPR) works end to end before the eel body mesh (the issue's
+  // actual "main focus") moves over in a later PR. Everything not yet
+  // migrated keeps drawing on the existing 2D canvas exactly as before;
+  // #game's own background fill is removed (see draw(), below) and
+  // replaced with an explicit clearRect so the Pixi layer shows through.
+  //
+  // Deliberately written inline here rather than as separate
+  // src/render/*.js files: build.mjs has no existing mechanism to inline
+  // non-engine JS (bundleEngine() is written specifically for
+  // src/engine/'s hand-authored export style), and building one is real,
+  // additional build-system risk this PR's actual job — proving the
+  // renderer swap is safe at all — doesn't need yet. Revisit the file
+  // split once there's enough render code to justify it.
+  //
+  // glCanvas/pixiApp/pixiReady are declared up near resize()'s own
+  // definition, not here — see the comment there for why.
+
+  // world-space content (bubbles, motes, fish) sits in a container whose
+  // own position is the camera transform — a child's local x/y is exactly
+  // the world x/y, no per-entity worldToScreen math needed. Screen-space
+  // content (the background) sits in an untransformed sibling so it never
+  // moves with the camera, matching drawBackground()'s own screen-space
+  // ctx.fillRect/gradient calls today.
+  let pixiWorld, pixiBg;
+
+  async function initPixi(){
+    if (!pixiApp) return;   // PIXI wasn't present when this script loaded
+    try {
+      await pixiApp.init({
+        canvas: glCanvas, width: W, height: H, resolution: DPR,
+        autoDensity: true, backgroundAlpha: 0, antialias: false,
+      });
+    } catch (e) {
+      // No WebGL (an old device, a WebView without it) — the 2D canvas
+      // already draws everything correctly on its own; the GL layer
+      // simply never appears, and nothing above this ever calls into it.
+      console.warn("WebGL renderer unavailable, continuing on Canvas 2D only:", e);
+      return;
+    }
+    pixiBg = new PIXI.Container();
+    pixiWorld = new PIXI.Container();
+    pixiApp.stage.addChild(pixiBg, pixiWorld);
+    pixiReady = true;
+  }
+  initPixi();
+
+  function resizePixi(){
+    if (!pixiReady) return;
+    pixiApp.renderer.resize(W, H);
+    pixiBgDirty = true;
+  }
+
+  // ---- background: vertical gradient + faint animated light shafts ----
+  // Rebuilt only on resize/reduceMotion toggle (the gradient) or every
+  // frame while shafts animate — matching drawBackground()'s own content
+  // exactly, just against Pixi's Graphics API instead of Canvas 2D's.
+  let pixiBgGradient = null, pixiBgDirty = true;
+  const PIXI_SHAFT_COUNT = 5;
+  let pixiShafts = [];
+
+  function syncPixiBackground(nowMs){
+    if (pixiBgDirty){
+      pixiBg.removeChildren().forEach(c => c.destroy());
+      pixiBgGradient = new PIXI.Graphics()
+        .rect(0, 0, W, H)
+        .fill({ fill: new PIXI.FillGradient({
+          type: "linear", start: { x: 0, y: 0 }, end: { x: 0, y: 1 },
+          colorStops: [
+            { offset: 0, color: "#052f44" },
+            { offset: 0.55, color: "#062a3e" },
+            { offset: 1, color: "#031521" },
+          ],
+        }) });
+      pixiBg.addChild(pixiBgGradient);
+      pixiShafts = [];
+      if (!reduceMotion){
+        for (let i = 0; i < PIXI_SHAFT_COUNT; i++){
+          const shaft = new PIXI.Graphics();
+          shaft.blendMode = "add";
+          pixiBg.addChild(shaft);
+          pixiShafts.push(shaft);
+        }
+      }
+      pixiBgDirty = false;
+    }
+    if (reduceMotion) return;
+    const t = nowMs * 0.00006;
+    for (let i = 0; i < pixiShafts.length; i++){
+      const bx = ((i * 0.23 + t) % 1.3 - 0.15) * W;
+      pixiShafts[i].clear()
+        .poly([bx, 0, bx + 140, 0, bx + 320, H, bx - 40, H])
+        .fill({ fill: new PIXI.FillGradient({
+          type: "linear", start: { x: bx, y: 0 }, end: { x: bx + 120, y: 0 },
+          colorStops: [
+            { offset: 0, color: "rgba(120,220,230,0.05)" },
+            { offset: 1, color: "rgba(120,220,230,0)" },
+          ],
+        }) });
+    }
+  }
+
+  // ---- generic "keep a container's children in sync with an array" pool.
+  // Every child's visual properties are fully rewritten from its array
+  // entry every frame, so a mid-array splice (bubbles/energy/fish are all
+  // spliced from arbitrary indices elsewhere) never desyncs a child from
+  // stale data — there is no persistent per-index identity to break.
+  function syncPool(container, array, makeChild, updateChild){
+    while (container.children.length < array.length) container.addChild(makeChild());
+    while (container.children.length > array.length){
+      // {children: true} matters for a pooled child that is itself a small
+      // Container (presents' glow+body pair, below) — Pixi's default
+      // Container.destroy() does not destroy children, which would leak
+      // their GPU resources every time the pool shrinks.
+      container.removeChildAt(container.children.length - 1).destroy({ children: true });
+    }
+    for (let i = 0; i < array.length; i++) updateChild(container.children[i], array[i]);
+  }
+
+  let pixiBubbles, pixiEnergy, pixiFish;
+  let pixiPresents, pixiStars, pixiBabies, pixiPredators, pixiFeasts, pixiParticles;
+
+  function syncPixiWorld(){
+    if (!pixiBubbles){
+      pixiBubbles = new PIXI.Container();
+      pixiEnergy = new PIXI.Container();
+      pixiFish = new PIXI.Container();
+      pixiPresents = new PIXI.Container();
+      pixiStars = new PIXI.Container();
+      pixiBabies = new PIXI.Container();
+      pixiPredators = new PIXI.Container();
+      pixiFeasts = new PIXI.Container();
+      pixiParticles = new PIXI.Container();
+      // draw order matches the existing draw() dispatch: presents, stars,
+      // feasts, babies, fish before rivals/predators/player/particles.
+      pixiWorld.addChild(
+        pixiBubbles, pixiEnergy, pixiPresents, pixiStars, pixiFeasts,
+        pixiBabies, pixiFish, pixiPredators, pixiParticles,
+      );
+    }
+
+    // Every entity below draws its Graphics path exactly once (tagged with
+    // `_drawn`, keyed on the radius it was drawn at) and updates only
+    // position/rotation/scale on every later frame — a transform write is
+    // orders of magnitude cheaper than rebuilding and re-uploading vertex
+    // geometry every frame, and unlike Canvas 2D's per-frame immediate-mode
+    // redraw, Pixi's retained Graphics objects don't need to repay that
+    // cost each frame just to stay on screen.
+    syncPool(pixiBubbles, bubbles, () => new PIXI.Graphics(), (g, b) => {
+      if (g._drawnR !== b.r){
+        g.clear().circle(0, 0, b.r).fill({ color: 0x96dce6, alpha: 0.12 });
+        g._drawnR = b.r;
+      }
+      g.position.set(b.x, b.y);
+    });
+
+    // The pulse is a uniform scale of a unit circle drawn once, not a
+    // per-frame radius redraw — same visual, no geometry rebuild.
+    syncPool(pixiEnergy, energy, () => {
+      const g = new PIXI.Graphics(); g.blendMode = "add"; return g;
+    }, (g, en) => {
+      if (g._drawnHue !== en.hue){
+        g.clear().circle(0, 0, 1).fill({ color: hslToHex(en.hue, 90, 66), alpha: 0.95 });
+        g._drawnHue = en.hue;
+      }
+      const p = 1 + Math.sin(en.wob) * 0.3;
+      g.scale.set(en.r * p);
+      g.position.set(en.x, en.y);
+    });
+
+    // The tail's per-frame wobble (a few px of vertex sway) is dropped here
+    // — a static tail is visually indistinguishable at this size and this
+    // is what turns 280 full path rebuilds/frame into 280 cheap transform
+    // writes. Revisit if a future pass wants it back via a small vertex
+    // shader instead of rebuilding the path on the CPU every frame.
+    syncPool(pixiFish, fish, () => new PIXI.Graphics(), (g, f) => {
+      if (g._drawnR !== f.r || g._drawnHue !== f.hue){
+        const c = hslToHex(f.hue, 85, 62);
+        g.clear()
+          .ellipse(0, 0, f.r * 1.6, f.r).fill(c)
+          .poly([-f.r*1.4, 0, -f.r*2.4, -f.r*0.9, -f.r*2.4, f.r*0.9]).fill(c)
+          .circle(f.r*0.7, -f.r*0.2, 1.6).fill(0x04202c);
+        g._drawnR = f.r; g._drawnHue = f.hue;
+      }
+      g.position.set(f.x, f.y);
+      g.rotation = f.a;
+    });
+
+    // Cached like bubbles/fish: box + ribbon + bow don't change shape, only
+    // the small vertical "bob" offset each frame (folded into position.y,
+    // not a redraw). Two Graphics per present, like the eel ribbons' glow
+    // split — Graphics has one blendMode for the whole object, and the glow
+    // halo needs "add" while the box/ribbon/bow need normal blending.
+    syncPool(pixiPresents, presents, () => {
+      const glowG = new PIXI.Graphics(); glowG.blendMode = "add";
+      const bodyG = new PIXI.Graphics();
+      const wrap = new PIXI.Container();
+      wrap.addChild(glowG, bodyG);
+      wrap._glow = glowG; wrap._body = bodyG;
+      return wrap;
+    }, (wrap, p) => {
+      if (wrap._drawnR !== p.r){
+        const w = p.r * 1.6;
+        wrap._glow.clear().circle(0, 0, p.r * 1.9).fill({ color: 0xff7de0, alpha: 0.28 });
+        wrap._body.clear()
+          .rect(-w/2, -w/2, w, w).fill(0xff7de0)
+          .rect(-w/2, -w*0.12, w, w*0.24).fill(0xffd166)
+          .rect(-w*0.12, -w/2, w*0.24, w).fill(0xffd166)
+          .circle(-w*0.16, -w/2, w*0.16).fill(0xffd166)
+          .circle(w*0.16, -w/2, w*0.16).fill(0xffd166);
+        wrap._drawnR = p.r;
+      }
+      wrap.position.set(p.x, p.y + Math.sin(p.bob) * 3);
+    });
+
+    // Pulse (uniform scale, applied to the whole wrap so glow and star stay
+    // in the same 2:1 ratio the original's independent s.r*2*p / s.r*p
+    // multipliers give it) + spin (rotation — harmless on the glow, since a
+    // circle is rotation-invariant). Static shape, drawn once per radius.
+    syncPool(pixiStars, stars, () => {
+      const glowG = new PIXI.Graphics(); glowG.blendMode = "add";
+      const bodyG = new PIXI.Graphics();
+      const wrap = new PIXI.Container();
+      wrap.addChild(glowG, bodyG);
+      wrap._glow = glowG; wrap._body = bodyG;
+      return wrap;
+    }, (wrap, s) => {
+      if (wrap._drawnR !== s.r){
+        wrap._glow.clear().circle(0, 0, s.r*2).fill({ color: 0xffd166, alpha: 0.3 });
+        wrap._body.clear();
+        wrap._body.moveTo(0, 0);
+        for (let i = 0; i < 5; i++){
+          const a = i/5*TAU - Math.PI/2, a2 = a + TAU/10;
+          wrap._body.lineTo(Math.cos(a)*s.r, Math.sin(a)*s.r);
+          wrap._body.lineTo(Math.cos(a2)*s.r*0.45, Math.sin(a2)*s.r*0.45);
+        }
+        wrap._body.closePath().fill(0xffd166);
+        wrap._drawnR = s.r;
+      }
+      wrap.position.set(s.x, s.y);
+      wrap.rotation = s.spin;
+      wrap.scale.set(1 + Math.sin(s.pulse) * 0.12);
+    });
+
+    // The flick's wiggle (the tail curve's control point sway) is dropped,
+    // same simplification as fish's tail wobble — a static curve at this
+    // size, cached, redrawn only if the radius changes.
+    syncPool(pixiBabies, babies, () => {
+      const glowG = new PIXI.Graphics(); glowG.blendMode = "add";
+      const bodyG = new PIXI.Graphics();
+      const wrap = new PIXI.Container();
+      wrap.addChild(glowG, bodyG);
+      wrap._glow = glowG; wrap._body = bodyG;
+      return wrap;
+    }, (wrap, b) => {
+      if (wrap._drawnR !== b.r){
+        wrap._glow.clear().circle(0, 0, b.r*2.2).fill({ color: 0xf6ff8a, alpha: 0.4 });
+        wrap._body.clear()
+          .moveTo(b.r, 0).quadraticCurveTo(-b.r*0.2, 0, -b.r*1.6, 0)
+          .stroke({ width: b.r*0.9, cap: "round", color: 0xf6ff8a })
+          .circle(b.r*0.9, 0, 1.4).fill(0x04202c);
+        wrap._drawnR = b.r;
+      }
+      wrap.position.set(b.x, b.y);
+      wrap.rotation = b.a;
+    });
+
+    // Predator body only — the boss ring/pips/"BOSS" label stay on the
+    // Canvas 2D overlay (drawRivalName-style text, upright in screen space,
+    // unconditional), same "text/UI stays on Canvas 2D" split as everywhere
+    // else in this phase. Cache key includes stunned/boss since those flip
+    // the body's fill colours. Glow (additive) and body (normal) split into
+    // two Graphics again, same reason as the eel ribbons and presents.
+    syncPool(pixiPredators, predators, () => {
+      const glowG = new PIXI.Graphics(); glowG.blendMode = "add";
+      const bodyG = new PIXI.Graphics();
+      const wrap = new PIXI.Container();
+      wrap.addChild(glowG, bodyG);
+      wrap._glow = glowG; wrap._body = bodyG;
+      return wrap;
+    }, (wrap, p) => {
+      const stunned = p.stun > 0;
+      const key = `${p.r}|${stunned}|${p.boss}`;
+      if (wrap._drawnKey !== key){
+        const bodyC = stunned ? 0x2b6478 : (p.boss ? 0x4a2350 : 0x2b5468);
+        const glowC = stunned ? 0x8ef3ff : (p.boss ? 0xc83cb4 : 0xff5d6c);
+        const eyeC = stunned ? 0x8ef3ff : 0xff5d6c;
+        wrap._glow.clear()
+          .circle(0, 0, p.r*1.6).fill({ color: glowC, alpha: stunned ? 0.25 : (p.boss ? 0.28 : 0.18) });
+        wrap._body.clear()
+          .ellipse(0, 0, p.r*1.5, p.r).fill(bodyC)
+          .poly([-p.r*1.3,0, -p.r*2.4,-p.r*0.9, -p.r*2.4,p.r*0.9]).fill(bodyC)
+          .poly([p.r*0.1,-p.r*0.9, -p.r*0.6,-p.r*1.7, -p.r*0.7,-p.r*0.9]).fill(bodyC)
+          .poly([p.r*1.5,0, p.r*0.7,p.r*0.5, p.r*0.9,-p.r*0.1]).fill(0x0a2531)
+          .circle(p.r*0.7, -p.r*0.35, p.r*0.16).fill(eyeC);
+        wrap._drawnKey = key;
+      }
+      wrap.position.set(p.x, p.y);
+      wrap.rotation = p.a;
+    });
+
+    // Feasts are rare (a handful at most) and their 6 mini-fish genuinely
+    // orbit every frame (not just spin in place), so — unlike everything
+    // above — this one just redraws in full every frame; caching would
+    // save little at this count and cost real complexity. The gradient
+    // core is approximated with three concentric fills (Canvas 2D's true
+    // radial gradient has no direct Pixi equivalent this simple), and each
+    // orbiting fish is drawn axis-aligned rather than rotated to face its
+    // direction of travel (Graphics has no per-shape rotate — only the
+    // whole object's transform — and re-deriving that per mini-fish, six
+    // times, every frame, for a detail this small isn't worth it). The
+    // "10×" label stays on the Canvas 2D overlay with the other small text.
+    syncPool(pixiFeasts, feasts, () => {
+      const glowG = new PIXI.Graphics(); glowG.blendMode = "add";
+      const bodyG = new PIXI.Graphics();
+      const wrap = new PIXI.Container();
+      wrap.addChild(glowG, bodyG);
+      wrap._glow = glowG; wrap._body = bodyG;
+      return wrap;
+    }, (wrap, s) => {
+      const p = 1 + Math.sin(s.pulse) * 0.14;
+      wrap._glow.clear().circle(0, 0, s.r*2.4*p).fill({ color: 0x6dffb0, alpha: 0.28 });
+      wrap._body.clear()
+        .circle(0, 0, s.r*p).fill(0x1f9e6a)
+        .circle(0, 0, s.r*p*0.66).fill(0x6dffb0)
+        .circle(0, 0, s.r*p*0.22).fill(0xeaffff);
+      for (let i = 0; i < 6; i++){
+        const a = s.spin + i/6*TAU;
+        const ox = Math.cos(a)*s.r*1.7, oy = Math.sin(a)*s.r*1.7;
+        wrap._body.ellipse(ox, oy, 4, 2.4).fill(0xffd166);
+      }
+      wrap.position.set(s.x, s.y);
+    });
+
+    // Particles fade (alpha) and never rotate; colour/radius are fixed for
+    // a given particle's lifetime, so — same pattern as everything above —
+    // draw once per (radius, colour), then just update alpha/position.
+    syncPool(pixiParticles, particles, () => {
+      const g = new PIXI.Graphics(); g.blendMode = "add"; return g;
+    }, (g, p) => {
+      const colorNum = typeof p.color === "string" && p.color[0] === "#"
+        ? parseInt(p.color.slice(1), 16) : 0xffffff;
+      if (g._drawnR !== p.r || g._drawnColor !== colorNum){
+        g.clear().circle(0, 0, p.r).fill(colorNum);
+        g._drawnR = p.r; g._drawnColor = colorNum;
+      }
+      g.alpha = clamp(p.life, 0, 1);
+      g.position.set(p.x, p.y);
+    });
+
+    pixiBubbles.visible = pixiEnergy.visible = pixiFish.visible =
+      pixiPresents.visible = pixiStars.visible = pixiBabies.visible =
+      pixiPredators.visible = pixiFeasts.visible = pixiParticles.visible = !!player;
+  }
+
+  // Graphics fills take a packed hex number, not the "hsl(...)" strings
+  // the rest of the shell hands to Canvas 2D — converted once per call
+  // rather than cached, same low cost as the equivalent template-string
+  // build the 2D path already pays every frame.
+  function hslToHex(h, s, l){
+    s /= 100; l /= 100;
+    const k = n => (n + h / 30) % 12;
+    const a = s * Math.min(l, 1 - l);
+    const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+    return (Math.round(f(0)*255) << 16) + (Math.round(f(8)*255) << 8) + Math.round(f(4)*255);
+  }
+
+  // ---- eel body ribbons (PR AQ of #85, the issue's actual "main focus") ----
+  // Replaces just the base-body layer of drawEelBody below — the glow
+  // underlay and the tapered, accent-banded fill — with real WebGL
+  // Graphics. Deliberately scoped no further than that for this PR: the
+  // head (base fill, shading, every mark/mask/eye treatment), the
+  // universal 3-band body shading, sheen, gem twinkle, skin fx, and every
+  // body mark (web/patch/swords/emblem/orbweave/gear) all keep drawing on
+  // the existing Canvas 2D pipeline, completely unchanged, layered on top
+  // of this exactly the way #game already layers atop #gameGL since PR AP.
+  // Splitting the *rest* of drawEelBody into WebGL is real, separate work
+  // (a head mesh + mask, materials as shaders, ports of a dozen bespoke
+  // mark-drawing functions) — deferred here on purpose so this PR stays
+  // reviewable as "does the body mesh/camera math work at all," matching
+  // how PR AP proved the same thing on the lowest-risk entities first.
+  //
+  // Unlike fish/bubbles/motes (static shape, moving position — drawn once,
+  // cached), an eel's body geometry itself changes every frame as it
+  // slithers, so there is no equivalent redraw-avoidance available here;
+  // each ribbon really is cleared and rebuilt every frame, same as the
+  // Canvas 2D pass it replaces.
+  let pixiPlayerGlow, pixiPlayerBody, pixiRivalGlow, pixiRivalBody;
+
+  function ensurePixiEelLayers(){
+    if (pixiPlayerGlow) return;
+    pixiPlayerGlow = new PIXI.Graphics(); pixiPlayerGlow.blendMode = "add";
+    pixiPlayerBody = new PIXI.Graphics();
+    pixiRivalGlow = new PIXI.Container(); pixiRivalGlow.blendMode = "add";
+    pixiRivalBody = new PIXI.Container();
+    // draw order: rival glow, rival body, player glow, player body — the
+    // player's own eel reads on top of any rival it's overlapping, same as
+    // the existing draw() dispatch order (drawRivalEels before drawPlayer).
+    pixiWorld.addChild(pixiRivalGlow, pixiRivalBody, pixiPlayerGlow, pixiPlayerBody);
+  }
+
+  // ---- eel heads (PR BL/BL2/BL3 of #85) ----
+  // Base fill + universal shading + gem crown + every eye-chain mark
+  // (including X-Ray's skull, PR BL3), ported to WebGL for every skin.
+  //
+  // Unlike the body ribbon (drawn directly in world space into one shared
+  // Graphics per eel), the head's shading (and "ears"'s face-mask band)
+  // need an actual clip: Canvas 2D clips them to the head's own ellipse
+  // via ctx.clip(), which has no direct PixiJS Graphics equivalent. Ported
+  // via a real PIXI `.mask` — a dedicated mask Graphics traced with the
+  // same head-ellipse polygon as the base fill (pixiEllipsePoly, above),
+  // assigned to both the shading and face-mask Graphics's `.mask` (one
+  // mask object, reused by two maskable targets — PixiJS supports this
+  // directly) and deliberately never added as a scene child itself. Every
+  // head-local point (ellipse centers/radii, eye-chain vertices) is built
+  // from the same world-space point set (via pixiEllipsePoly/
+  // pixiLocalToWorld) rather than a Container's own position/rotation
+  // transform, keeping every WebGL drawing pass in this file in the one
+  // coordinate space it already uses everywhere else.
+  //
+  // Render order matches Canvas 2D's own draw order exactly, since it's
+  // also z-order here: `_under` (ears' cowl / finridge's silhouette,
+  // drawn under the head) → `_fill` → `_shade` (masked) → `_faceMask`
+  // (masked, drawn after shading like Canvas 2D's own second ctx.clip()
+  // block) → `_glow` (additive — X-Ray's skull only; blendMode "add", the
+  // same per-eel additive surface PR AY discovered on the body's `glowG`)
+  // → `_marks` (gem crown, then the mutually-exclusive eye-chain,
+  // including X-Ray's eye-socket voids on top of its own glow layer —
+  // unmasked, normal-blend, drawn last, same as Canvas 2D's final eye
+  // pass sitting outside its own "lighter" save/restore block).
+
+  function makeHeadWrap(){
+    const wrap = new PIXI.Container();
+    const under = new PIXI.Graphics();
+    const fill = new PIXI.Graphics();
+    const maskG = new PIXI.Graphics();
+    const shade = new PIXI.Graphics();
+    shade.mask = maskG;
+    const faceMask = new PIXI.Graphics();
+    faceMask.mask = maskG;
+    const glow = new PIXI.Graphics(); glow.blendMode = "add";
+    const marks = new PIXI.Graphics();
+    wrap.addChild(under, fill, shade, faceMask, glow, marks);   // maskG deliberately not added
+    wrap._under = under; wrap._fill = fill; wrap._mask = maskG;
+    wrap._shade = shade; wrap._faceMask = faceMask; wrap._glow = glow; wrap._marks = marks;
+    return wrap;
+  }
+
+  let pixiPlayerHeadWrap, pixiRivalHeadPool;
+
+  function ensurePixiEelHeadLayers(){
+    if (pixiPlayerHeadWrap) return;
+    pixiPlayerHeadWrap = makeHeadWrap();
+    pixiRivalHeadPool = new PIXI.Container();
+    // heads draw after bodies (rival heads over rival bodies, player head
+    // over everything), matching Canvas 2D's own body-then-head order.
+    pixiWorld.addChild(pixiRivalHeadPool, pixiPlayerHeadWrap);
+  }
+
+  function pixiClearHeadWrap(wrap){
+    wrap._under.clear(); wrap._fill.clear(); wrap._mask.clear();
+    wrap._shade.clear(); wrap._faceMask.clear(); wrap._glow.clear(); wrap._marks.clear();
+  }
+
+  // Traces the jaw/snout wedge's path (moveTo → quadraticCurveTo → an
+  // arc'd tip, sampled as a short line-segment fan → quadraticCurveTo →
+  // close) without filling or stroking it — called twice by
+  // pixiDrawXraySkull (once before `.fill()`, once before `.stroke()`),
+  // the same redeclare-the-shape-before-each-paint-op discipline PR BL2's
+  // "ears" face-mask band already established, since a PixiJS Graphics
+  // path is consumed by the paint call that uses it.
+  function pixiTraceXrayJawWedge(g, cx, cy, ang, radius, jawTipX, jawTipR){
+    const start = pixiLocalToWorld(cx, cy, ang, -radius * 0.05, -radius * 0.38);
+    const c1 = pixiLocalToWorld(cx, cy, ang, radius * 0.55, -radius * 0.3);
+    const tip0 = pixiLocalToWorld(cx, cy, ang, jawTipX, -jawTipR);
+    g.moveTo(start[0], start[1]).quadraticCurveTo(c1[0], c1[1], tip0[0], tip0[1]);
+    const archSegs = 16;
+    for (let k = 1; k <= archSegs; k++){
+      const theta = -Math.PI / 2 + Math.PI * (k / archSegs);
+      const p = pixiLocalToWorld(cx, cy, ang, jawTipX + jawTipR * Math.cos(theta), jawTipR * Math.sin(theta));
+      g.lineTo(p[0], p[1]);
+    }
+    const c2 = pixiLocalToWorld(cx, cy, ang, radius * 0.55, radius * 0.3);
+    const end = pixiLocalToWorld(cx, cy, ang, -radius * 0.05, radius * 0.38);
+    g.quadraticCurveTo(c2[0], c2[1], end[0], end[1]).closePath();
+  }
+
+  // World-space port of drawXraySkull — cranium dome, tapering jaw/snout
+  // wedge, central nasal ridge, and a small neck notch, all genuinely
+  // additive via `wrap._glow` (PR AY's discovery, the same surface the
+  // body ribbon's own `glowG` already uses), matching Canvas 2D's real
+  // "lighter" composite for this exact group of shapes; the dark
+  // eye-socket voids are drawn last, normal-blend, into `wrap._marks` —
+  // Canvas 2D draws them *after* its own "lighter" save/restore block
+  // ends, so this is a true parity port, not a simplification (the same
+  // in-block-vs-out-of-block distinction PR BK's tendril fx already had
+  // to get right for its own rising-tendril pass).
+  function pixiDrawXraySkull(wrap, cx, cy, ang, radius, glow){
+    const g = Math.max(0, Math.min(1, glow));
+    const glowColor = 0x5ac8e6, glowAlpha = 0.16 + 0.24 * g;
+    const boneColor = 0xb2e0f0, boneAlpha = 0.55 + 0.35 * g;
+    const coreColor = 0xebf8ff, coreAlpha = 0.7 + 0.3 * g;
+    const segments = 28;
+
+    // cranium dome
+    const domePoly = pixiEllipsePoly(cx, cy, ang, -radius * 0.62, 0, radius * 0.62, radius * 0.82, 0, segments);
+    wrap._glow.poly(domePoly).fill({ color: glowColor, alpha: glowAlpha });
+    const domeArc = pixiEllipseArcPoints(cx, cy, ang, -radius * 0.62, 0, radius * 0.56, radius * 0.72, Math.PI * 0.12, Math.PI * 1.88, 24);
+    wrap._glow.moveTo(domeArc[0][0], domeArc[0][1]);
+    for (let i = 1; i < domeArc.length; i++) wrap._glow.lineTo(domeArc[i][0], domeArc[i][1]);
+    wrap._glow.stroke({ width: Math.max(0.8, radius * 0.055), color: boneColor, alpha: boneAlpha, cap: "round", join: "round" });
+
+    // tapering jaw/snout wedge
+    const jawTipX = radius * 0.85, jawTipR = radius * 0.24;
+    pixiTraceXrayJawWedge(wrap._glow, cx, cy, ang, radius, jawTipX, jawTipR);
+    wrap._glow.fill({ color: glowColor, alpha: glowAlpha });
+    pixiTraceXrayJawWedge(wrap._glow, cx, cy, ang, radius, jawTipX, jawTipR);
+    wrap._glow.stroke({ width: Math.max(0.7, radius * 0.045), color: boneColor, alpha: boneAlpha, cap: "round", join: "round" });
+
+    // central nasal ridge
+    const rStart = pixiLocalToWorld(cx, cy, ang, -radius * 0.2, 0);
+    const rEnd = pixiLocalToWorld(cx, cy, ang, jawTipX, 0);
+    wrap._glow.moveTo(rStart[0], rStart[1]).lineTo(rEnd[0], rEnd[1])
+      .stroke({ width: Math.max(0.6, radius * 0.04), color: coreColor, alpha: coreAlpha, cap: "round", join: "round" });
+
+    // neck notch
+    const n0 = pixiLocalToWorld(cx, cy, ang, -radius * 1.3, 0);
+    const n1 = pixiLocalToWorld(cx, cy, ang, -radius * 1.05, 0);
+    wrap._glow.moveTo(n0[0], n0[1]).lineTo(n1[0], n1[1])
+      .stroke({ width: Math.max(0.8, radius * 0.06), color: boneColor, alpha: boneAlpha, cap: "round", join: "round" });
+
+    // dark eye-socket voids — normal blend, drawn last
+    for (const s of [-1, 1]){
+      const poly = pixiEllipsePoly(cx, cy, ang, radius * 0.42, s * radius * 0.48, radius * 0.26, radius * 0.22, 0, segments);
+      wrap._marks.poly(poly).fill({ color: 0x020a0e, alpha: 0.92 });
+      wrap._marks.poly(poly).stroke({ width: Math.max(0.6, radius * 0.04), color: 0x78d2eb, alpha: 0.5 + 0.4 * g });
+    }
+  }
+
+  function pixiDrawEelHead(wrap, cx, cy, ang, radius, skin, marks, glow = 0){
+    const { hue, sat, headLight, gem, accent } = skin;
+    pixiClearHeadWrap(wrap);
+    const segments = 28;
+
+    // "ears": cowl, drawn under the head
+    if (marks.includes("ears") && accent){
+      const ac = hslToHex(accent.hue, accent.sat, accent.light + 20);
+      for (const s of [-1, 1]){
+        const p0 = pixiLocalToWorld(cx, cy, ang, radius * 0.30, s * radius * 0.60);
+        const p1 = pixiLocalToWorld(cx, cy, ang, -radius * 1.3, s * radius * 2.25);
+        const p2 = pixiLocalToWorld(cx, cy, ang, -radius * 1.0, s * radius * 0.35);
+        wrap._under.poly([p0[0], p0[1], p1[0], p1[1], p2[0], p2[1]]).fill({ color: ac });
+      }
+    }
+    // "finridge": silhouette, drawn under the head — falls through to
+    // default eyes below (Razorback carries no other head-relevant mark),
+    // exactly like Canvas 2D's own if/else chain.
+    if (marks.includes("finridge")){
+      const fc = hslToHex(hue, Math.max(0, sat - 10), Math.max(6, headLight - 14));
+      for (const s of [-1, 1]){
+        const p0 = pixiLocalToWorld(cx, cy, ang, -radius * 0.15, s * radius * 0.75);
+        const p1 = pixiLocalToWorld(cx, cy, ang, -radius * 0.85, s * radius * 1.35);
+        const p2 = pixiLocalToWorld(cx, cy, ang, -radius * 0.55, s * radius * 0.65);
+        wrap._under.poly([p0[0], p0[1], p1[0], p1[1], p2[0], p2[1]]).fill({ color: fc });
+      }
+      const q0 = pixiLocalToWorld(cx, cy, ang, radius * 0.1, -radius * 0.95);
+      const q1 = pixiLocalToWorld(cx, cy, ang, -radius * 0.15, -radius * 1.5);
+      const q2 = pixiLocalToWorld(cx, cy, ang, -radius * 0.35, -radius * 0.9);
+      wrap._under.poly([q0[0], q0[1], q1[0], q1[1], q2[0], q2[1]]).fill({ color: fc });
+    }
+
+    const headPoly = pixiEllipsePoly(cx, cy, ang, 0, 0, radius * 1.5, radius * 1.15, 0, segments);
+    wrap._fill.poly(headPoly).fill({ color: hslToHex(hue, sat, headLight) });
+    wrap._mask.poly(headPoly).fill({ color: 0xffffff });
+
+    const under = pixiEllipsePoly(cx, cy, ang, 0, radius * 0.55, radius * 1.5, radius * 0.75, 0, segments);
+    wrap._shade.poly(under).fill({ color: 0x000000, alpha: 0.22 });
+    const hi1 = pixiEllipsePoly(cx, cy, ang, -radius * 0.3, -radius * 0.5, radius * 1.1, radius * 0.55, 0, segments);
+    wrap._shade.poly(hi1).fill({ color: 0xffffff, alpha: 0.14 });
+    const hi2 = pixiEllipsePoly(cx, cy, ang, -radius * 0.35, -radius * 0.62, radius * 0.55, radius * 0.22, 0, segments);
+    wrap._shade.poly(hi2).fill({ color: 0xffffff, alpha: 0.22 });
+
+    if (gem){
+      const g0 = pixiLocalToWorld(cx, cy, ang, -radius * 0.15, -radius * 0.85);
+      const g1 = pixiLocalToWorld(cx, cy, ang, radius * 0.35, -radius * 0.55);
+      const g2 = pixiLocalToWorld(cx, cy, ang, -radius * 0.05, -radius * 0.35);
+      wrap._marks.poly([g0[0], g0[1], g1[0], g1[1], g2[0], g2[1]])
+        .fill({ color: hslToHex(hue, Math.min(100, sat + 10), 96), alpha: 0.8 });
+    }
+
+    // "ears" face-mask band, masked to the head silhouette (reuses wrap._mask)
+    if (marks.includes("ears") && accent){
+      const bandColor = hslToHex(accent.hue, accent.sat, accent.light + 20);
+      const bandEdge = hslToHex(accent.hue, accent.sat, Math.max(0, accent.light - 12));
+      const band = pixiEllipsePoly(cx, cy, ang, radius * 0.28, 0, radius * 0.74, radius * 1.6, 0, segments);
+      wrap._faceMask.poly(band).fill({ color: bandColor });
+      wrap._faceMask.poly(band).stroke({ width: Math.max(1, radius * 0.1), color: bandEdge });
+    }
+
+    // eye-chain — mutually exclusive, matching Canvas 2D's own if/else
+    if (marks.includes("patch") && accent){
+      const pc = hslToHex(accent.hue, accent.sat, accent.light);
+      for (const s of [-1, 1]){
+        const poly = pixiEllipsePoly(cx, cy, ang, radius * 0.52, s * radius * 0.56, radius * 0.80, radius * 0.66, 0, segments);
+        wrap._marks.poly(poly).fill({ color: pc });
+      }
+      for (const s of [-1, 1]){
+        const poly = pixiEllipsePoly(cx, cy, ang, radius * 0.56, s * radius * 0.56, radius * 0.30, radius * 0.18, s * -0.35, segments);
+        wrap._marks.poly(poly).fill({ color: 0xeaffff });
+      }
+    } else if (marks.includes("stare")){
+      for (const s of [-1, 1]){
+        const p0 = pixiLocalToWorld(cx, cy, ang, -radius * 1.02, s * radius * 0.10);
+        const c1 = pixiLocalToWorld(cx, cy, ang, -radius * 0.20, s * radius * 0.72);
+        const p1 = pixiLocalToWorld(cx, cy, ang, radius * 0.58, s * radius * 0.92);
+        const c2 = pixiLocalToWorld(cx, cy, ang, radius * 0.94, s * radius * 0.88);
+        const p2 = pixiLocalToWorld(cx, cy, ang, radius * 1.00, s * radius * 0.46);
+        const c3 = pixiLocalToWorld(cx, cy, ang, radius * 0.15, s * radius * 0.48);
+        wrap._marks.moveTo(p0[0], p0[1])
+          .quadraticCurveTo(c1[0], c1[1], p1[0], p1[1])
+          .quadraticCurveTo(c2[0], c2[1], p2[0], p2[1])
+          .quadraticCurveTo(c3[0], c3[1], p0[0], p0[1])
+          .fill({ color: 0xf4f8fa });
+      }
+    } else if (marks.includes("ears") && accent){
+      for (const s of [-1, 1]){
+        const poly = pixiEllipsePoly(cx, cy, ang, radius * 0.54, s * radius * 0.55, radius * 0.34, radius * 0.22, s * -0.3, segments);
+        wrap._marks.poly(poly).fill({ color: 0xeaffff });
+      }
+    } else if (marks.includes("manyeyes")){
+      for (const s of [-1, 1]){
+        const poly = pixiEllipsePoly(cx, cy, ang, radius * 0.55, s * radius * 0.5, radius * 0.28, radius * 0.12, s * 0.15, segments);
+        wrap._marks.poly(poly).fill({ color: 0xffb347 });
+      }
+      for (const [dx, dy] of [[0.25, 0.62], [0.15, 0.78], [0.35, 0.85]]){
+        for (const s of [-1, 1]){
+          const p = pixiLocalToWorld(cx, cy, ang, radius * dx, s * radius * dy);
+          wrap._marks.circle(p[0], p[1], radius * 0.07).fill({ color: 0xffb347, alpha: 0.75 });
+        }
+      }
+    } else if (marks.includes("worneye")){
+      const darkC = hslToHex(hue, Math.max(0, sat - 15), Math.max(4, headLight - 20));
+      const lightC = hslToHex(hue, Math.max(0, sat - 25), Math.min(70, headLight + 22));
+      let poly = pixiEllipsePoly(cx, cy, ang, radius * 0.5, -radius * 0.5, radius * 0.5, radius * 0.4, -0.2, segments);
+      wrap._marks.poly(poly).fill({ color: darkC });
+      poly = pixiEllipsePoly(cx, cy, ang, radius * 0.58, radius * 0.52, radius * 0.32, radius * 0.24, 0.3, segments);
+      wrap._marks.poly(poly).fill({ color: lightC });
+      let p = pixiLocalToWorld(cx, cy, ang, radius * 0.55, -radius * 0.55);
+      wrap._marks.circle(p[0], p[1], radius * 0.32).fill({ color: 0xeaffff });
+      p = pixiLocalToWorld(cx, cy, ang, radius * 0.5, radius * 0.55);
+      wrap._marks.circle(p[0], p[1], radius * 0.42).fill({ color: 0xeaffff });
+      p = pixiLocalToWorld(cx, cy, ang, radius * 0.68, -radius * 0.55);
+      wrap._marks.circle(p[0], p[1], radius * 0.15).fill({ color: 0x1a0f0a });
+      p = pixiLocalToWorld(cx, cy, ang, radius * 0.65, radius * 0.55);
+      wrap._marks.circle(p[0], p[1], radius * 0.2).fill({ color: 0x1a0f0a });
+    } else if (marks.includes("sensory")){
+      for (const s of [-1, 1]){
+        const poly = pixiEllipsePoly(cx, cy, ang, radius * 0.55, s * radius * 0.5, radius * 0.32, radius * 0.07, s * 0.1, segments);
+        wrap._marks.poly(poly).fill({ color: 0x9fe8ff });
+      }
+      for (const [dx, dy] of [[0.05, 0.75], [-0.15, 0.85], [0.2, 0.9]]){
+        for (const s of [-1, 1]){
+          const p = pixiLocalToWorld(cx, cy, ang, radius * dx, s * radius * dy);
+          wrap._marks.circle(p[0], p[1], radius * 0.05).fill({ color: 0x9fe8ff, alpha: 0.7 });
+        }
+      }
+    } else if (marks.includes("skull")){
+      // X-Ray: a cranium/jaw/socket skull in place of the default eyes —
+      // see pixiDrawXraySkull, above.
+      pixiDrawXraySkull(wrap, cx, cy, ang, radius, glow);
+    } else {
+      // default eyes — reached by every skin with no eye-relevant mark,
+      // including finridge-only skins (Razorback), exactly matching
+      // Canvas 2D's own fallback.
+      const e1 = pixiLocalToWorld(cx, cy, ang, radius * 0.5, -radius * 0.55);
+      const e2 = pixiLocalToWorld(cx, cy, ang, radius * 0.5, radius * 0.55);
+      wrap._marks.circle(e1[0], e1[1], radius * 0.42).fill({ color: 0xeaffff });
+      wrap._marks.circle(e2[0], e2[1], radius * 0.42).fill({ color: 0xeaffff });
+      const p1 = pixiLocalToWorld(cx, cy, ang, radius * 0.65, -radius * 0.55);
+      const p2 = pixiLocalToWorld(cx, cy, ang, radius * 0.65, radius * 0.55);
+      wrap._marks.circle(p1[0], p1[1], radius * 0.2).fill({ color: 0x04202c });
+      wrap._marks.circle(p2[0], p2[1], radius * 0.2).fill({ color: 0x04202c });
+    }
+  }
+
+  function ensurePoolSize(container, n, makeChild){
+    while (container.children.length < n) container.addChild(makeChild());
+    while (container.children.length > n) container.removeChildAt(container.children.length - 1).destroy();
+  }
+
+  // World-space port of the Canvas 2D bodyRibbon(ctx2d, pts, ...) helper
+  // (above drawBodyShading in the Canvas 2D section) — a tapered, filled
+  // band walking a slice of the body along one signed local-radius offset
+  // and back along another. Operates directly on the raw `body` array
+  // (world coordinates, not the screen-projected/pooled `pts` the Canvas 2D
+  // version reads), sampling every `step`'th point same as the rest of
+  // this ribbon. `lo`/`hi` default to the whole body.
+  function pixiBodyRibbon(g, body, step, bodyLength, radius, from, to, color, alpha, lo, hi){
+    lo = lo ?? 0; hi = hi ?? (body.length - 1);
+    if (hi - lo < step) return;
+    const poly = [];
+    for (let i = lo; i <= hi; i += step){
+      const qi = Math.max(lo, i - step);
+      const p = body[i], q = body[qi];
+      const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      const r = radius * (0.35 + 0.65 * (1 - i / bodyLength));
+      poly.push(p.x + nx*r*from, p.y + ny*r*from);
+    }
+    for (let i = hi; i >= lo; i -= step){
+      const qi = Math.max(lo, i - step);
+      const p = body[i], q = body[qi];
+      const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      const r = radius * (0.35 + 0.65 * (1 - i / bodyLength));
+      poly.push(p.x + nx*r*to, p.y + ny*r*to);
+    }
+    if (poly.length >= 6) g.poly(poly).fill({ color, alpha });
+  }
+
+  // World-space port of drawBodyShading — three hue-agnostic ribbons (dark
+  // underside, broad soft highlight, narrow specular streak) every eel
+  // gets, before any per-material texture. Same offsets/alphas as the
+  // Canvas 2D version.
+  function pixiDrawBodyShading(bodyG, body, step, bodyLength, radius){
+    pixiBodyRibbon(bodyG, body, step, bodyLength, radius, -1.0, -0.5, 0x000000, 0.22);
+    pixiBodyRibbon(bodyG, body, step, bodyLength, radius, 0.05, 0.55, 0xffffff, 0.10);
+    pixiBodyRibbon(bodyG, body, step, bodyLength, radius, 0.55, 0.72, 0xffffff, 0.16);
+  }
+
+  // World-space port of matOrganic — the subtle, slightly irregular surface
+  // variation every eel without a fancier material gets (only `organic` is
+  // ported in this PR; the other 11 SKIN_MATERIAL entries stay Canvas 2D
+  // until their own PRs, per the plan). The hash seed uses each slice's raw
+  // body index rather than the Canvas 2D version's screen-space arc-length
+  // (`pts[lo].s`) — arc-length purity only matters for shop-preview-vs-game
+  // parity, and the preview stays Canvas 2D until PR BB, so this is a safe
+  // simplification for now, not a shortcut that needs undoing later.
+  function pixiMatOrganic(bodyG, body, step, bodyLength, radius){
+    const n = body.length;
+    if (n < 4) return;
+    const slices = 3;
+    for (let j = 0; j < slices; j++){
+      const lo = Math.floor((j / slices) * (n - 1));
+      const hi = Math.floor(((j + 0.6) / slices) * (n - 1));
+      if (hi - lo < step) continue;
+      const hash = (((Math.sin(lo * 0.02 + j * 3.1) * 43758.5453) % 1) + 1) % 1;
+      const side = hash > 0.5 ? 1 : -1;
+      const from = side * (0.15 + hash * 0.2);
+      const to = side * (0.35 + hash * 0.15);
+      pixiBodyRibbon(bodyG, body, step, bodyLength, radius, from, to, 0xffffff, 0.06, lo, hi);
+    }
+  }
+
+  // World-space port of matBrushedMetal — fine directional grain, thin
+  // low-alpha ribbons running the whole body at hashed normal offsets.
+  // Count/alpha/spread come from resolveMaterial's strength/scale exactly
+  // like the Canvas 2D version; `detail` is the same 1-for-player,
+  // lower-for-rival richness knob Canvas 2D's drawSkinMaterial already uses.
+  function pixiMatBrushedMetal(bodyG, body, step, bodyLength, radius, skin, detail){
+    const m = Engine.resolveMaterial(skin);
+    const count = Math.max(2, Math.round(5 * m.strength * detail));
+    const alpha = 0.05 + 0.10 * m.strength;
+    for (let g = 0; g < count; g++){
+      const hash = (((Math.sin(g * 12.9898 + bodyLength * 0.013) * 43758.5453) % 1) + 1) % 1;
+      const side = hash > 0.5 ? 1 : -1;
+      const offset = side * (0.15 + hash * 0.55) * m.scale;
+      const width = 0.02 + hash * 0.03;
+      pixiBodyRibbon(bodyG, body, step, bodyLength, radius, offset - width, offset + width, 0xffffff, alpha);
+    }
+  }
+
+  // World-space port of mottlePatches — short, hashed ribbon patches keyed
+  // off each patch's own index (not per-frame randomness), shared base for
+  // stone and charred. `lo`/`hi` in the Canvas 2D version are indices into
+  // the already-sampled `pts` array; here `body` is unsampled, so the same
+  // hash-derived span is computed in "sample slot" units (slots = body
+  // sampled every `step`) and then scaled back into raw body-array indices —
+  // preserving the same apparent patch size/density the Canvas 2D version
+  // gets for free by indexing its pre-sampled point list directly.
+  // `styleFor(hash)` returns `{color, alpha}` (a packed hex + a float) rather
+  // than Canvas 2D's CSS colour string, matching how every other pixi
+  // material passes its fill to pixiBodyRibbon.
+  function pixiMottlePatches(bodyG, body, step, bodyLength, radius, count, styleFor){
+    const slots = Math.floor(body.length / step);
+    if (slots < 6) return;
+    for (let j = 0; j < count; j++){
+      const hash = (((Math.sin(j * 17.23 + bodyLength * 0.007) * 12958.35) % 1) + 1) % 1;
+      const loS = Math.max(0, Math.min(slots - 2, Math.floor(hash * (slots - 3))));
+      const hiS = Math.min(slots - 1, loS + 1 + Math.floor(hash * 3));
+      if (hiS <= loS) continue;
+      const lo = loS * step, hi = Math.min(body.length - 1, hiS * step);
+      const side = hash > 0.5 ? 1 : -1;
+      const from = side * (0.1 + hash * 0.3);
+      const to = side * (0.3 + hash * 0.3);
+      const { color, alpha } = styleFor(hash);
+      pixiBodyRibbon(bodyG, body, step, bodyLength, radius, from, to, color, alpha, lo, hi);
+    }
+  }
+
+  // World-space port of drawCrackLips — a thin dark stroke under where
+  // Canvas 2D's fxCracks/fxEmber (still Canvas-2D-only; not ported this PR)
+  // draw their own bright crack lines, so the cracks read as cut into rock
+  // rather than painted over a flat body. Ported as individual per-segment
+  // strokes directly on bodyG, the same style drawEelRibbon's own
+  // accent-banded body loop already uses — not a bodyRibbon fill, since a
+  // lip is a short radial mark sticking out from the spine, not a
+  // lengthwise band. Uses the raw body index as its jitter hash seed
+  // (rather than Canvas 2D's `p.i`), the same disclosed simplification
+  // pixiMatOrganic already made for the same reason.
+  function pixiDrawCrackLips(bodyG, body, step, bodyLength, radius, color, alpha){
+    for (let i = step; i < body.length; i += step){
+      const p = body[i], q = body[i - step];
+      const jitter = (((Math.sin(i * 12.9898) * 43758.5453) % 1) + 1) % 1;
+      if (jitter < 0.5) continue;
+      const t = 1 - i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      const side = jitter > 0.75 ? 1 : -1;
+      bodyG.moveTo(p.x, p.y)
+        .lineTo(p.x + nx * r * 0.7 * side, p.y + ny * r * 0.7 * side)
+        .stroke({ width: Math.max(1.2, r * 0.16), color, alpha });
+    }
+  }
+
+  // World-space port of matStone — mottled, low-contrast grey/brown patches
+  // plus dark crack lips underneath where fxCracks will land its own bright
+  // lines (still Canvas 2D, drawn on top of this WebGL body afterward).
+  function pixiMatStone(bodyG, body, step, bodyLength, radius, skin, detail){
+    const m = Engine.resolveMaterial(skin);
+    const count = Math.max(3, Math.round(6 * m.strength * detail));
+    pixiMottlePatches(bodyG, body, step, bodyLength, radius, count, hash =>
+      hash > 0.5 ? { color: 0x000000, alpha: 0.08 + 0.10 * m.strength }
+                  : { color: 0xffffff, alpha: 0.05 + 0.08 * m.strength });
+    pixiDrawCrackLips(bodyG, body, step, bodyLength, radius, 0x000000, 0.35);
+  }
+
+  // World-space port of matCharred — the same mottle idea as stone, near-
+  // black, plus a hot under-glow layer reading as heat through a charcoal
+  // crust. Disclosed simplification: Canvas 2D draws the hot patches with
+  // globalCompositeOperation "lighter" for a true additive glow; a Pixi
+  // Graphics object has one blendMode for its whole content, and bodyG is
+  // already normal-blend for the base fill/shading/organic-texture passes
+  // above it, so adding a genuine additive layer here would mean a third
+  // pooled Graphics per eel for one material. Instead the hot patches are
+  // drawn at a boosted alpha in normal "over" blend, layered on top of the
+  // dark patches already drawn into bodyG — loses the true glow-through
+  // luminosity but keeps the "warmth breaking through blackened stone"
+  // read this material is actually going for.
+  function pixiMatCharred(bodyG, body, step, bodyLength, radius, skin, detail){
+    const m = Engine.resolveMaterial(skin);
+    const count = Math.max(3, Math.round(6 * m.strength * detail));
+    pixiMottlePatches(bodyG, body, step, bodyLength, radius, count, () =>
+      ({ color: 0x000000, alpha: 0.18 + 0.12 * m.strength }));
+    const emberColor = hslToHex(22, 95, 52);
+    pixiMottlePatches(bodyG, body, step, bodyLength, radius, Math.max(3, Math.round(4 * m.strength * detail)), () =>
+      ({ color: emberColor, alpha: 0.3 + 0.35 * m.strength }));
+    pixiDrawCrackLips(bodyG, body, step, bodyLength, radius, 0x000000, 0.4);
+  }
+
+  // liquid (Eel-symbiote, reused at Voidbond's own tuning): a sparse pair of
+  // glossy highlight ribbons drifting from two out-of-phase sine terms, so
+  // the motion reads as an irregular flex rather than a clean single wave.
+  // Genuinely additive via glowG (the discovery from PR AY, applied here to
+  // a material for the first time — every material dispatched before this
+  // one was ported before that was known, so they still use the
+  // normal-blend-boost trade-off; this is guidance for new work, not a
+  // retrofit). `PIXI_SKIN_MATERIAL` entries are called with a trailing
+  // `glowG` argument for exactly this reason — every other material ignores
+  // it, same as they already ignore `nowMs` if they don't need it.
+  function pixiMatLiquid(bodyG, body, step, bodyLength, radius, skin, detail, nowMs, glowG){
+    const m = Engine.resolveMaterial(skin);
+    const ribbons = Math.max(1, Math.round(2 * m.strength * detail));
+    for (let b = 0; b < ribbons; b++){
+      const phase = b * 2.3;
+      const offset = (Math.sin(nowMs * 0.00018 + phase) * 0.6
+                    + Math.sin(nowMs * 0.00043 + phase * 1.9) * 0.4) * 0.35 * m.scale;
+      const width = 0.05 + 0.03 * m.strength;
+      const alpha = (0.05 + 0.06 * m.strength) * detail;
+      pixiBodyRibbon(glowG, body, step, bodyLength, radius, offset - width, offset + width, 0xffffff, alpha);
+    }
+  }
+
+  // World-space port of matChitin (Orbweaver) — restrained plated-surface
+  // read via the same pixiMottlePatches technique stone/charred already
+  // established, muted copper/bronze patches over the crimson/charcoal
+  // base. Deliberately no sheen/mirror highlight the way brushedMetal gets
+  // one — this is meant to read as living tissue, not metal armour.
+  function pixiMatChitin(bodyG, body, step, bodyLength, radius, skin, detail){
+    const m = Engine.resolveMaterial(skin);
+    const count = Math.max(3, Math.round(6 * m.strength * detail));
+    const copper = hslToHex(28, 55, 42);
+    pixiMottlePatches(bodyG, body, step, bodyLength, radius, count, hash =>
+      hash > 0.5 ? { color: copper, alpha: 0.08 + 0.09 * m.strength }
+                  : { color: 0x000000, alpha: 0.06 + 0.08 * m.strength });
+  }
+
+  // World-space port of drawRazorbackSlashes — irregular-count (1, 2 or 4,
+  // never a fixed three) short diagonal bodyRibbon slices in a small
+  // steel/silver tone. Shared by pixiMatScarred (the base, always-present
+  // read, `boosted: false`) and pixiFxFeral (an identical second pass at
+  // higher alpha while boosting, `boosted: true`) — matching Canvas 2D's own
+  // reason for sharing this function: calling it twice keeps the two passes
+  // trivially aligned, rather than duplicating the placement hash. Operates
+  // in "sample slot" units scaled by `step`, the conversion
+  // pixiDrawAccentPatches/pixiMottlePatches already established.
+  function pixiDrawRazorbackSlashes(g, body, step, bodyLength, radius, strength, boosted){
+    const slots = Math.floor(body.length / step);
+    if (slots < 8) return;
+    const groups = Math.max(2, Math.round(slots / 30));
+    const alpha = boosted ? Math.min(0.9, 0.3 + 0.35 * strength) : Math.min(0.5, 0.08 + 0.12 * strength);
+    const color = boosted ? 0xe0e6ea : 0xbec4c8;
+    for (let j = 0; j < groups; j++){
+      const hash = (((Math.sin(j * 21.4 + bodyLength * 0.009) * 33421.7) % 1) + 1) % 1;
+      const count = hash < 0.4 ? 1 : hash < 0.75 ? 2 : 4;
+      const loS = Math.max(0, Math.min(slots - 6, Math.floor(hash * (slots - 7))));
+      for (let s = 0; s < count; s++){
+        const sub = (((Math.sin(j * 7.7 + s * 13.3) * 9127.3) % 1) + 1) % 1;
+        const k0S = Math.min(slots - 2, loS + Math.floor(sub * 4));
+        const k1S = Math.min(slots - 1, k0S + 2);
+        if (k1S <= k0S) continue;
+        const k0 = k0S * step, k1 = Math.min(body.length - 1, k1S * step);
+        const side = sub > 0.5 ? 1 : -1;
+        const near = side * (0.15 + sub * 0.2), far = side * (0.45 + sub * 0.2);
+        pixiBodyRibbon(g, body, step, bodyLength, radius, Math.min(near, far), Math.max(near, far), color, alpha, k0, k1);
+      }
+    }
+  }
+
+  // World-space port of matScarred (Razorback) — dark mottled patches
+  // (pixiMottlePatches, PR AU's technique) plus a dorsal stripe down the
+  // spine, plus the slash marks above — rougher and more irregular than
+  // any other material ported so far.
+  function pixiMatScarred(bodyG, body, step, bodyLength, radius, skin, detail){
+    const m = Engine.resolveMaterial(skin);
+    const count = Math.max(3, Math.round(6 * m.strength * detail));
+    pixiMottlePatches(bodyG, body, step, bodyLength, radius, count, hash =>
+      hash > 0.5 ? { color: 0x000000, alpha: 0.10 + 0.10 * m.strength }
+                  : { color: 0xffffff, alpha: 0.04 + 0.05 * m.strength });
+    pixiBodyRibbon(bodyG, body, step, bodyLength, radius, -0.1, 0.1, hslToHex(25, 35, 14), 0.18 * m.strength);
+    pixiDrawRazorbackSlashes(bodyG, body, step, bodyLength, radius, m.strength * detail, false);
+  }
+
+  // World-space port of matWorn (Red Rogue) — battered, asymmetric surface:
+  // dark patches biased toward one flank (achieved the same way Canvas 2D
+  // does it — squaring the side-choosing hash before it decides a patch's
+  // flank, rather than a new parameter on the shared pixiMottlePatches,
+  // since this asymmetry is specific to this one material) plus a few
+  // low-alpha off-white scratch streaks. Operates in "sample slot" units
+  // scaled by `step`, the same conversion this phase's other span-based
+  // passes already established.
+  function pixiMatWorn(bodyG, body, step, bodyLength, radius, skin, detail){
+    const m = Engine.resolveMaterial(skin);
+    const slots = Math.floor(body.length / step);
+    if (slots < 6) return;
+    const count = Math.max(3, Math.round(6 * m.strength * detail));
+    for (let j = 0; j < count; j++){
+      const hash = (((Math.sin(j * 19.6 + bodyLength * 0.0083) * 21873.9) % 1) + 1) % 1;
+      const biased = hash * hash;
+      const loS = Math.max(0, Math.min(slots - 2, Math.floor(hash * (slots - 3))));
+      const hiS = Math.min(slots - 1, loS + 1 + Math.floor(hash * 3));
+      if (hiS <= loS) continue;
+      const lo = loS * step, hi = Math.min(body.length - 1, hiS * step);
+      const side = biased > 0.35 ? 1 : -1;
+      const from = side * (0.1 + hash * 0.3), to = side * (0.3 + hash * 0.3);
+      const color = hash > 0.5 ? 0x000000 : 0x3c281e;
+      const alpha = hash > 0.5 ? (0.10 + 0.10 * m.strength) : (0.08 + 0.08 * m.strength);
+      pixiBodyRibbon(bodyG, body, step, bodyLength, radius, from, to, color, alpha, lo, hi);
+    }
+    const scratches = Math.max(2, Math.round(3 * m.strength * detail));
+    for (let j = 0; j < scratches; j++){
+      const hash = (((Math.sin(j * 11.3 + bodyLength * 0.013) * 7654.3) % 1) + 1) % 1;
+      const loS = Math.max(0, Math.min(slots - 3, Math.floor(hash * (slots - 4))));
+      const hiS = Math.min(slots - 1, loS + 2);
+      if (hiS <= loS) continue;
+      const lo = loS * step, hi = Math.min(body.length - 1, hiS * step);
+      pixiBodyRibbon(bodyG, body, step, bodyLength, radius, -0.06, 0.06, 0xe6e1d7, 0.05 + 0.05 * m.strength, lo, hi);
+    }
+  }
+
+  // Dispatch table mirroring Canvas 2D's SKIN_MATERIAL — a material id that
+  // has no WebGL entry yet falls back to organic, same never-throw contract
+  // as Engine.resolveMaterial and the Canvas 2D drawSkinMaterial fallback.
+  const PIXI_SKIN_MATERIAL = {
+    organic: pixiMatOrganic, brushedMetal: pixiMatBrushedMetal,
+    stone: pixiMatStone, charred: pixiMatCharred, crystal: pixiMatCrystal,
+    water: pixiMatWater, air: pixiMatAir, charged: pixiMatCharged,
+    liquid: pixiMatLiquid, chitin: pixiMatChitin, scarred: pixiMatScarred,
+    worn: pixiMatWorn,
+  };
+
+  // World-space port of fxSheen — a bright specular streak down one flank
+  // and a dark rim down the other, on top of the universal shading every
+  // skin gets from pixiDrawBodyShading. Ported as two full-length filled
+  // ribbons (matching this file's other pixiBodyRibbon-based passes) rather
+  // than Canvas 2D's per-segment offset strokes — a disclosed simplification
+  // that reads the same at this stroke width/alpha and is far cheaper than
+  // ~250 individual per-eel strokes. Offsets are the Canvas 2D stroke's own
+  // center ± half its lineWidth, converted to bodyRibbon's from/to fractions.
+  function pixiFxSheen(bodyG, body, step, bodyLength, radius, skin){
+    const { hue, sat, bodyLight, headLight, sheen } = skin;
+    pixiBodyRibbon(bodyG, body, step, bodyLength, radius, -0.9, -0.2,
+      hslToHex(hue, sat, Math.max(4, bodyLight - 20)), 0.35 * sheen);
+    pixiBodyRibbon(bodyG, body, step, bodyLength, radius, 0.25, 0.75,
+      hslToHex(hue, Math.max(0, sat - 30), Math.min(98, headLight + 24)), 0.6 * sheen);
+  }
+
+  // World-space port of matCrystal — faceted geometric regions rather than
+  // random noise. Canvas 2D groups points into facets by the body's own
+  // screen-space arc-length `s` (a field pooled in SKIN_FX_SCRATCH); this
+  // computes an equivalent world-space cumulative arc-length inline, over
+  // just the sampled points, rather than reusing the raw-body-index
+  // simplification pixiMatOrganic/pixiDrawCrackLips made — a facet's
+  // apparent *size* is the whole visual point here (matching physical body
+  // length, not sample count), so unlike those simpler textures this one is
+  // worth the extra pass. `s` is still recomputed fresh per call rather than
+  // pooled/persisted, since it's only ever consumed within this one
+  // function, immediately after being built.
+  function pixiMatCrystal(bodyG, body, step, bodyLength, radius, skin, detail){
+    const m = Engine.resolveMaterial(skin);
+    const n = body.length;
+    if (n < 3) return;
+    const facetSize = Math.max(1, (radius * 1.6) / Math.max(0.3, m.scale));
+    const sVals = [];
+    let s = 0;
+    for (let i = 0, k = 0; i < n; i += step, k++){
+      if (k > 0) s += Math.hypot(body[i].x - body[i - step].x, body[i].y - body[i - step].y);
+      sVals.push(s);
+    }
+    const slots = sVals.length;
+    if (slots < 2) return;
+    let flank = 1, runStartK = 0, runFacet = Math.floor(sVals[0] / facetSize);
+    for (let k = 1; k <= slots; k++){
+      const facet = k < slots ? Math.floor(sVals[k] / facetSize) : -1;
+      if (facet !== runFacet){
+        const k1 = k - 1;
+        if (k1 > runStartK){
+          const hash = (((Math.sin(runFacet * 27.13 + bodyLength * 0.005) * 91731.234) % 1) + 1) % 1;
+          const strength = Math.max(0.3, m.strength) * detail;
+          const bright = hash > 0.55;
+          const color = bright ? 0xffffff : 0x000000;
+          const alpha = bright ? (0.08 + hash * 0.18) * strength : (0.06 + (1 - hash) * 0.12) * strength;
+          const near = flank * (0.12 + hash * 0.35);
+          const far = flank * (0.45 + hash * 0.3);
+          const lo = runStartK * step, hi = Math.min(n - 1, k1 * step);
+          pixiBodyRibbon(bodyG, body, step, bodyLength, radius, Math.min(near, far), Math.max(near, far), color, alpha, lo, hi);
+        }
+        flank *= -1;
+        runStartK = k - 1;
+        runFacet = facet;
+      }
+    }
+
+    // dispersion glint — disclosed simplification: Canvas 2D draws this with
+    // globalCompositeOperation "lighter" for a true additive sparkle; bodyG
+    // has one blend mode for its whole content (already normal-blend for
+    // every pass above), so this draws as small normal-blend circles at a
+    // boosted alpha instead, the same trade-off pixiMatCharred's ember
+    // patches made for the identical structural reason.
+    for (let i = 0; i < n; i += step * 4){
+      const hash = (((Math.sin(i * 9.87 + 1.7) * 5432.1) % 1) + 1) % 1;
+      if (hash < 0.72) continue;
+      const t = 1 - i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const glint = ((hash - 0.72) / 0.28) * m.strength * detail;
+      if (glint < 0.02) continue;
+      const dispersionHue = (hash * 360) % 360;
+      const p = body[i];
+      bodyG.circle(p.x, p.y, Math.max(0.7, r * 0.09))
+        .fill({ color: hslToHex(dispersionHue, 85, 88), alpha: Math.min(0.7, glint * 0.6) });
+    }
+  }
+
+  // World-space port of fxGemTwinkle — a travelling sparkle riding over
+  // crystal's facets, gated on skin.gem (Emerald/Ruby/Diamond only; Frost
+  // and Prism use the crystal material without gem:true and get their own
+  // fx, "sparkle"/"iridescent", both still Canvas 2D). Canvas 2D offsets the
+  // twinkle by a fixed screen-space "up" (p.y - r*0.4); body is world space
+  // here with no fixed camera-relative up, so this offsets along the local
+  // body normal instead — the same convention every other world-space pixi
+  // shading pass in this file already uses. Drawn as normal-blend circles at
+  // boosted alpha, the same additive-to-normal-blend trade-off as the
+  // dispersion glint above.
+  function pixiFxGemTwinkle(bodyG, body, step, bodyLength, radius, skin, nowMs){
+    const { hue, sat, headLight } = skin;
+    const color = hslToHex(hue, Math.min(100, sat + 15), Math.min(96, headLight + 22));
+    for (let i = step; i < body.length; i += step){
+      const p = body[i], q = body[i - step];
+      const t = 1 - i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const twinkle = Math.sin(nowMs * 0.004 + i * 0.6);
+      if (twinkle < 0.55) continue;
+      const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      const alpha = Math.min(0.85, ((twinkle - 0.55) / 0.45) * 1.7);
+      bodyG.circle(p.x + nx * r * 0.4, p.y + ny * r * 0.4, Math.max(1.4, r * 0.3)).fill({ color, alpha });
+    }
+  }
+
+  // World-space port of matFlow — shared by water and air: long, low-alpha
+  // ribbons at phase-shifted offsets that drift with `nowMs`. A direct,
+  // mechanical port (unlike crystal or charred): matFlow always runs the
+  // ribbon the whole body length, never slices `lo`/`hi`, and its bands fill
+  // with a plain `rgba(...)`-equivalent packed color/alpha rather than an
+  // additive "lighter" blend, so this needed no arc-length computation and
+  // no normal-blend-instead-of-additive trade-off the way crystal/charred did.
+  function pixiMatFlow(bodyG, body, step, bodyLength, radius, nowMs, bandCount, colorFor){
+    for (let b = 0; b < bandCount; b++){
+      const phase = (b / bandCount) * TAU;
+      const offset = Math.sin(nowMs * 0.00025 + phase) * 0.5;
+      const { color, alpha } = colorFor(b);
+      pixiBodyRibbon(bodyG, body, step, bodyLength, radius, offset - 0.08, offset + 0.08, color, alpha);
+    }
+  }
+
+  // water: a deeper blue/cyan base than the flat colour alone gives, with
+  // slow caustic-like bands — fxWater's own travelling highlight/bubble
+  // trail stays Canvas 2D until its own later PR.
+  function pixiMatWater(bodyG, body, step, bodyLength, radius, skin, detail, nowMs){
+    const m = Engine.resolveMaterial(skin);
+    const bands = Math.max(2, Math.round(4 * m.strength * detail));
+    pixiMatFlow(bodyG, body, step, bodyLength, radius, nowMs, bands, () =>
+      ({ color: 0x288cbe, alpha: 0.05 + 0.05 * m.strength }));
+  }
+
+  // air: pearl/silver, fewer and softer bands than water's — fxVortex's own
+  // spiral halo stays Canvas 2D until its own later PR.
+  function pixiMatAir(bodyG, body, step, bodyLength, radius, skin, detail, nowMs){
+    const m = Engine.resolveMaterial(skin);
+    const bands = Math.max(1, Math.round(2 * m.strength * detail));
+    pixiMatFlow(bodyG, body, step, bodyLength, radius, nowMs, bands, () =>
+      ({ color: 0xffffff, alpha: 0.03 + 0.04 * m.strength }));
+  }
+
+  // World-space port of matCharged — faint, always-visible branching veins,
+  // deterministic from each segment (Canvas 2D keys off arc-length `s`; this
+  // uses the raw body index instead, the same simplification
+  // pixiMatOrganic/pixiDrawCrackLips already made — a vein's *placement*
+  // being deterministic is what matters here, not its size, so unlike
+  // crystal's facets this doesn't need a true arc-length pass). Ported as
+  // individual per-segment strokes off the spine, the same style
+  // pixiDrawCrackLips already established for this shape of mark (a short
+  // radial line, not a lengthwise band). Disclosed simplification, boosted
+  // upfront from experience: Canvas 2D draws these with an additive
+  // "lighter" blend; bodyG is normal-blend for every pass above it, so this
+  // draws at a boosted alpha instead — the same trade-off pixiMatCharred's
+  // ember patches made, this time tuned generously from the start rather
+  // than needing a second verification pass to catch it reading too faint.
+  function pixiMatCharged(bodyG, body, step, bodyLength, radius, skin, detail){
+    const m = Engine.resolveMaterial(skin);
+    const { hue, sat, headLight } = skin;
+    const color = hslToHex(hue, Math.min(100, sat + 15), Math.min(90, headLight + 15));
+    for (let i = step; i < body.length; i += step){
+      const p = body[i], q = body[i - step];
+      const hash = (((Math.sin(i * 0.11) * 43758.5453) % 1) + 1) % 1;
+      if (hash < 0.6) continue;
+      const t = 1 - i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      const side = hash > 0.8 ? 1 : -1;
+      const alpha = Math.min(0.9, (0.12 + 0.15 * m.strength) * detail * 2.2);
+      bodyG.moveTo(p.x, p.y)
+        .lineTo(p.x + nx * r * 0.6 * side, p.y + ny * r * 0.6 * side)
+        .stroke({ width: Math.max(0.5, r * 0.06), color, alpha });
+    }
+  }
+
+  // World-space port of fxWater — a travelling highlight band (normal
+  // blend in Canvas 2D too, drawn outside its "lighter" block, so this
+  // needs no additive-to-normal-blend compromise) plus a rising bubble
+  // trail. The bubble trail genuinely is additive in Canvas 2D; rather than
+  // the normal-blend-boost trade-off pixiMatCharred/pixiMatCharged needed,
+  // this draws straight into the eel's own glowG (already `blendMode:
+  // "add"`, already used for the halo stroke) — real additive, no
+  // compromise, now that a per-eel additive layer is available to reach
+  // for. Canvas 2D offsets the bubble rise along a fixed screen "-y"; since
+  // this game's camera never rotates (see worldToScreen), a fixed world "-y"
+  // lands in the identical direction, so this is a literal port rather than
+  // the local-normal substitution pixiFxGemTwinkle needed for a different
+  // reason (that offset reads naturally either way; this one is an exact
+  // match, not just a reasonable substitute).
+  function pixiFxWater(glowG, bodyG, body, step, bodyLength, radius, skin, nowMs){
+    const { hue, sat, headLight } = skin;
+    const waveColor = hslToHex(hue, Math.min(100, sat + 10), Math.min(92, headLight + 18));
+    for (let i = step; i < body.length; i += step){
+      const p = body[i], q = body[i - step];
+      const wave = Math.sin(nowMs * 0.0015 - i * 0.25);
+      if (wave < 0.5) continue;
+      const t = 1 - i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      bodyG.moveTo(p.x - nx * r * 0.5, p.y - ny * r * 0.5)
+        .lineTo(q.x - nx * r * 0.5, q.y - ny * r * 0.5)
+        .stroke({ width: r * 0.5, color: waveColor, alpha: wave - 0.5 });
+    }
+    const bubbleColor = hslToHex(hue, Math.min(100, sat + 20), 95);
+    for (let i = 0; i < body.length; i += step * 5){
+      const p = body[i];
+      const t = 1 - i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const loopMs = 1400;
+      const bubbleT = ((nowMs * 0.6 + i * 137) % loopMs) / loopMs;
+      const alpha = Math.sin(bubbleT * Math.PI);
+      if (alpha < 0.15) continue;
+      glowG.circle(p.x, p.y - r * 0.6 - bubbleT * r * 1.4, Math.max(1, r * 0.14))
+        .fill({ color: bubbleColor, alpha: alpha * 0.6 });
+    }
+  }
+
+  // World-space port of fxVortex — a soft additive outline around the whole
+  // body plus small spiral swirls at sampled points, both genuinely additive
+  // in Canvas 2D (`globalCompositeOperation = "lighter"` for this fx's
+  // entire pass) and so both drawn into glowG here, same reasoning as
+  // pixiFxWater's bubble trail above. The swirl's per-axis offset
+  // (`cos(...)`, `sin(...)*0.6`) is a literal port of Canvas 2D's — this
+  // game's camera never rotates, so a world-space x/y offset reads
+  // identically to the screen-space one Canvas 2D computes.
+  function pixiFxVortex(glowG, bodyG, body, step, bodyLength, radius, skin, nowMs){
+    const { hue, sat, headLight } = skin;
+    glowG.moveTo(body[0].x, body[0].y);
+    for (let i = step; i < body.length; i += step) glowG.lineTo(body[i].x, body[i].y);
+    glowG.lineTo(body[body.length - 1].x, body[body.length - 1].y);
+    glowG.stroke({
+      width: radius * 0.9, cap: "round", join: "round",
+      color: hslToHex(hue, Math.max(0, sat - 20), Math.min(96, headLight + 20)), alpha: 0.10,
+    });
+    const swirlColor = hslToHex(hue, Math.min(100, sat + 10), 96);
+    for (let i = 0; i < body.length; i += step * 6){
+      const p = body[i];
+      const t = 1 - i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t) * 0.9;
+      const spin = nowMs * 0.003 + i * 0.5;
+      let first = true;
+      for (let a = 0; a <= TAU * 1.4; a += 0.4){
+        const rad = r * 0.5 * (a / (TAU * 1.4));
+        const x = p.x + Math.cos(a + spin) * rad, y = p.y + Math.sin(a + spin) * rad * 0.6;
+        if (first){ glowG.moveTo(x, y); first = false; } else glowG.lineTo(x, y);
+      }
+      glowG.stroke({ width: Math.max(0.6, r * 0.08), color: swirlColor, alpha: 0.5 });
+    }
+  }
+
+  // World-space port of fxCracks — glowing radial cracks pulsing along the
+  // spine, the exact same jitter/geometry shape as pixiDrawCrackLips' dark
+  // lips underneath (matStone), just brighter and pulsing. Genuinely
+  // additive via glowG (see PR AY) rather than the normal-blend-boost
+  // trade-off pixiMatStone's own crack lips needed when they were ported —
+  // this pass draws right on top of those lips, on the eel's own real
+  // additive layer.
+  function pixiFxCracks(glowG, bodyG, body, step, bodyLength, radius, skin, nowMs){
+    const { hue, sat, headLight } = skin;
+    const color = hslToHex(hue, Math.min(100, sat + 25), Math.min(85, headLight + 20));
+    for (let i = step; i < body.length; i += step){
+      const p = body[i], q = body[i - step];
+      const jitter = (((Math.sin(i * 12.9898) * 43758.5453) % 1) + 1) % 1;
+      if (jitter < 0.5) continue;
+      const t = 1 - i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const pulse = 0.5 + 0.5 * Math.sin(nowMs * 0.003 + i * 0.4);
+      const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      const side = jitter > 0.75 ? 1 : -1;
+      glowG.moveTo(p.x, p.y)
+        .lineTo(p.x + nx * r * 0.7 * side, p.y + ny * r * 0.7 * side)
+        .stroke({ width: Math.max(0.8, r * 0.12), color, alpha: 0.35 + 0.45 * pulse });
+    }
+  }
+
+  // World-space port of fxEmber — a hotter, denser pulsing pass along the
+  // body segments themselves (normal blend in Canvas 2D, unlike fxCracks'
+  // radial lines) plus embers rising off the body, additive via glowG. The
+  // ember colour's hue (`hue - 10`) can go slightly negative for Fire
+  // (hue 8) — CSS's hsla() wraps any real hue via modulo 360, but
+  // hslToHex's own `%` doesn't for negative inputs, so this normalises
+  // explicitly rather than relying on the same wrap CSS gives Canvas 2D
+  // for free.
+  function pixiFxEmber(glowG, bodyG, body, step, bodyLength, radius, skin, nowMs){
+    const { hue, sat, headLight } = skin;
+    const emberHue = ((hue - 10) % 360 + 360) % 360;
+    for (let i = step; i < body.length; i += step){
+      const p = body[i], q = body[i - step];
+      const t = 1 - i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const pulse = 0.5 + 0.5 * Math.sin(nowMs * 0.006 + i * 0.5);
+      const color = hslToHex(hue, Math.min(100, sat + 15), Math.min(80, headLight + 15 + pulse * 15));
+      bodyG.moveTo(p.x, p.y).lineTo(q.x, q.y)
+        .stroke({ width: Math.max(0.8, r * 0.22), color, alpha: 0.4 + 0.4 * pulse });
+    }
+    for (let i = 0; i < body.length; i += step * 5){
+      const p = body[i];
+      const t = 1 - i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const loopMs = 900;
+      const emberT = ((nowMs * 0.9 + i * 211) % loopMs) / loopMs;
+      const alpha = 1 - emberT;
+      if (alpha < 0.1) continue;
+      const color = hslToHex(emberHue, 90, 60 + emberT * 20);
+      glowG.circle(p.x + Math.sin(i) * r * 0.3, p.y - r * 0.5 - emberT * r * 1.6, Math.max(0.8, r * 0.1))
+        .fill({ color, alpha: alpha * 0.7 });
+    }
+  }
+
+  // World-space port of fxArc — jagged, flickering bolts down the spine,
+  // genuinely additive via glowG (see PR AY). Canvas 2D draws one segment
+  // per raw point pair (no step skipping, unlike cracks/ember's k+=2); this
+  // samples at the same `step` interval every other pixi pass in this file
+  // uses, a consistent simplification rather than a special case for this
+  // one fx — fewer, slightly longer jagged segments, same flicker/jitter
+  // read at a glance. No flare tied to the real zap meter here (X-Ray's own
+  // skeleton, a later PR, is the only skin whose fx reads live gameplay
+  // state) — this finish needs none, which is what lets it read identically
+  // in the shop preview once that moves to WebGL.
+  function pixiFxArc(glowG, bodyG, body, step, bodyLength, radius, skin, nowMs){
+    const { hue, sat, headLight } = skin;
+    const color = hslToHex(hue, Math.min(100, sat + 10), Math.min(98, headLight + 28));
+    for (let i = step; i < body.length; i += step){
+      const p = body[i], q = body[i - step];
+      const flicker = Math.sin(nowMs * 0.02 + i * 0.9);
+      if (flicker < 0.6) continue;
+      const t = 1 - i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      const jitter = (((Math.sin(i * 78.233) * 12345.678) % 1) + 1) % 1;
+      const jag = (jitter - 0.5) * r * 0.6;
+      glowG.moveTo(p.x, p.y)
+        .lineTo((p.x + q.x) / 2 + nx * jag, (p.y + q.y) / 2 + ny * jag)
+        .lineTo(q.x, q.y)
+        .stroke({ width: Math.max(0.6, r * 0.1), color, alpha: (flicker - 0.6) / 0.4 });
+    }
+  }
+
+  // World-space port of fxSparkle — small pulsing "+" cross-marks at
+  // sampled points, genuinely additive via glowG (see PR AY). Frost's own
+  // fx, distinct from the gem twinkle Emerald/Ruby/Diamond get from
+  // pixiFxGemTwinkle (a filled dot on the crystal material itself, gated on
+  // skin.gem) — Frost uses the same crystal material but has no gem:true,
+  // so this fx is its only sparkle.
+  function pixiFxSparkle(glowG, bodyG, body, step, bodyLength, radius, skin, nowMs){
+    const { hue, sat, headLight } = skin;
+    const color = hslToHex(hue, Math.min(100, sat + 20), Math.min(98, headLight + 18));
+    for (let i = 0; i < body.length; i += step){
+      const p = body[i];
+      const t = 1 - i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const glint = Math.sin(nowMs * 0.003 + i * 0.9);
+      if (glint < 0.7) continue;
+      const s = Math.max(1.5, r * 0.32) * ((glint - 0.7) / 0.3);
+      const alpha = (glint - 0.7) / 0.3;
+      glowG.moveTo(p.x - s, p.y).lineTo(p.x + s, p.y)
+        .stroke({ width: Math.max(0.6, r * 0.05), color, alpha });
+      glowG.moveTo(p.x, p.y - s).lineTo(p.x, p.y + s)
+        .stroke({ width: Math.max(0.6, r * 0.05), color, alpha });
+    }
+  }
+
+  // World-space port of fxMolten — the same glowing-crack idea as
+  // pixiFxCracks, slower and heavier, plus sparse drips that fall rather
+  // than rise (the mirror of pixiFxEmber's rising embers — offset by
+  // `+r*0.5 + dripT*r*1.2` instead of `-r*0.5 - emberT*r*1.6`). Fully
+  // additive in Canvas 2D (unlike fxEmber, whose pulse pass is normal
+  // blend), so both passes draw into glowG here.
+  function pixiFxMolten(glowG, bodyG, body, step, bodyLength, radius, skin, nowMs){
+    const { hue, sat, headLight } = skin;
+    for (let i = step; i < body.length; i += step){
+      const p = body[i], q = body[i - step];
+      const jitter = (((Math.sin(i * 12.9898) * 43758.5453) % 1) + 1) % 1;
+      if (jitter < 0.45) continue;
+      const t = 1 - i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const pulse = 0.5 + 0.5 * Math.sin(nowMs * 0.0018 + i * 0.35);
+      const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      const side = jitter > 0.72 ? 1 : -1;
+      const color = hslToHex(hue, Math.min(100, sat + 20), Math.min(70, headLight + 18 + pulse * 12));
+      glowG.moveTo(p.x, p.y)
+        .lineTo(p.x + nx * r * 0.65 * side, p.y + ny * r * 0.65 * side)
+        .stroke({ width: Math.max(0.9, r * 0.14), color, alpha: 0.4 + 0.4 * pulse });
+    }
+    for (let i = 0; i < body.length; i += step * 8){
+      const p = body[i];
+      const t = 1 - i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const loopMs = 2600;
+      const dripT = ((nowMs * 0.3 + i * 251) % loopMs) / loopMs;
+      const alpha = 1 - dripT;
+      if (alpha < 0.15) continue;
+      const color = hslToHex(hue - 6, 95, 45 + dripT * 10);
+      glowG.circle(p.x, p.y + r * 0.5 + dripT * r * 1.2, Math.max(0.9, r * 0.09))
+        .fill({ color, alpha: alpha * 0.6 });
+    }
+  }
+
+  // World-space port of fxAfterimage — not a positional overlay like every
+  // other fx above, but a literal re-stroke of the body's own trailing
+  // points: Canvas 2D walks pts[shift..end] as one continuous path, using
+  // the tail's own history as a free "where the head recently was" trail
+  // rather than storing any previous frame. `shift` is computed in "sample
+  // slot" units and scaled by `step` before use, the same conversion
+  // pixiMottlePatches already established for going from Canvas 2D's
+  // already-sampled `pts.length` to this file's raw, unsampled `body`.
+  // Genuinely additive via glowG (see PR AY). No `nowMs` needed — the trail
+  // reads as motion because the body itself moves every frame, not because
+  // this fx animates anything of its own.
+  function pixiFxAfterimage(glowG, bodyG, body, step, bodyLength, radius, skin){
+    const { hue, sat, headLight } = skin;
+    const slots = Math.floor(body.length / step);
+    const shiftSlots = Math.max(2, Math.round(slots * 0.12));
+    const shift = shiftSlots * step;
+    if (body.length <= shift) return;
+    const color = hslToHex(hue, Math.max(0, sat - 10), Math.min(90, headLight + 10));
+    let first = true;
+    for (let i = shift; i < body.length; i += step){
+      const p = body[i];
+      if (first){ glowG.moveTo(p.x, p.y); first = false; } else glowG.lineTo(p.x, p.y);
+    }
+    glowG.stroke({ width: radius * 1.3, cap: "round", join: "round", color, alpha: 0.22 });
+  }
+
+  // World-space port of fxStars — tiny points of light scattered anywhere
+  // across the body's own width (not just at one flank, unlike the other
+  // spot-style fx), so a near-black Void skin reads as a starry sky rather
+  // than a solid silhouette. Genuinely additive via glowG.
+  function pixiFxStars(glowG, bodyG, body, step, bodyLength, radius, skin, nowMs){
+    const { hue } = skin;
+    const color = hslToHex(hue, 20, 96);
+    for (let i = step; i < body.length; i += step){
+      const p = body[i], q = body[i - step];
+      const jitter = (((Math.sin(i * 51.234) * 63187.531) % 1) + 1) % 1;
+      if (jitter < 0.55) continue;
+      const t = 1 - i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const twinkle = 0.4 + 0.6 * Math.sin(nowMs * 0.002 + i * 1.1);
+      if (twinkle < 0.3) continue;
+      const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      const offset = (jitter * 2 - 1) * r * 0.75;
+      glowG.circle(p.x + nx * offset, p.y + ny * offset, Math.max(0.7, r * 0.07))
+        .fill({ color, alpha: twinkle * 0.8 });
+    }
+  }
+
+  // World-space port of fxSpots — pulsing filled dots at a fixed lateral
+  // offset (one of two flanks, chosen by a hash), genuinely additive via
+  // glowG. The fixed-flank offset is what distinguishes this from
+  // pixiFxStars' continuous across-the-width scatter — Bioluminescent's
+  // spots sit at a consistent depth on the body, Void's stars don't.
+  function pixiFxSpots(glowG, bodyG, body, step, bodyLength, radius, skin, nowMs){
+    const { hue, sat, headLight } = skin;
+    const color = hslToHex(hue, Math.min(100, sat + 10), Math.min(92, headLight + 20));
+    for (let i = step; i < body.length; i += step){
+      const p = body[i], q = body[i - step];
+      const jitter = (((Math.sin(i * 37.719) * 91731.234) % 1) + 1) % 1;
+      if (jitter < 0.6) continue;
+      const t = 1 - i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const pulse = 0.5 + 0.5 * Math.sin(nowMs * 0.0025 + i * 0.7);
+      const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      const side = jitter > 0.8 ? 1 : -1;
+      glowG.circle(p.x + nx * r * 0.55 * side, p.y + ny * r * 0.55 * side, Math.max(1, r * 0.13))
+        .fill({ color, alpha: 0.25 + 0.55 * pulse });
+    }
+  }
+
+  // World-space port of fxSlime — a low, viscous sheen stroke (normal
+  // blend in Canvas 2D too, matching pixiFxWater's own wave pass) plus
+  // slow, sparse rising bubbles (additive, via glowG) — Water's bubble
+  // trail again, thicker and murkier.
+  function pixiFxSlime(glowG, bodyG, body, step, bodyLength, radius, skin, nowMs){
+    const { hue, sat, headLight } = skin;
+    const sheenColor = hslToHex(hue, Math.min(100, sat + 5), Math.min(80, headLight + 10));
+    for (let i = step; i < body.length; i += step){
+      const p = body[i], q = body[i - step];
+      const t = 1 - i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      bodyG.moveTo(p.x - nx * r * 0.4, p.y - ny * r * 0.4)
+        .lineTo(q.x - nx * r * 0.4, q.y - ny * r * 0.4)
+        .stroke({ width: r * 0.6, color: sheenColor, alpha: 0.16 });
+    }
+    const bubbleColor = hslToHex(hue, Math.min(100, sat + 15), Math.min(88, headLight + 16));
+    for (let i = 0; i < body.length; i += step * 6){
+      const p = body[i];
+      const t = 1 - i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const loopMs = 2200;
+      const bubbleT = ((nowMs * 0.35 + i * 173) % loopMs) / loopMs;
+      const alpha = Math.sin(bubbleT * Math.PI);
+      if (alpha < 0.15) continue;
+      glowG.circle(p.x, p.y - r * 0.6 - bubbleT * r * 1.1, Math.max(1.2, r * 0.18))
+        .fill({ color: bubbleColor, alpha: alpha * 0.5 });
+    }
+  }
+
+  // World-space port of fxSilk (Orbweaver) — two parts, matching Canvas 2D
+  // exactly. Part 1: a handful of thin, asymmetric strand bows (a
+  // quadraticCurveTo per strand, the same curve call Canvas 2D uses —
+  // PIXI.Graphics supports it directly, no polyline approximation needed),
+  // static per frame since their placement is deterministic from `j` and
+  // `bodyLength`, never `nowMs`. Part 2: a rare, self-terminating fine
+  // strand between two sample points a fixed slot-gap apart, drawn only
+  // when their current world distance is small (the body has curled
+  // tightly there) and a low-probability time-bucket hash passes — omitted
+  // entirely under reduced motion, matching Canvas 2D's own gate; the
+  // static bows in part 1 are unaffected, since those were never
+  // time-based to begin with. Both parts operate in "sample slot" units
+  // (slots = body.length/step) rather than Canvas 2D's already-sampled
+  // `pts.length`, the same conversion pixiDrawAccentPatches/pixiMottlePatches
+  // already established, so the same span/gap formulas produce the same
+  // apparent density. Normal blend throughout — Canvas 2D never sets
+  // globalCompositeOperation for silk — so both parts draw into `bodyG`,
+  // not `glowG`.
+  function pixiFxSilk(glowG, bodyG, body, step, bodyLength, radius, skin, nowMs){
+    const slots = Math.floor(body.length / step);
+    if (slots < 8) return;
+    const strandCount = Math.max(3, Math.round(slots / 20));
+    for (let j = 0; j < strandCount; j++){
+      const hash = (((Math.sin(j * 31.7 + bodyLength * 0.011) * 27431.5) % 1) + 1) % 1;
+      const spanHash = (((Math.sin(j * 9.3 + 4.1) * 8123.7) % 1) + 1) % 1;
+      const loS = Math.max(0, Math.min(slots - 5, Math.floor(hash * (slots - 6))));
+      const hiS = Math.min(slots - 1, loS + 3 + Math.floor(spanHash * 6));
+      if (hiS <= loS + 1) continue;
+      const lo = loS * step, hi = Math.min(body.length - 1, hiS * step);
+      const p0 = body[lo], p2 = body[hi];
+      const dx = p2.x - p0.x, dy = p2.y - p0.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      const side = hash > 0.5 ? 1 : -1;
+      const bow = side * (0.15 + spanHash * 0.35) * len;
+      const mx = (p0.x + p2.x) / 2 + nx * bow, my = (p0.y + p2.y) / 2 + ny * bow;
+      bodyG.moveTo(p0.x, p0.y).quadraticCurveTo(mx, my, p2.x, p2.y)
+        .stroke({ width: Math.max(0.5, radius * 0.05), color: 0xc49e6e, alpha: 0.4 });
+    }
+
+    if (!reduceMotion){
+      const gap = Math.max(6, Math.round(slots / 6));
+      const stride = Math.max(4, Math.round(slots / 8));
+      for (let kS = 0; kS + gap < slots; kS += stride){
+        const k = kS * step, kg = Math.min(body.length - 1, (kS + gap) * step);
+        const a = body[k], b = body[kg];
+        if (Math.hypot(a.x - b.x, a.y - b.y) > radius * 1.4) continue;
+        const hash = (((Math.sin(k * 7.13 + Math.floor(nowMs / 1400)) * 5871.3) % 1) + 1) % 1;
+        if (hash < 0.9) continue;
+        bodyG.moveTo(a.x, a.y).lineTo(b.x, b.y)
+          .stroke({ width: Math.max(0.4, radius * 0.03), color: 0xdcbe96, alpha: 0.5 });
+        break;
+      }
+    }
+  }
+
+  // World-space port of fxFeral (Razorback) — an instant, cosmetic-only
+  // brightening of the slash marks while boosting, threaded through a
+  // trailing `fxGlow` argument mirroring the same `glow` slot Canvas 2D's
+  // drawSkinFx already threads X-Ray's chargeGlow and Razorback's
+  // pointer.boosting through (computed once in drawEelRibbon, below).
+  // Genuinely additive via `glowG` (PR AY's discovery) rather than the
+  // normal-blend-boost trade-off earlier materials needed — Canvas 2D uses
+  // a real "lighter" composite for this exact pass too, so this is a true
+  // parity port, not a simplification.
+  function pixiFxFeral(glowG, bodyG, body, step, bodyLength, radius, skin, nowMs, fxGlow = 0){
+    if (!fxGlow) return;
+    const m = Engine.resolveMaterial(skin);
+    pixiDrawRazorbackSlashes(glowG, body, step, bodyLength, radius, m.strength, true);
+  }
+
+  // World-space port of fxTendril (Voidbond) — three parts, matching Canvas
+  // 2D exactly. Part 1: jagged dark vein strokes, walking consecutive
+  // "sample slot" indices (raw body indices `step` apart) the same way this
+  // phase's earlier multi-point stroke passes (e.g. pixiDrawWebMark)
+  // already do. Part 2: iridescent teal/purple channel ribbons, hash-gated
+  // and scaled by local curvature (the turn angle between two consecutive
+  // segment vectors, the same approximation Canvas 2D uses) — genuinely
+  // additive via `glowG` (PR AY's discovery), matching Canvas 2D's own
+  // "lighter" composite for this exact pass. Part 3: a rare rising
+  // tendril, self-terminating and gated on `reduceMotion` exactly like
+  // Canvas 2D, drawn at normal blend into `bodyG` since Canvas 2D's own
+  // version runs *after* its "lighter" block's `restore()` — not additive,
+  // unlike part 2. Every hash seed uses the sample-slot loop index
+  // directly (matching Canvas 2D's own `k`, itself a sample-slot index
+  // into the already-sampled `pts` array), not a raw body index —
+  // consistent with how every other multi-slot pass in this phase seeds
+  // its hash.
+  function pixiFxTendril(glowG, bodyG, body, step, bodyLength, radius, skin, nowMs){
+    const slots = Math.floor(body.length / step);
+    if (slots < 8) return;
+
+    const veinCount = Math.max(3, Math.round(slots / 22));
+    for (let j = 0; j < veinCount; j++){
+      const hash = (((Math.sin(j * 13.9 + bodyLength * 0.008) * 19571.3) % 1) + 1) % 1;
+      const loS = Math.max(1, Math.min(slots - 4, Math.floor(hash * (slots - 5))));
+      const hiS = Math.min(slots - 1, loS + 2 + Math.floor(((hash * 11) % 1) * 4));
+      if (hiS <= loS) continue;
+      bodyG.moveTo(body[loS * step].x, body[loS * step].y);
+      for (let kS = loS + 1; kS <= hiS; kS++){
+        const k = Math.min(body.length - 1, kS * step);
+        bodyG.lineTo(body[k].x, body[k].y);
+      }
+      bodyG.stroke({ width: Math.max(0.5, radius * 0.05), color: 0x0a0814, alpha: 0.35 });
+    }
+
+    for (let kS = 2; kS < slots - 1; kS += 3){
+      const k0 = (kS - 2) * step, k1 = (kS - 1) * step, k2 = Math.min(body.length - 1, kS * step);
+      const p0 = body[k0], p1 = body[k1], p2 = body[k2];
+      const v1x = p1.x - p0.x, v1y = p1.y - p0.y, v2x = p2.x - p1.x, v2y = p2.y - p1.y;
+      const len1 = Math.hypot(v1x, v1y) || 1, len2 = Math.hypot(v2x, v2y) || 1;
+      const cosT = Math.max(-1, Math.min(1, (v1x * v2x + v1y * v2y) / (len1 * len2)));
+      const bend = (1 - cosT) * 0.5;
+      const hash = (((Math.sin(kS * 5.3 + 2.1) * 12345.6) % 1) + 1) % 1;
+      if (hash < 0.4) continue;
+      const t = 1 - k2 / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const hue = hash > 0.5 ? 180 : 280;
+      const alpha = Math.min(0.55, 0.06 + bend * 0.5);
+      const side = hash > 0.5 ? 1 : -1;
+      const nx = -v2y / len2, ny = v2x / len2;
+      glowG.moveTo(p1.x + nx * r * 0.3 * side, p1.y + ny * r * 0.3 * side)
+        .lineTo(p2.x + nx * r * 0.3 * side, p2.y + ny * r * 0.3 * side)
+        .stroke({ width: Math.max(0.6, r * 0.12), color: hslToHex(hue, 70, 60), alpha });
+    }
+
+    if (!reduceMotion){
+      const stride = Math.max(4, Math.round(slots / 9));
+      for (let kS = 1; kS < slots; kS += stride){
+        const k = Math.min(body.length - 1, kS * step), q = Math.max(0, (kS - 1) * step);
+        const a = body[k], qp = body[q];
+        const hash = (((Math.sin(kS * 6.7 + Math.floor(nowMs / 1600)) * 4213.7) % 1) + 1) % 1;
+        if (hash < 0.92) continue;
+        const t = 1 - k / bodyLength;
+        const r = radius * (0.35 + 0.65 * t);
+        const rise = Math.sin(((nowMs % 1600) / 1600) * Math.PI);
+        const dx = a.x - qp.x, dy = a.y - qp.y, len = Math.hypot(dx, dy) || 1;
+        const nx = -dy / len, ny = dx / len;
+        bodyG.moveTo(a.x, a.y)
+          .lineTo(a.x + nx * r * 0.9 * rise, a.y + ny * r * 0.9 * rise)
+          .stroke({ width: Math.max(0.5, r * 0.08), color: hslToHex(190, 70, 65), alpha: 0.4 * rise });
+        break;
+      }
+    }
+  }
+
+  // Dispatch table for skin.fx — unlike PIXI_SKIN_MATERIAL, no fallback: not
+  // having an fx is a valid state (mirrors Canvas 2D's drawSkinFx, which
+  // just no-ops when SKIN_FX[skin.fx] is undefined). Only ripple, vortex,
+  // cracks, ember, arc, sparkle, molten, afterimage, stars, spots, slime,
+  // silk, feral and tendril are ported so far (see PRs AY-BK in the plan
+  // file); every other fx stays Canvas-2D-only, drawn on top of the WebGL
+  // body exactly as before. fade and iridescent (PR BE) are deliberately
+  // absent from this table — they recolour the base-fill stroke itself
+  // (pixiBodyFxStyle, called inline from drawEelRibbon's own base-fill loop
+  // below) rather than drawing an overlay afterward, so they can never be
+  // dispatched the same way as everything else here.
+  const PIXI_SKIN_FX = {
+    ripple: pixiFxWater, vortex: pixiFxVortex,
+    cracks: pixiFxCracks, ember: pixiFxEmber, arc: pixiFxArc,
+    sparkle: pixiFxSparkle, molten: pixiFxMolten,
+    afterimage: pixiFxAfterimage, stars: pixiFxStars,
+    spots: pixiFxSpots, slime: pixiFxSlime, silk: pixiFxSilk, feral: pixiFxFeral,
+    tendril: pixiFxTendril,
+  };
+
+  // Shared by the player and every rival — draws exactly the two layers
+  // described above into the given pair of (already-cleared) Graphics.
+  // World-space port of bodyFxStyle — unlike every fx ported so far (an
+  // overlay drawn on top of the finished body), fade and iridescent
+  // recolour the base-fill stroke itself, so a bug here disfigures the eel
+  // rather than just spoiling a stray effect, same as the Canvas 2D
+  // version's own comment warns. Returns `{color, alpha}` (this file's
+  // usual packed-hex-plus-float shape) rather than Canvas 2D's CSS string,
+  // and — since it feeds a `.stroke()` call rather than a `<canvas>`
+  // `strokeStyle` — every branch (including the plain default) returns
+  // alpha explicitly rather than only fade opting into one.
+  function pixiBodyFxStyle(bh, bs, bl, t, i, skin, nowMs){
+    if (skin.fx === "fade") return { color: hslToHex(bh, bs, bl), alpha: 0.08 + 0.92 * t };
+    if (skin.fx === "iridescent") return { color: hslToHex((bh + i * 2.2 + nowMs * 0.05) % 360, bs, bl), alpha: 1 };
+    return { color: hslToHex(bh, bs, bl), alpha: 1 };
+  }
+
+  // World-space port of drawAccentPatches (Eel-pool's "patch" body mark) —
+  // near-full-width jagged plates via the same `pixiBodyRibbon` primitive
+  // `pixiMottlePatches` already uses, but with fixed near-full-width offsets
+  // and a single accent colour rather than a per-hash colour callback, so
+  // this is its own small function rather than a generalisation of
+  // `pixiMottlePatches` (which two already-shipped, already-verified
+  // materials depend on unchanged). `lo`/`hi` use the same "sample slot"
+  // scaling `pixiMottlePatches` established for translating Canvas 2D's
+  // already-sampled `pts.length` into this file's raw `body` indices.
+  function pixiDrawAccentPatches(bodyG, body, step, bodyLength, radius, skin){
+    const { accent } = skin;
+    if (!accent) return;
+    const slots = Math.floor(body.length / step);
+    if (slots < 6) return;
+    const m = Engine.resolveMaterial(skin);
+    const count = Math.max(5, Math.round(9 * m.strength));
+    const color = hslToHex(accent.hue, accent.sat, accent.light);
+    for (let j = 0; j < count; j++){
+      const hash = (((Math.sin(j * 17.23 + bodyLength * 0.007) * 12958.35) % 1) + 1) % 1;
+      const loS = Math.max(0, Math.min(slots - 2, Math.floor(hash * (slots - 3))));
+      const hiS = Math.min(slots - 1, loS + 2 + Math.floor(hash * 4));
+      if (hiS <= loS) continue;
+      const lo = loS * step, hi = Math.min(body.length - 1, hiS * step);
+      const jag = (((hash * 7) % 1) + 1) % 1;
+      pixiBodyRibbon(bodyG, body, step, bodyLength, radius, -(0.7 + jag * 0.25), 0.7 + hash * 0.25, color, 0.85, lo, hi);
+    }
+  }
+
+  // World-space port of the "web" body mark (Spider) — a strand down the
+  // spine crossed by ribs. Ported as the same shape of stroke pass every
+  // other body-fill loop in this file already uses; the crosshatch ribs
+  // sample every other `step` interval, matching Canvas 2D's own `k -= 2`
+  // stride over its already-`step`-sampled `pts`.
+  function pixiDrawWebMark(bodyG, body, step, bodyLength, radius, skin){
+    const { hue, sat } = skin;
+    const ink = hslToHex(hue, Math.round(sat * 0.4), 7);
+    bodyG.moveTo(body[0].x, body[0].y);
+    for (let i = step; i < body.length; i += step) bodyG.lineTo(body[i].x, body[i].y);
+    bodyG.stroke({ width: Math.max(0.5, radius * 0.08), color: ink, alpha: 0.5 });
+    for (let i = body.length - 1; i >= step; i -= step * 2){
+      const p = body[i], q = body[Math.max(0, i - step)];
+      const t = 1 - i / bodyLength;
+      const r = radius * (0.35 + 0.65 * t);
+      const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      bodyG.moveTo(p.x - nx * r * 0.95, p.y - ny * r * 0.95)
+        .lineTo(p.x + nx * r * 0.95, p.y + ny * r * 0.95)
+        .stroke({ width: Math.max(0.5, radius * 0.08), color: ink, alpha: 0.5 });
+    }
+  }
+
+  // Rotates a local-frame point (lx, ly) by `ang` and translates it to
+  // world position (cx, cy) — the manual equivalent of Canvas 2D's
+  // `ctx.translate(cx, cy); ctx.rotate(ang)` context stack, which PixiJS
+  // Graphics has no per-draw-call analogue for. Every bespoke body-mark
+  // icon (crossed swords now; more in later PRs) is defined as a handful of
+  // local-frame points transformed through this before being fed to
+  // `bodyG`'s path methods, so the whole icon still lands in one shared
+  // Graphics object alongside the rest of the ribbon — no extra Container
+  // or per-mark transform needed.
+  function pixiLocalToWorld(cx, cy, ang, lx, ly){
+    const c = Math.cos(ang), s = Math.sin(ang);
+    return [cx + lx * c - ly * s, cy + lx * s + ly * c];
+  }
+
+  // Samples `segments` points around an ellipse defined in head-local space
+  // (center lx,ly, radii rx,ry, own local rotation `rot`) and transforms
+  // each through pixiLocalToWorld, returning a flat [x0,y0,x1,y1,...]
+  // polygon ready for `.poly(...)`. Generalises the per-ellipse sampling
+  // loop pixiDrawOrbweaverMark already established for a nested local
+  // rotation — the head (PR BL) needs the same shape several times over
+  // (the base fill, three shading ellipses, the clip mask), so this pulls
+  // it out rather than copy-pasting the loop each time.
+  function pixiEllipsePoly(cx, cy, ang, lx, ly, rx, ry, rot, segments){
+    const cosR = Math.cos(rot), sinR = Math.sin(rot);
+    const poly = [];
+    for (let k = 0; k < segments; k++){
+      const theta = (k / segments) * Math.PI * 2;
+      const ex = rx * Math.cos(theta), ey = ry * Math.sin(theta);
+      const px = lx + ex * cosR - ey * sinR;
+      const py = ly + ex * sinR + ey * cosR;
+      const [wx, wy] = pixiLocalToWorld(cx, cy, ang, px, py);
+      poly.push(wx, wy);
+    }
+    return poly;
+  }
+
+  // Samples `segments+1` points along an ellipse *arc* (not a closed loop)
+  // in head-local space, from angle `a0` to `a1`, transformed through
+  // pixiLocalToWorld — returns an array of [x,y] pairs (not flat, since
+  // callers walk it with moveTo/lineTo rather than `.poly`). Needed for
+  // X-Ray's cranium outline (PR BL3), which strokes a partial ellipse
+  // (Canvas 2D's `ctx.ellipse(..., a0, a1)`), unlike pixiEllipsePoly's
+  // always-closed full loop.
+  function pixiEllipseArcPoints(cx, cy, ang, lx, ly, rx, ry, a0, a1, segments){
+    const pts = [];
+    for (let k = 0; k <= segments; k++){
+      const theta = a0 + (a1 - a0) * (k / segments);
+      const ex = rx * Math.cos(theta), ey = ry * Math.sin(theta);
+      pts.push(pixiLocalToWorld(cx, cy, ang, lx + ex, ly + ey));
+    }
+    return pts;
+  }
+
+  // World-space port of drawCrossedSwords (Eel-pool's "swords" body mark) —
+  // a hand-illustrated icon, not a parameterised technique like everything
+  // else ported in this phase so far. Every stroke in the Canvas 2D version
+  // lies along the local x-axis after its own `ctx.rotate`, so each becomes
+  // one call to `pixiLocalToWorld` per endpoint rather than needing a
+  // matrix stack. `cx`/`cy`/`ang` are already world-space/world-angle
+  // (Canvas 2D computes `ang` from raw, unprojected `body` deltas, so no
+  // conversion was ever needed there either — only the *position* used to
+  // need `worldToScreen`, which this port has no reason to call at all).
+  function pixiDrawCrossedSwords(bodyG, cx, cy, ang, size){
+    for (const side of [-1, 1]){
+      const a = ang + side * 0.62;
+      const strap0 = pixiLocalToWorld(cx, cy, a, size * 0.3, 0);
+      const strap1 = pixiLocalToWorld(cx, cy, a, -size * 0.9, 0);
+      bodyG.moveTo(strap0[0], strap0[1]).lineTo(strap1[0], strap1[1])
+        .stroke({ width: Math.max(1.4, size * 0.2), color: 0x18100a, alpha: 0.55, cap: "round" });
+      const blade0 = pixiLocalToWorld(cx, cy, a, size * 0.18, 0);
+      const blade1 = pixiLocalToWorld(cx, cy, a, -size * 1.0, 0);
+      bodyG.moveTo(blade0[0], blade0[1]).lineTo(blade1[0], blade1[1])
+        .stroke({ width: Math.max(1, size * 0.15), color: 0xdfe9ef, cap: "butt" });
+      const guard0 = pixiLocalToWorld(cx, cy, a, size * 0.2, -size * 0.2);
+      const guard1 = pixiLocalToWorld(cx, cy, a, size * 0.2, size * 0.2);
+      bodyG.moveTo(guard0[0], guard0[1]).lineTo(guard1[0], guard1[1])
+        .stroke({ width: Math.max(1, size * 0.14), color: 0xf6c453, cap: "butt" });
+      const grip0 = pixiLocalToWorld(cx, cy, a, size * 0.66, 0);
+      const grip1 = pixiLocalToWorld(cx, cy, a, size * 0.2, 0);
+      bodyG.moveTo(grip0[0], grip0[1]).lineTo(grip1[0], grip1[1])
+        .stroke({ width: Math.max(1, size * 0.17), color: 0x17171d, cap: "butt" });
+    }
+    bodyG.circle(cx, cy, Math.max(1, size * 0.09)).fill({ color: 0x2a2018 });
+  }
+
+  // World-space port of drawOrbweaverMark (Orbweaver's "orbweave" body
+  // mark) — two mirrored, off-axis loops around a small center hub, an
+  // original abstract shape (never a literal spider silhouette). Each loop
+  // is an ellipse with its own local rotation nested inside the icon's
+  // overall placement transform: unlike pixiDrawCrossedSwords' straight
+  // strokes (a single pixiLocalToWorld call per endpoint), a rotated
+  // ellipse has no direct PixiJS Graphics equivalent, so this samples
+  // points around the ellipse in its own local frame — offset by its
+  // Canvas-2D-matching center and rotation — and feeds every sampled point
+  // through pixiLocalToWorld individually, closing the loop into a single
+  // stroked path. The composition (icon placement transform applied last,
+  // outside the ellipse's own local center+rotation) matches how nesting
+  // ctx.ellipse(...) inside an already translate/rotate'd context works in
+  // Canvas 2D, just done by hand instead of via a context stack.
+  function pixiDrawOrbweaverMark(bodyG, cx, cy, ang, size){
+    const segments = 24;
+    for (const side of [-1, 1]){
+      const rx = size * 0.34, ry = size * 0.5, rot = side * 0.5;
+      const cosR = Math.cos(rot), sinR = Math.sin(rot);
+      const ecx = side * size * 0.32, ecy = 0;
+      for (let k = 0; k <= segments; k++){
+        const theta = (k / segments) * Math.PI * 2;
+        const ex = rx * Math.cos(theta), ey = ry * Math.sin(theta);
+        const lx = ecx + ex * cosR - ey * sinR;
+        const ly = ecy + ex * sinR + ey * cosR;
+        const [wx, wy] = pixiLocalToWorld(cx, cy, ang, lx, ly);
+        if (k === 0) bodyG.moveTo(wx, wy);
+        else bodyG.lineTo(wx, wy);
+      }
+      bodyG.stroke({ width: Math.max(1, size * 0.09), color: 0xc49e6e, alpha: 0.55 });
+    }
+    bodyG.circle(cx, cy, Math.max(1, size * 0.1)).fill({ color: 0xc49e6e, alpha: 0.7 });
+  }
+
+  // World-space port of drawScavengerGear (Red Rogue's "gear" body mark) —
+  // a strap-and-buckle pair anchoring a single asymmetric blade, offset to
+  // one side only, deliberately not a mirrored X the way
+  // pixiDrawCrossedSwords is. Canvas 2D nests an inner ctx.rotate(0.5)
+  // inside the outer translate/rotate(ang) for the main strap/blade/grip
+  // group — since both rotations share the same origin, that composes to a
+  // single rotate(ang + 0.5), so this passes `ang + 0.5` straight into
+  // pixiLocalToWorld for that group rather than needing a second transform
+  // step; the second, slightly crooked strap and the buckle dot are drawn
+  // back in the plain `ang` frame, matching Canvas 2D's own restore()
+  // before them.
+  function pixiDrawScavengerGear(bodyG, cx, cy, ang, size){
+    const a = ang + 0.5;
+    const strap0 = pixiLocalToWorld(cx, cy, a, size * 0.25, 0);
+    const strap1 = pixiLocalToWorld(cx, cy, a, -size * 0.7, 0);
+    bodyG.moveTo(strap0[0], strap0[1]).lineTo(strap1[0], strap1[1])
+      .stroke({ width: Math.max(1.2, size * 0.18), color: 0x18100a, alpha: 0.55, cap: "round" });
+    const blade0 = pixiLocalToWorld(cx, cy, a, size * 0.15, 0);
+    const blade1 = pixiLocalToWorld(cx, cy, a, -size * 0.75, 0);
+    bodyG.moveTo(blade0[0], blade0[1]).lineTo(blade1[0], blade1[1])
+      .stroke({ width: Math.max(0.8, size * 0.12), color: 0xc9ccce, cap: "butt" });
+    const grip0 = pixiLocalToWorld(cx, cy, a, size * 0.5, 0);
+    const grip1 = pixiLocalToWorld(cx, cy, a, size * 0.15, 0);
+    bodyG.moveTo(grip0[0], grip0[1]).lineTo(grip1[0], grip1[1])
+      .stroke({ width: Math.max(0.8, size * 0.14), color: 0x7a5a3a, cap: "butt" });
+
+    const crook0 = pixiLocalToWorld(cx, cy, ang, -size * 0.1, -size * 0.15);
+    const crook1 = pixiLocalToWorld(cx, cy, ang, size * 0.35, size * 0.1);
+    bodyG.moveTo(crook0[0], crook0[1]).lineTo(crook1[0], crook1[1])
+      .stroke({ width: Math.max(1, size * 0.12), color: 0x18100a, alpha: 0.4, cap: "butt" });
+    const buckle = pixiLocalToWorld(cx, cy, ang, size * 0.1, 0);
+    bodyG.circle(buckle[0], buckle[1], Math.max(0.8, size * 0.08)).fill({ color: 0x2a2018 });
+  }
+
+  // World-space port of drawSymbioteSpider (Eel-symbiote's "emblem" body
+  // mark) — abdomen and cephalothorax as two angular filled polygons, plus
+  // eight tapered two-perpendicular-point legs, one `.poly(...).fill(...)`
+  // each rather than Canvas 2D's path-per-shape, since a leg's taper (base
+  // width to a point) has no direct stroke equivalent. Every vertex is
+  // computed in local space exactly as the Canvas 2D version does (after
+  // its own translate/rotate) and passed through pixiLocalToWorld
+  // individually, the same discipline as every other body-mark icon ported
+  // so far — this was the one mark PRs BG-BK missed porting to WebGL, since
+  // (unlike swords/orbweave/gear) nothing wired it into drawEelRibbon's own
+  // marks.includes(...) chain until now.
+  function pixiDrawSymbioteSpider(bodyG, cx, cy, ang, size){
+    const fillColor = 0xf4f8fa;
+    const abdomen = [
+      [-size*0.25, size*0.38], [-size*1.15, size*0.2], [-size*1.35, 0],
+      [-size*1.15, -size*0.2], [-size*0.25, -size*0.38],
+    ];
+    bodyG.poly(abdomen.flatMap(([lx, ly]) => pixiLocalToWorld(cx, cy, ang, lx, ly)))
+      .fill({ color: fillColor });
+    const cephalothorax = [
+      [size*0.95, 0], [size*0.2, size*0.3], [-size*0.35, size*0.22],
+      [-size*0.35, -size*0.22], [size*0.2, -size*0.3],
+    ];
+    bodyG.poly(cephalothorax.flatMap(([lx, ly]) => pixiLocalToWorld(cx, cy, ang, lx, ly)))
+      .fill({ color: fillColor });
+
+    // [base, knee, tip] — knees push out, tips curl fore and aft
+    const legs = [
+      [[0.35, 0.16], [0.95, 0.8],  [1.6, 0.62]],
+      [[0.15, 0.2],  [0.5, 0.98],  [1.05, 1.15]],
+      [[-0.1, 0.2],  [-0.5, 0.98], [-1.05, 1.15]],
+      [[-0.3, 0.16], [-0.95, 0.8], [-1.6, 0.62]],
+    ];
+    for (const s of [-1, 1]){
+      for (const [b, k, t] of legs){
+        const bx = size*b[0], by = s*size*b[1];
+        const kx = size*k[0], ky = s*size*k[1];
+        const tx = size*t[0], ty = s*size*t[1];
+        const n1 = Math.hypot(kx-bx, ky-by) || 1;
+        const p1x = -(ky-by)/n1*size*0.13, p1y = (kx-bx)/n1*size*0.13;
+        const n2 = Math.hypot(tx-kx, ty-ky) || 1;
+        const p2x = -(ty-ky)/n2*size*0.07, p2y = (tx-kx)/n2*size*0.07;
+        const leg = [
+          [bx+p1x, by+p1y], [kx+p2x, ky+p2y], [tx, ty],
+          [kx-p2x, ky-p2y], [bx-p1x, by-p1y],
+        ];
+        bodyG.poly(leg.flatMap(([lx, ly]) => pixiLocalToWorld(cx, cy, ang, lx, ly)))
+          .fill({ color: fillColor });
+      }
+    }
+  }
+
+  function drawEelRibbon(glowG, bodyG, body, step, radius, skin, glow, detail, nowMs){
+    const { hue, sat, bodyLight, headLight, accent, accentRatio = 0.5, sheen = 0, gem } = skin;
+    const marks = [].concat(skin.mark ?? []);
+    const BAND = 52;
+
+    glowG.moveTo(body[0].x, body[0].y);
+    for (let i = step; i < body.length; i += step) glowG.lineTo(body[i].x, body[i].y);
+    glowG.lineTo(body[body.length - 1].x, body[body.length - 1].y);
+    glowG.stroke({
+      width: radius * 2 + 8, cap: "round", join: "round", alpha: glow,
+      color: hslToHex(hue, Math.min(100, sat + 20), Math.min(80, headLight + 8)),
+    });
+
+    const hasBodyFx = skin.fx === "fade" || skin.fx === "iridescent";
+    for (let i = body.length - 1; i >= step; i -= step){
+      const p = body[i], q = body[i - step];
+      const t = 1 - i / body.length;
+      const r = radius * (0.35 + 0.65 * t);
+      const band = accent && !marks.includes("patch") && (i % BAND) < BAND * accentRatio;
+      const bh = band ? accent.hue : hue, bs = band ? accent.sat : sat, bl = band ? accent.light : bodyLight;
+      const { color, alpha } = hasBodyFx
+        ? pixiBodyFxStyle(bh, bs, bl + t * 18, t, i, skin, nowMs)
+        : { color: hslToHex(bh, bs, bl + t * 18), alpha: 1 };
+      bodyG.moveTo(p.x, p.y).lineTo(q.x, q.y)
+        .stroke({ width: r * 2, cap: "round", join: "round", color, alpha });
+    }
+
+    // Universal baseline shading, then whatever material this skin resolves
+    // to, then sheen, a gem's twinkle and a themed fx finish on top — same
+    // order as the Canvas 2D pass (drawBodyShading, drawSkinMaterial,
+    // fxSheen, fxGemTwinkle, drawSkinFx). Every SKIN_MATERIAL id not yet
+    // ported (see the plan file for the current list) falls back to organic
+    // here too, matching resolveMaterial's own never-throw fallback, and
+    // every fx not yet ported stays Canvas-2D-only — their bespoke
+    // textures/effects are still Canvas 2D until their own PRs.
+    pixiDrawBodyShading(bodyG, body, step, body.length, radius);
+    const matType = Engine.resolveMaterial(skin).type;
+    const drawMat = PIXI_SKIN_MATERIAL[matType] ?? PIXI_SKIN_MATERIAL.organic;
+    drawMat(bodyG, body, step, body.length, radius, skin, detail, nowMs, glowG);
+    if (marks.includes("patch")) pixiDrawAccentPatches(bodyG, body, step, body.length, radius, skin);
+    if (marks.includes("web")) pixiDrawWebMark(bodyG, body, step, body.length, radius, skin);
+    if (sheen > 0) pixiFxSheen(bodyG, body, step, body.length, radius, skin);
+    if (gem) pixiFxGemTwinkle(bodyG, body, step, body.length, radius, skin, nowMs);
+    // Computed once, matching Canvas 2D's own inline `skinGlow` local at its
+    // drawSkinFx call site — only feral is ported to WebGL so far (X-Ray's
+    // chargeGlow stays Canvas-2D-only until the head PR), but this mirrors
+    // the same shape so a future ported fx needing a glow value slots in
+    // the same way.
+    const fxGlow = skin.fx === "feral" ? (pointer.boosting ? 1 : 0) : undefined;
+    const drawFx = PIXI_SKIN_FX[skin.fx];
+    if (drawFx) drawFx(glowG, bodyG, body, step, body.length, radius, skin, nowMs, fxGlow);
+
+    // "swords": crossed on the back, a little way behind the head — walk
+    // the body by distance rather than by index, so they sit in the same
+    // place on a stubby new eel and a long one alike, matching the Canvas
+    // 2D version's own approach exactly (including reading the world-space
+    // body array directly, since neither version ever needed a screen
+    // projection for the angle, and this one no longer needs it for the
+    // position either).
+    if (marks.includes("swords")){
+      let travelled = 0, si = 0;
+      while (si < body.length - 2 && travelled < radius * 3.1){
+        travelled += Math.hypot(body[si + 1].x - body[si].x, body[si + 1].y - body[si].y);
+        si++;
+      }
+      const tail = body[Math.min(body.length - 1, si + 5)];
+      pixiDrawCrossedSwords(bodyG, body[si].x, body[si].y,
+        Math.atan2(body[si].y - tail.y, body[si].x - tail.x), radius * 2.1);
+    }
+
+    // "emblem": Eel-symbiote's spider silhouette, positioned like "swords"
+    // but travelling a little further back (radius*3.4 vs. radius*3.1),
+    // matching the Canvas 2D version's own distance exactly.
+    if (marks.includes("emblem")){
+      let travelled = 0, ei = 0;
+      while (ei < body.length - 2 && travelled < radius * 3.4){
+        travelled += Math.hypot(body[ei + 1].x - body[ei].x, body[ei + 1].y - body[ei].y);
+        ei++;
+      }
+      const back = body[Math.min(body.length - 1, ei + 5)];
+      pixiDrawSymbioteSpider(bodyG, body[ei].x, body[ei].y,
+        Math.atan2(body[ei].y - back.y, body[ei].x - back.x), radius * 0.8);
+    }
+
+    // "orbweave": Orbweaver's dorsal marking, sitting a little further back
+    // than "swords"/"emblem" do — matches Canvas 2D's own longer travel
+    // distance (radius*4 vs. radius*3.1) so it reads as a marking on the
+    // back proper, not right behind the head.
+    if (marks.includes("orbweave")){
+      let travelled = 0, oi = 0;
+      while (oi < body.length - 2 && travelled < radius * 4){
+        travelled += Math.hypot(body[oi + 1].x - body[oi].x, body[oi + 1].y - body[oi].y);
+        oi++;
+      }
+      const back = body[Math.min(body.length - 1, oi + 5)];
+      pixiDrawOrbweaverMark(bodyG, body[oi].x, body[oi].y,
+        Math.atan2(body[oi].y - back.y, body[oi].x - back.x), radius * 1.1);
+    }
+
+    // "gear": Red Rogue's single asymmetric blade, positioned like "swords"
+    // but with no mirrored second side.
+    if (marks.includes("gear")){
+      let travelled = 0, gi = 0;
+      while (gi < body.length - 2 && travelled < radius * 3.1){
+        travelled += Math.hypot(body[gi + 1].x - body[gi].x, body[gi + 1].y - body[gi].y);
+        gi++;
+      }
+      const tail = body[Math.min(body.length - 1, gi + 5)];
+      pixiDrawScavengerGear(bodyG, body[gi].x, body[gi].y,
+        Math.atan2(body[gi].y - tail.y, body[gi].x - tail.x), radius * 2.1);
+    }
+  }
+
+  function drawPlayerRibbonPixi(body, step, radius, skin, glow, nowMs){
+    ensurePixiEelLayers();
+    pixiPlayerGlow.clear(); pixiPlayerBody.clear();
+    drawEelRibbon(pixiPlayerGlow, pixiPlayerBody, body, step, radius, skin, glow, 1, nowMs);
+  }
+
+  function drawRivalRibbonsBegin(){
+    ensurePixiEelLayers();
+    ensurePoolSize(pixiRivalGlow, eels.length, () => new PIXI.Graphics());
+    ensurePoolSize(pixiRivalBody, eels.length, () => new PIXI.Graphics());
+    ensurePixiEelHeadLayers();
+    ensurePoolSize(pixiRivalHeadPool, eels.length, makeHeadWrap);
+  }
+
+  function drawRivalRibbonPixi(idx, body, step, radius, skin, glow, nowMs){
+    const glowG = pixiRivalGlow.children[idx], bodyG = pixiRivalBody.children[idx];
+    glowG.clear(); bodyG.clear();
+    drawEelRibbon(glowG, bodyG, body, step, radius, skin, glow, 0.5, nowMs);
+  }
+
+  // Split from the actual render() call on purpose: this syncs everything
+  // that doesn't depend on drawPlayer()/drawRivalEels() having run yet
+  // (background, bubbles, motes, fish, the world container's camera
+  // transform), but the eel ribbons are only updated *inside* those two
+  // functions, called later in draw(). Rendering here, before they run,
+  // would rasterize last frame's eel geometry — renderPixiFrame() (below,
+  // called at the end of draw()) is the actual GPU submit, once everything
+  // this frame touches has been synced.
+  function syncPixiFrame(nowMs){
+    if (!pixiReady) return;
+    syncPixiBackground(nowMs);
+    if (player){
+      let jx = 0, jy = 0;
+      if (shakeT > 0){ jx = rand(-1,1)*shakeT*22; jy = rand(-1,1)*shakeT*22; }
+      pixiWorld.position.set(W/2 - camera.x + jx, H/2 - camera.y + jy);
+      syncPixiWorld();
+    } else if (pixiBubbles) {
+      pixiBubbles.visible = pixiEnergy.visible = pixiFish.visible = false;
+    }
+  }
+
+  function renderPixiFrame(){
+    if (pixiReady) pixiApp.render();
   }
 
   // ---------- draw ----------
@@ -3880,7 +6011,7 @@
   }
   const SKIN_FX_SCRATCH = [];
 
-  function drawEelBody(body, radius, skin, glow, isPlayer){
+  function drawEelBody(body, radius, skin, glow, isPlayer, rivalIdx){
     const { hue, sat, bodyLight, headLight, gem, sheen = 0, accent, accentRatio = 0.5 } = skin;
     if (body.length < 2) return;
     const marks = [].concat(skin.mark ?? []);      // one flourish or several
@@ -3912,36 +6043,64 @@
     }
     const pts = SKIN_FX_SCRATCH;
 
-    // glow underlay — gems run a little hotter than plain metal
-    ctx.save();
-    ctx.globalCompositeOperation = "lighter";
-    ctx.strokeStyle = `hsla(${hue},${Math.min(100, sat + 20)}%,${Math.min(80, headLight + 8)}%,${gem ? Math.min(1, glow*1.3 + 0.12) : glow})`;
-    ctx.lineWidth = radius*2 + (gem ? 11 : 8);
-    ctx.beginPath();
-    pts.forEach((p, k) => k === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
-    ctx.stroke();
-    ctx.restore();
+    // glow underlay + tapered accent-banded fill: WebGL once it's ready
+    // (see drawEelRibbon, above drawPixiFrame), Canvas 2D exactly as before
+    // otherwise. Shading/materials/marks/sheen/gem/fx and the head (below)
+    // are the same split now — WebGL once ready, Canvas 2D only as the
+    // no-WebGL-at-all fallback.
+    if (pixiReady){
+      if (isPlayer) drawPlayerRibbonPixi(body, step, radius, skin, glow, nowMs);
+      else drawRivalRibbonPixi(rivalIdx, body, step, radius, skin, glow, nowMs);
+    } else {
+      // glow underlay — gems run a little hotter than plain metal
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.strokeStyle = `hsla(${hue},${Math.min(100, sat + 20)}%,${Math.min(80, headLight + 8)}%,${gem ? Math.min(1, glow*1.3 + 0.12) : glow})`;
+      ctx.lineWidth = radius*2 + (gem ? 11 : 8);
+      ctx.beginPath();
+      pts.forEach((p, k) => k === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+      ctx.stroke();
+      ctx.restore();
 
-    // main body with taper — banded into two colours when the skin has an
-    // accent, except a "patch"-marked skin (Eel-pool), whose panels are
-    // scattered irregular plates (drawAccentPatches, below) rather than a
-    // clean stripe, so this loop stays on the base colour for it throughout
-    for (let k = pts.length - 1; k >= 1; k--){
-      const p = pts[k], q = pts[k - 1];
-      const i = p.i;
-      const t = 1 - i / body.length;               // 1 at head
-      const r = radius * (0.35 + 0.65 * t);
-      const band = accent && !marks.includes("patch") && (i % BAND) < BAND * accentRatio;
-      const bh = band ? accent.hue : hue;
-      const bs = band ? accent.sat : sat;
-      const bl = band ? accent.light : bodyLight;
-      ctx.strokeStyle = (skin.fx === "fade" || skin.fx === "iridescent")
-        ? bodyFxStyle(bh, bs, bl + t*18, t, i, skin, nowMs)
-        : `hsl(${bh},${bs}%,${bl + t*18}%)`;
-      ctx.lineWidth = r*2;
-      ctx.beginPath(); ctx.moveTo(p.x,p.y); ctx.lineTo(q.x,q.y); ctx.stroke();
+      // main body with taper — banded into two colours when the skin has an
+      // accent, except a "patch"-marked skin (Eel-pool), whose panels are
+      // scattered irregular plates (drawAccentPatches, below) rather than a
+      // clean stripe, so this loop stays on the base colour for it throughout
+      for (let k = pts.length - 1; k >= 1; k--){
+        const p = pts[k], q = pts[k - 1];
+        const i = p.i;
+        const t = 1 - i / body.length;               // 1 at head
+        const r = radius * (0.35 + 0.65 * t);
+        const band = accent && !marks.includes("patch") && (i % BAND) < BAND * accentRatio;
+        const bh = band ? accent.hue : hue;
+        const bs = band ? accent.sat : sat;
+        const bl = band ? accent.light : bodyLight;
+        ctx.strokeStyle = (skin.fx === "fade" || skin.fx === "iridescent")
+          ? bodyFxStyle(bh, bs, bl + t*18, t, i, skin, nowMs)
+          : `hsl(${bh},${bs}%,${bl + t*18}%)`;
+        ctx.lineWidth = r*2;
+        ctx.beginPath(); ctx.moveTo(p.x,p.y); ctx.lineTo(q.x,q.y); ctx.stroke();
+      }
     }
 
+    // computed once and reused by drawEelHead below, so the skull (X-Ray)
+    // flares in lockstep with the body skeleton rather than a second,
+    // independently-timed read of the same zap state
+    const skinGlow = skin.fx === "xray" ? Engine.chargeGlow(zap, zapFlashT / ZAP_FLASH_S)
+      : skin.fx === "feral" ? (pointer.boosting ? 1 : 0)
+      : undefined;
+
+    // Shading, materials, marks, sheen, gem and fx all have WebGL
+    // equivalents now (PRs AS-BK) — this whole block is the Canvas 2D
+    // fallback for when there's no WebGL context at all, matching the head
+    // block below. It used to run unconditionally, back when WebGL only
+    // had the base ribbon (PR AQ); left ungated as later PRs ported each
+    // piece to WebGL, it was quietly drawing the same content on top of
+    // the WebGL layer every frame — same pixels, pure wasted CPU for the
+    // player and up to 14 rivals. Confirmed via a Playwright screenshot
+    // diff (WebGL alone vs. WebGL+this block, gold/diamond/fire) showing
+    // no visual difference before this gate was added.
+    if (!pixiReady) {
     // universal baseline shading — every skin gets this, before any themed
     // finish; sheen (below) then adds *more* shine on top of it.
     drawBodyShading(ctx, pts, body.length, radius, skin);
@@ -3978,12 +6137,6 @@
     // projection built above.
     if (sheen > 0) fxSheen(ctx, pts, body.length, radius, skin);
     if (gem) fxGemTwinkle(ctx, pts, 4, body.length, radius, skin, nowMs);
-    // computed once and reused by drawEelHead below, so the skull (X-Ray)
-    // flares in lockstep with the body skeleton rather than a second,
-    // independently-timed read of the same zap state
-    const skinGlow = skin.fx === "xray" ? Engine.chargeGlow(zap, zapFlashT / ZAP_FLASH_S)
-      : skin.fx === "feral" ? (pointer.boosting ? 1 : 0)
-      : undefined;
     if (skin.fx) drawSkinFx(ctx, pts, body.length, radius, skin, nowMs, skinGlow);
 
     // "swords": crossed on the back, a little way behind the head. Walk the
@@ -4041,15 +6194,25 @@
       drawScavengerGear(ctx, gx, gy,
         Math.atan2(body[gi].y - tail.y, body[gi].x - tail.x), radius*2.1);
     }
+    }
 
-    // head
-    const [hx,hy] = worldToScreen(body[0].x, body[0].y);
+    // head — WebGL for every skin once it's ready (every head mark,
+    // including X-Ray's skull, PR BL3, is now ported); Canvas 2D remains
+    // the only path when WebGL isn't available at all (pixiReady stays
+    // false — an old device, a WebView with no context).
     const ang = Math.atan2(body[0].y - body[Math.min(6,body.length-1)].y,
                            body[0].x - body[Math.min(6,body.length-1)].x);
-    ctx.save();
-    ctx.translate(hx,hy); ctx.rotate(ang);
-    drawEelHead(ctx, radius, skin, marks, skinGlow || 0);
-    ctx.restore();
+    if (pixiReady){
+      ensurePixiEelHeadLayers();
+      const wrap = isPlayer ? pixiPlayerHeadWrap : pixiRivalHeadPool.children[rivalIdx];
+      pixiDrawEelHead(wrap, body[0].x, body[0].y, ang, radius, skin, marks, skinGlow || 0);
+    } else {
+      const [hx,hy] = worldToScreen(body[0].x, body[0].y);
+      ctx.save();
+      ctx.translate(hx,hy); ctx.rotate(ang);
+      drawEelHead(ctx, radius, skin, marks, skinGlow || 0);
+      ctx.restore();
+    }
   }
 
   function drawPlayer(){
@@ -4087,10 +6250,22 @@
   }
 
   function drawRivalEels(){
-    for (const e of eels){
+    if (pixiReady) drawRivalRibbonsBegin();
+    eels.forEach((e, idx) => {
       const [sx,sy] = worldToScreen(e.x,e.y);
-      if (sx<-200||sx>W+200||sy<-200||sy>H+200) continue;
-      drawEelBody(e.body, radiusFor(e.len), Engine.skinFromHue(e.hue), 0.18, false);
+      if (sx<-200||sx>W+200||sy<-200||sy>H+200){
+        // Off-screen: skip the expensive redraw, but still clear this
+        // index's pooled ribbon (and head) so a stale frame doesn't linger
+        // at its last on-screen position if the pool slot gets reused
+        // nearby.
+        if (pixiReady){
+          pixiRivalGlow.children[idx].clear();
+          pixiRivalBody.children[idx].clear();
+          pixiClearHeadWrap(pixiRivalHeadPool.children[idx]);
+        }
+        return;
+      }
+      drawEelBody(e.body, radiusFor(e.len), Engine.skinFromHue(e.hue), 0.18, false, idx);
       if (e.stun > 0 && !reduceMotion){
         ctx.save(); ctx.globalCompositeOperation="lighter";
         ctx.strokeStyle="rgba(142,243,255,0.7)"; ctx.lineWidth=1.5;
@@ -4100,7 +6275,7 @@
         ctx.stroke(); ctx.restore();
       }
       drawRivalName(e, sx, sy);
-    }
+    });
   }
 
   // A name tag over each rival. Faded by distance so a crowded shoal does not
@@ -4131,36 +6306,44 @@
     for (const p of predators){
       const [sx,sy] = worldToScreen(p.x,p.y);
       if (sx<-80||sx>W+80||sy<-80||sy>H+80) continue;
-      ctx.save();
-      ctx.translate(sx,sy); ctx.rotate(p.a);
       const stunned = p.stun > 0;
-      // glow
-      ctx.save(); ctx.globalCompositeOperation="lighter";
-      ctx.fillStyle = stunned ? "rgba(142,243,255,0.25)" : (p.boss ? "rgba(200,60,180,0.28)" : "rgba(255,93,108,0.18)");
-      ctx.beginPath(); ctx.arc(0,0,p.r*1.6,0,TAU); ctx.fill();
-      ctx.restore();
-      // body
-      ctx.fillStyle = stunned ? "#2b6478" : (p.boss ? "#4a2350" : "#2b5468");
-      ctx.beginPath(); ctx.ellipse(0,0,p.r*1.5,p.r,0,0,TAU); ctx.fill();
-      // tail fin (swishes)
-      const sw = Math.sin(p.tail)*0.5;
-      ctx.beginPath();
-      ctx.moveTo(-p.r*1.3,0);
-      ctx.lineTo(-p.r*2.4,-p.r*0.9+sw*10);
-      ctx.lineTo(-p.r*2.4, p.r*0.9+sw*10);
-      ctx.closePath(); ctx.fill();
-      // dorsal
-      ctx.beginPath();
-      ctx.moveTo(p.r*0.1,-p.r*0.9); ctx.lineTo(-p.r*0.6,-p.r*1.7); ctx.lineTo(-p.r*0.7,-p.r*0.9);
-      ctx.closePath(); ctx.fill();
-      // jaw
-      ctx.fillStyle = "#0a2531";
-      ctx.beginPath(); ctx.moveTo(p.r*1.5,0); ctx.lineTo(p.r*0.7,p.r*0.5); ctx.lineTo(p.r*0.9,-p.r*0.1);
-      ctx.closePath(); ctx.fill();
-      // eye
-      ctx.fillStyle = stunned ? "#8ef3ff" : "#ff5d6c";
-      ctx.beginPath(); ctx.arc(p.r*0.7,-p.r*0.35,p.r*0.16,0,TAU); ctx.fill();
-      ctx.restore();
+      // Body (glow, ellipse, tail, dorsal, jaw, eye) renders on the WebGL
+      // layer once it's ready — see syncPixiWorld's pixiPredators pool,
+      // above drawPixiFrame — and the tail-fin swish is dropped there,
+      // same static-shape simplification as fish's tail wobble. The boss
+      // badge below stays Canvas 2D either way: it's upright screen-space
+      // text/UI, not part of the body mesh.
+      if (!pixiReady){
+        ctx.save();
+        ctx.translate(sx,sy); ctx.rotate(p.a);
+        // glow
+        ctx.save(); ctx.globalCompositeOperation="lighter";
+        ctx.fillStyle = stunned ? "rgba(142,243,255,0.25)" : (p.boss ? "rgba(200,60,180,0.28)" : "rgba(255,93,108,0.18)");
+        ctx.beginPath(); ctx.arc(0,0,p.r*1.6,0,TAU); ctx.fill();
+        ctx.restore();
+        // body
+        ctx.fillStyle = stunned ? "#2b6478" : (p.boss ? "#4a2350" : "#2b5468");
+        ctx.beginPath(); ctx.ellipse(0,0,p.r*1.5,p.r,0,0,TAU); ctx.fill();
+        // tail fin (swishes)
+        const sw = Math.sin(p.tail)*0.5;
+        ctx.beginPath();
+        ctx.moveTo(-p.r*1.3,0);
+        ctx.lineTo(-p.r*2.4,-p.r*0.9+sw*10);
+        ctx.lineTo(-p.r*2.4, p.r*0.9+sw*10);
+        ctx.closePath(); ctx.fill();
+        // dorsal
+        ctx.beginPath();
+        ctx.moveTo(p.r*0.1,-p.r*0.9); ctx.lineTo(-p.r*0.6,-p.r*1.7); ctx.lineTo(-p.r*0.7,-p.r*0.9);
+        ctx.closePath(); ctx.fill();
+        // jaw
+        ctx.fillStyle = "#0a2531";
+        ctx.beginPath(); ctx.moveTo(p.r*1.5,0); ctx.lineTo(p.r*0.7,p.r*0.5); ctx.lineTo(p.r*0.9,-p.r*0.1);
+        ctx.closePath(); ctx.fill();
+        // eye
+        ctx.fillStyle = stunned ? "#8ef3ff" : "#ff5d6c";
+        ctx.beginPath(); ctx.arc(p.r*0.7,-p.r*0.35,p.r*0.16,0,TAU); ctx.fill();
+        ctx.restore();
+      }
       // boss badge: ring, "BOSS" label and remaining hit pips (drawn upright, in screen space)
       if (p.boss){
         ctx.save(); ctx.globalCompositeOperation="lighter";
@@ -4314,23 +6497,31 @@
       const p = 1 + Math.sin(s.pulse)*0.14;
       ctx.save();
       ctx.translate(sx,sy);
-      // glow halo
-      ctx.save(); ctx.globalCompositeOperation="lighter";
-      ctx.fillStyle="rgba(109,255,176,0.28)";
-      ctx.beginPath(); ctx.arc(0,0,s.r*2.4*p,0,TAU); ctx.fill(); ctx.restore();
-      // core pearl
-      const g = ctx.createRadialGradient(0,0,2,0,0,s.r*p);
-      g.addColorStop(0,"#eaffff"); g.addColorStop(0.5,"#6dffb0"); g.addColorStop(1,"#1f9e6a");
-      ctx.fillStyle = g;
-      ctx.beginPath(); ctx.arc(0,0,s.r*p,0,TAU); ctx.fill();
-      // orbiting little fish
-      ctx.fillStyle = "#ffd166";
-      for (let i=0;i<6;i++){
-        const a = s.spin + i/6*TAU;
-        const ox = Math.cos(a)*s.r*1.7, oy = Math.sin(a)*s.r*1.7;
-        ctx.save(); ctx.translate(ox,oy); ctx.rotate(a+Math.PI/2);
-        ctx.beginPath(); ctx.ellipse(0,0,4,2.4,0,0,TAU); ctx.fill();
-        ctx.restore();
+      // Glow halo, core pearl and the orbiting mini-fish render on the
+      // WebGL layer once it's ready — see syncPixiWorld's pixiFeasts pool
+      // (redrawn every frame there, not cached: feasts are rare enough
+      // that caching would save little, and the orbiting fish genuinely
+      // move every frame unlike a static tail wobble). The "10×" mark
+      // stays Canvas 2D either way — upright text, not part of the mesh.
+      if (!pixiReady){
+        // glow halo
+        ctx.save(); ctx.globalCompositeOperation="lighter";
+        ctx.fillStyle="rgba(109,255,176,0.28)";
+        ctx.beginPath(); ctx.arc(0,0,s.r*2.4*p,0,TAU); ctx.fill(); ctx.restore();
+        // core pearl
+        const g = ctx.createRadialGradient(0,0,2,0,0,s.r*p);
+        g.addColorStop(0,"#eaffff"); g.addColorStop(0.5,"#6dffb0"); g.addColorStop(1,"#1f9e6a");
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(0,0,s.r*p,0,TAU); ctx.fill();
+        // orbiting little fish
+        ctx.fillStyle = "#ffd166";
+        for (let i=0;i<6;i++){
+          const a = s.spin + i/6*TAU;
+          const ox = Math.cos(a)*s.r*1.7, oy = Math.sin(a)*s.r*1.7;
+          ctx.save(); ctx.translate(ox,oy); ctx.rotate(a+Math.PI/2);
+          ctx.beginPath(); ctx.ellipse(0,0,4,2.4,0,0,TAU); ctx.fill();
+          ctx.restore();
+        }
       }
       // "10x" mark
       ctx.fillStyle="#04302a"; ctx.font="bold 11px Trebuchet MS,sans-serif";
@@ -4382,20 +6573,41 @@
   }
 
   function draw(){
-    drawBackground();
-    if (!player) return;
+    // Background, bubbles, energy motes and fish render on the WebGL layer
+    // (#gameGL) once it's ready; the 2D canvas is cleared instead of
+    // painting its own opaque background so that layer shows through.
+    // Without WebGL (an old device, a WebView that lacks it), pixiReady
+    // stays false forever and these four keep drawing on Canvas 2D exactly
+    // as they always have — the graceful-degradation path, not a
+    // special-cased fallback bolted on afterwards.
+    if (pixiReady){
+      syncPixiFrame();
+      ctx.clearRect(0, 0, W, H);
+    } else {
+      drawBackground();
+    }
+    if (!player){ renderPixiFrame(); return; }
     drawWorldBounds();
-    drawBubbles();
-    drawEnergy();
-    drawPresents();
-    drawStars();
+    if (!pixiReady){ drawBubbles(); drawEnergy(); }
+    // drawFeasts() and drawPredators() stay unconditional even once WebGL
+    // is ready — each still draws a Canvas 2D-only piece (the "10×" label;
+    // the boss ring/pips/label) on top of what's now a WebGL body/core.
+    // drawPresents()/drawStars()/drawBabies()/drawParticles() are fully
+    // migrated, so they're skipped entirely once pixiReady, same as
+    // drawFish() below.
+    if (!pixiReady) drawPresents();
+    if (!pixiReady) drawStars();
     drawFeasts();
-    drawBabies();
-    drawFish();
+    if (!pixiReady) drawBabies();
+    if (!pixiReady) drawFish();
     drawRivalEels();
     drawPredators();
     drawPlayer();
-    drawParticles();
+    if (!pixiReady) drawParticles();
+    // drawRivalEels()/drawPlayer() are what actually update each eel's
+    // ribbon Graphics this frame (see drawEelBody) — the GPU submit has to
+    // happen after both, or it rasterizes stale (last-frame) eel geometry.
+    renderPixiFrame();
 
     if (flashT > 0){
       ctx.fillStyle = `rgba(142,243,255,${flashT*0.5})`;
@@ -4945,6 +7157,7 @@
     if (!btn || CLICK_SOUND_EXCLUDE.has(btn.id)) return;
     fx("click");
   });
+
 })();
 </script>
 </body>
